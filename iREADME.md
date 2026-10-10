@@ -105,6 +105,7 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 | `fabrica upgrade [alias…]` | Moves imports to newer commits, showing a diff first. |
 | `fabrica plan` | Shows what `apply` would do and what's blocking it. Exits `0` when in sync, `2` with changes, `1` with errors. |
 | `fabrica apply` | Installs and updates stubs in runtimes, and sets up your local tools. |
+| `fabrica destroy [deployment…]` | The opposite of `apply`: removes everything it installed, and leaves your deployment files alone. Asks first. |
 | `fabrica confirm <id>` | Closes a handoff once someone has followed its instructions. |
 | `fabrica unlock <deployment>` | Removes a lock left behind by a crashed apply. |
 | `fabrica mcp [--http]` | Serves a factory over MCP: locally over stdio, or remotely over HTTP. |

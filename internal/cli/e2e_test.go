@@ -277,6 +277,67 @@ func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
+func TestDestroyCommand(t *testing.T) {
+	w := setupCLI(t)
+	w.Home.Write(map[string]string{
+		"deployments/pr-review.yaml": `factory: { git: github.com/acme/factory, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud]
+routines: [pr-review]
+repos: [github.com/acme/app]
+`,
+	}).CommitPush("deploy pr-review")
+	home, handoffs := w.Home.Dir, t.TempDir()
+	mustFab(t, 0, home, "apply", "--handoff-dir", handoffs)
+	confirmRe := regexp.MustCompile("fabrica confirm (h_[0-9a-f]+)")
+	files, _ := filepath.Glob(filepath.Join(handoffs, "pr-review", "*.md"))
+	if len(files) != 1 {
+		t.Fatalf("want 1 handoff, got %v", files)
+	}
+	text, _ := os.ReadFile(files[0])
+	mustFab(t, 0, home, "confirm", confirmRe.FindStringSubmatch(string(text))[1], "--remote-id", "trig_1")
+	w.Home.Pull()
+
+	// Deleting needs no server secret.
+	t.Setenv(token.EnvVar, "")
+	out := mustFab(t, 2, home, "plan", "--destroy")
+	if !strings.Contains(out, "- delete pr-review @ github.com/acme/app on claude-code-cloud (handoff): the deployment is being destroyed") {
+		t.Fatalf("plan --destroy:\n%s", out)
+	}
+	if out := mustFab(t, 0, home, "plan"); !strings.Contains(out, "In sync.") {
+		t.Errorf("plan --destroy must not change anything:\n%s", out)
+	}
+
+	// Without a terminal to ask on, destroy wants --yes.
+	out = mustFab(t, 1, home, "destroy", "--handoff-dir", handoffs)
+	if !strings.Contains(out, "Destroy plan: 1 change, 0 errors.") || !strings.Contains(out, "run again with --yes") {
+		t.Fatalf("destroy without --yes:\n%s", out)
+	}
+	out = mustFab(t, 0, home, "destroy", "--yes", "--handoff-dir", handoffs)
+	if !strings.Contains(out, "1 delete handoff to follow") || !strings.Contains(out, "released the lock") {
+		t.Fatalf("destroy --yes:\n%s", out)
+	}
+	files, _ = filepath.Glob(filepath.Join(handoffs, "pr-review", "*.md"))
+	var deleteHandoff string
+	for _, f := range files {
+		if data, _ := os.ReadFile(f); strings.HasPrefix(string(data), "# Delete Claude routine") {
+			deleteHandoff = string(data)
+		}
+	}
+	if !strings.Contains(deleteHandoff, "trig_1") {
+		t.Fatalf("want a delete handoff naming the routine's ID, got %v:\n%s", files, deleteHandoff)
+	}
+	w.Home.Pull()
+	if out := mustFab(t, 0, home, "destroy", "--yes"); !strings.Contains(out, "Nothing to destroy.") {
+		t.Errorf("a second destroy has nothing to do:\n%s", out)
+	}
+	mustFab(t, 0, home, "confirm", confirmRe.FindStringSubmatch(deleteHandoff)[1])
+	w.Home.Pull()
+	if out := mustFab(t, 0, home, "plan", "--destroy"); !strings.Contains(out, "Nothing to destroy (0 changes, 0 errors).") {
+		t.Errorf("after confirming the delete, there's nothing left:\n%s", out)
+	}
+}
+
 // TestLocalMCPOverStdio runs `fabrica mcp` as a real subprocess, the way
 // Claude Code would after `fabrica apply`.
 func TestLocalMCPOverStdio(t *testing.T) {

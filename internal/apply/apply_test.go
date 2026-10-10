@@ -62,6 +62,27 @@ func (h *harness) apply() *apply.Result {
 	return res
 }
 
+// destroy runs apply.Run as `fabrica destroy` does, with approve seeing the
+// plan first.
+func (h *harness) destroy(approve func(*plan.Plan) error) (*apply.Result, error) {
+	h.t.Helper()
+	h.out.Reset()
+	env := *h.env
+	env.Destroy = true
+	return apply.Run(context.Background(), apply.Options{Plan: &env, Out: &h.out, HandoffDir: h.handof, Holder: "test-holder", Approve: approve}, h.w.Home.Dir)
+}
+
+func (h *harness) destroyPlan() *plan.Plan {
+	h.t.Helper()
+	destroy := *h.env
+	destroy.Destroy = true
+	hm, err := home.Open(h.w.Home.Dir)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return plan.Build(context.Background(), &destroy, hm)
+}
+
 func (h *harness) state() *home.State {
 	h.t.Helper()
 	h.w.Home.Pull()
@@ -351,6 +372,94 @@ func TestDeletedDeploymentIsCleanedUp(t *testing.T) {
 	}
 }
 
+func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.apply()
+	// One claude-code-cloud stub is confirmed, the other's create handoff
+	// is still pending.
+	s := h.state()
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "trig_1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	h.w.Home.Pull()
+
+	p := h.destroyPlan()
+	d := p.Deployment("pr-review")
+	if p.ExitCode() != 2 || len(d.Changes) != 4 {
+		t.Fatalf("want 4 deletes:\n%s", render(p))
+	}
+	for _, c := range d.Changes {
+		if c.Action != plan.Delete {
+			t.Errorf("destroy should only delete, got %s", c.Describe())
+		}
+	}
+	text := render(p)
+	for _, want := range []string{"Deployment pr-review (cloud, destroying)", "the deployment is being destroyed", "a create handoff for it was never confirmed", "Destroy plan: 4 changes, 0 errors."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("destroy plan is missing %q:\n%s", want, text)
+		}
+	}
+
+	// Saying no changes nothing.
+	declined := errors.New("no")
+	if _, err := h.destroy(func(*plan.Plan) error { return declined }); !errors.Is(err, declined) {
+		t.Fatalf("want the approval's error, got %v", err)
+	}
+	if got := h.w.Toy.Resources(); len(got) != 2 {
+		t.Fatalf("declining must not delete anything, toy has %+v", got)
+	}
+
+	// Saying yes deletes, and deleting needs no server secret.
+	h.env.Secret = ""
+	var approved *plan.Plan
+	res, err := h.destroy(func(p *plan.Plan) error { approved = p; return nil })
+	if err != nil || res.ExitCode() != 0 {
+		t.Fatalf("destroy: %v\n%s", err, h.out.String())
+	}
+	if approved == nil || !approved.Destroy {
+		t.Error("destroy should show the plan to Approve")
+	}
+	if got := h.w.Toy.Resources(); len(got) != 0 {
+		t.Errorf("toy resources left behind: %+v", got)
+	}
+	if len(res.Handoffs) != 2 {
+		t.Fatalf("want 2 delete handoffs for claude-code-cloud, got %v\n%s", res.Handoffs, h.out.String())
+	}
+	s = h.state()
+	if s.Lock != nil || len(s.Pending) != 2 || s.Pending[0].Action != "delete" || s.Pending[1].Action != "delete" {
+		t.Fatalf("state after destroy = %+v", s)
+	}
+	log := testkit.Git(t, h.w.Home.Dir, "log", "--format=%s")
+	if !strings.Contains(log, "fabrica: lock pr-review for destroy") || !strings.Contains(log, "fabrica: destroy pr-review (4 changes)") {
+		t.Errorf("home repo log should show the destroy:\n%s", log)
+	}
+	if _, err := os.Stat(filepath.Join(h.w.Home.Dir, "deployments", "pr-review.yaml")); err != nil {
+		t.Errorf("destroy must leave the deployment file alone: %v", err)
+	}
+	if p := h.destroyPlan(); p.ExitCode() != 0 || !strings.Contains(render(p), "Nothing to destroy, but 2 handoffs are waiting") {
+		t.Errorf("destroying again has nothing to do:\n%s", render(p))
+	}
+
+	// Once the deletes are confirmed, the next apply puts everything back.
+	for _, pend := range s.Pending {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := h.state(); len(s.Resources) != 0 || len(s.Pending) != 0 {
+		t.Fatalf("state after confirming the deletes = %+v", s)
+	}
+	h.env.Secret = testkit.Secret
+	if p := h.plan(); p.ExitCode() != 2 || len(p.Deployment("pr-review").Changes) != 4 {
+		t.Fatalf("after destroy, plan should want everything again:\n%s", render(p))
+	}
+	h.apply()
+	if got := h.w.Toy.Resources(); len(got) != 2 {
+		t.Errorf("apply after destroy should recreate the toy stubs, got %+v", got)
+	}
+}
+
 func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
@@ -434,6 +543,63 @@ func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
 	claude, _ = os.ReadFile(filepath.Join(h.env.UserHome, ".claude.json"))
 	if strings.Contains(string(claude), "fabrica") {
 		t.Errorf("fabrica should be gone from ~/.claude.json:\n%s", claude)
+	}
+}
+
+func TestDestroyLocalDeployments(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.Home.Write(map[string]string{
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+	})
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	read := func(rel string) string {
+		data, _ := os.ReadFile(filepath.Join(h.env.UserHome, rel))
+		return string(data)
+	}
+	yes := func(*plan.Plan) error { return nil }
+
+	// Destroying oss-work removes its hooks. Cursor has nothing else from
+	// Fabrica, so it loses the MCP server too; Claude Code keeps it for
+	// my-default.
+	h.env.Only = []string{"oss-work"}
+	p := h.destroyPlan()
+	text := render(p)
+	for _, want := range []string{"- remove hook for routine oss-work/review-before-push", "- remove MCP server fabrica", "delete deployments/oss-work.yaml to stop that"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("destroy plan is missing %q:\n%s", want, text)
+		}
+	}
+	if res, err := h.destroy(yes); err != nil || res.ExitCode() != 0 {
+		t.Fatalf("destroy oss-work: %v\n%s", err, h.out.String())
+	}
+	if settings := read(".claude/settings.json"); strings.Contains(settings, "oss-work") {
+		t.Errorf("Claude Code still has oss-work's hook:\n%s", settings)
+	}
+	if claude := read(".claude.json"); !strings.Contains(claude, `"fabrica"`) {
+		t.Errorf("my-default still needs the fabrica MCP server in Claude Code:\n%s", claude)
+	}
+	if cursor := read(".cursor/mcp.json") + read(".cursor/hooks.json"); strings.Contains(cursor, "fabrica") {
+		t.Errorf("nothing uses Cursor anymore, so Fabrica should be gone from it:\n%s", cursor)
+	}
+
+	// Destroying everything removes the rest, and leaves the deployment
+	// files alone.
+	h.env.Only = nil
+	if res, err := h.destroy(yes); err != nil || res.ExitCode() != 0 {
+		t.Fatalf("destroy: %v\n%s", err, h.out.String())
+	}
+	if claude := read(".claude.json"); strings.Contains(claude, "fabrica") {
+		t.Errorf("fabrica should be gone from ~/.claude.json:\n%s", claude)
+	}
+	if p := h.destroyPlan(); p.ExitCode() != 0 || p.Local != nil {
+		t.Errorf("there should be nothing left to destroy:\n%s", render(p))
+	}
+	if p := h.plan(); p.ExitCode() != 2 || !strings.Contains(render(p), "+ add hook for routine oss-work/review-before-push") {
+		t.Errorf("apply should put it all back:\n%s", render(p))
 	}
 }
 

@@ -104,6 +104,7 @@ Typical workflow:
   fabrica lock       pin a factory's imports in fabrica.lock
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
   fabrica apply      install stubs in runtimes, and Fabrica in your local tools
+  fabrica destroy    remove everything apply installed
 
 Run fabrica -u to update Fabrica itself to the latest release.`,
 		Version:       versionLine(),
@@ -129,6 +130,7 @@ Run fabrica -u to update Fabrica itself to the latest release.`,
 		newUpgrade(),
 		newPlan(g),
 		newApply(g),
+		newDestroy(g),
 		newConfirm(g),
 		newUnlock(g),
 		newMCP(g),

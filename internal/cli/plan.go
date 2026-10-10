@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ func planEnv(t *tools, only []string) (*plan.Env, error) {
 }
 
 func newPlan(g *globals) *cobra.Command {
-	var asJSON, noRefresh bool
+	var asJSON, noRefresh, destroy bool
 	cmd := &cobra.Command{
 		Use:   "plan [deployment...]",
 		Short: "Show what apply would do, and what stops it",
@@ -55,7 +56,9 @@ there are only changes, 1 when there are errors. Running it on a schedule
 in the home repo's CI catches problems that appear after an apply.
 
 Set FABRICA_SERVER_SECRET to also catch rotated tokens. In CI (when $CI is
-set), local deployments are skipped.`,
+set), local deployments are skipped.
+
+With --destroy, it shows what ` + "`fabrica destroy`" + ` would remove instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			dir, err := g.homeDir(ctx)
@@ -75,6 +78,7 @@ set), local deployments are skipped.`,
 				return err
 			}
 			env.Refresh = !noRefresh
+			env.Destroy = destroy
 			p := plan.Build(ctx, env, h)
 			out := cmd.OutOrStdout()
 			if asJSON {
@@ -94,6 +98,7 @@ set), local deployments are skipped.`,
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the plan as JSON")
 	cmd.Flags().BoolVar(&noRefresh, "no-refresh", false, "trust state instead of asking runtime APIs what exists")
+	cmd.Flags().BoolVar(&destroy, "destroy", false, "show what destroy would remove instead")
 	return cmd
 }
 
@@ -153,6 +158,94 @@ your deployment changes first.`,
 		},
 	}
 	cmd.Flags().StringVar(&handoffDir, "handoff-dir", "", "where to write handoff instructions (default: the Fabrica cache folder)")
+	return cmd
+}
+
+// errDeclined means you answered no when destroy asked.
+var errDeclined = errors.New("declined")
+
+func newDestroy(g *globals) *cobra.Command {
+	var handoffDir string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "destroy [deployment...]",
+		Short: "Remove everything apply installed",
+		Long: `Destroy is the opposite of apply: it removes everything your deployments
+(or the ones you name) installed in their runtimes. It leaves the
+deployment files alone, so the next apply puts it all back. To stop
+deploying something for good, delete its deployment file and apply.
+
+For each cloud deployment, it deletes every resource in its state, the
+same way apply deletes a stub that's no longer deployed: through the
+runtime's API, or by writing a delete handoff for a person or a
+computer-use agent to follow and confirm. Like apply, it takes the
+deployment's lock and records the results in one commit, pushed to the
+home repo. Deleting needs no token, so FABRICA_SERVER_SECRET is optional.
+
+For your personal home repo, it removes what Fabrica installed in your
+local tools: the fabrica MCP server, connector servers, hooks and
+scheduled tasks. When you name local deployments and others still use the
+same tool, only the named ones' hooks and scheduled tasks go.
+
+It shows what it will remove and asks before changing anything. Pass
+--yes to skip the question; without a terminal to ask on, destroy refuses
+unless you do. ` + "`fabrica plan --destroy`" + ` shows the same plan and changes
+nothing.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			dir, err := g.homeDir(ctx)
+			if err != nil {
+				return err
+			}
+			t, err := newTools()
+			if err != nil {
+				return err
+			}
+			env, err := planEnv(t, args)
+			if err != nil {
+				return err
+			}
+			env.Destroy = true
+			if handoffDir == "" {
+				handoffDir = filepath.Join(t.cacheDir, "handoffs")
+			}
+			in, out := cmd.InOrStdin(), cmd.OutOrStdout()
+			approve := func(p *plan.Plan) error {
+				p.Render(out)
+				if !yes {
+					if !isTerminal(in) {
+						return &ExitError{Code: 1, Err: errors.New("not destroying anything without confirmation; review the plan above and run again with --yes")}
+					}
+					if !ask(in, out, "Destroy everything listed above? [y/N] ") {
+						return errDeclined
+					}
+				}
+				fmt.Fprintln(out)
+				return nil
+			}
+			res, err := apply.Run(ctx, apply.Options{Plan: env, Out: out, HandoffDir: handoffDir, Approve: approve}, dir)
+			if errors.Is(err, errDeclined) {
+				fmt.Fprintln(out, "Nothing was destroyed.")
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if len(res.Handoffs) > 0 {
+				// Unlike apply's, delete handoffs carry no token.
+				fmt.Fprintf(out, "\n%s to follow. Each one ends with the `fabrica confirm` command to run when it's done. Until then, its stub can still run, since the Fabrica server serves a deployment for as long as its file is in %s/:\n", plural(len(res.Handoffs), "delete handoff"), home.DeploymentsDir)
+				for _, f := range res.Handoffs {
+					fmt.Fprintf(out, "  %s\n", f)
+				}
+			}
+			if res.ExitCode() != 0 {
+				return &ExitError{Code: res.ExitCode()}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&handoffDir, "handoff-dir", "", "where to write handoff instructions (default: the Fabrica cache folder)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "destroy without asking")
 	return cmd
 }
 

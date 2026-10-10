@@ -54,6 +54,9 @@ func (p *Plan) Summary() string {
 		parts = append(parts, plural(pending, "pending handoff"))
 	}
 	parts = append(parts, plural(errors, "error"))
+	if p.Destroy {
+		return p.destroySummary(parts, pending)
+	}
 	switch p.ExitCode() {
 	case 0:
 		if pending > 0 {
@@ -66,6 +69,19 @@ func (p *Plan) Summary() string {
 	return "Plan: " + strings.Join(parts, ", ") + ". Fix the errors before applying; apply skips any deployment that has them."
 }
 
+func (p *Plan) destroySummary(parts []string, pending int) string {
+	switch p.ExitCode() {
+	case 0:
+		if pending > 0 {
+			return fmt.Sprintf("Nothing to destroy, but %s %s waiting for `fabrica confirm`.", plural(pending, "handoff"), map[bool]string{true: "is", false: "are"}[pending == 1])
+		}
+		return "Nothing to destroy (" + strings.Join(parts, ", ") + ")."
+	case 2:
+		return "Destroy plan: " + strings.Join(parts, ", ") + "."
+	}
+	return "Destroy plan: " + strings.Join(parts, ", ") + ". Fix the errors first; destroy skips any deployment that has them."
+}
+
 // Render writes one deployment's plan.
 func (d *Deployment) Render(w io.Writer) {
 	kind := "cloud"
@@ -74,6 +90,8 @@ func (d *Deployment) Render(w io.Writer) {
 		kind = "deleted, cleaning up"
 	case d.Local():
 		kind = "local"
+	case d.Destroy:
+		kind = "cloud, destroying"
 	}
 	fmt.Fprintf(w, "Deployment %s (%s)\n", d.Name, kind)
 	if d.Spec != nil && d.Spec.Endpoint() != "" {
@@ -116,7 +134,11 @@ func (d *Deployment) Render(w io.Writer) {
 	}
 	renderDiags(w, "  ", d.Diags.Sorted())
 	if len(d.Changes) == 0 && len(d.Pending) == 0 && !d.Diags.HasErrors() && !d.Local() {
-		fmt.Fprintln(w, "  In sync.")
+		if d.Destroy {
+			fmt.Fprintln(w, "  Nothing to destroy.")
+		} else {
+			fmt.Fprintln(w, "  In sync.")
+		}
 	}
 }
 
@@ -240,6 +262,7 @@ func plural(n int, word string) string {
 // JSON is a plain-data version of the plan, for `fabrica plan --json`.
 type JSON struct {
 	ExitCode    int              `json:"exit_code"`
+	Destroy     bool             `json:"destroy,omitempty"`
 	Diags       diag.List        `json:"diagnostics,omitempty"`
 	Deployments []DeploymentJSON `json:"deployments"`
 	Local       []LocalJSON      `json:"local,omitempty"`
@@ -277,7 +300,7 @@ type LocalJSON struct {
 
 // ToJSON converts the plan to plain data.
 func (p *Plan) ToJSON() JSON {
-	out := JSON{ExitCode: p.ExitCode(), Diags: p.Diags}
+	out := JSON{ExitCode: p.ExitCode(), Destroy: p.Destroy, Diags: p.Diags}
 	for _, d := range p.Deployments {
 		dj := DeploymentJSON{Name: d.Name, Scope: "cloud", Diags: d.Diags, Notes: d.Notes, Changes: []ChangeJSON{}}
 		if d.Local() {

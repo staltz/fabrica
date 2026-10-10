@@ -6,7 +6,7 @@ Every command has `--help`.
 
 ## Choosing the home repo
 
-`plan`, `apply`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
+`plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
 
 1. the `--home <folder>` flag, if you give one,
 2. otherwise the current folder (or the git repo it's in), if it has `deployments/` or `state/`,
@@ -18,9 +18,9 @@ Every command has `--help`.
 |---|---|
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
-| `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud deployments. `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
+| `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud deployments (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
-| `CI` | When set, `plan` and `apply` skip local deployments, since CI has nothing local to set up. |
+| `CI` | When set, `plan`, `apply` and `destroy` skip local deployments, since CI has nothing local to set up. |
 
 Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead.
 
@@ -77,6 +77,7 @@ It reads the home repo as it is on disk, and never changes anything.
 |---|---|
 | `--json` | Print the plan as JSON. |
 | `--no-refresh` | Trust state, instead of asking runtime APIs (folder providers with an `api`) what exists. |
+| `--destroy` | Show what [`destroy`](#fabrica-destroy-deployment) would remove, instead of what `apply` would do. |
 
 | Exit code | Meaning |
 |---|---|
@@ -93,6 +94,22 @@ Makes runtimes match your home repo. For each cloud deployment with changes and 
 | `--handoff-dir <folder>` | Where to write handoff instructions. Default `$FABRICA_CACHE/handoffs`. |
 
 Cloud deployments need `FABRICA_SERVER_SECRET`. Apply refuses to run with uncommitted changes in `deployments/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any deployment was skipped because of errors, or failed.
+
+## `fabrica destroy [deployment…]`
+
+The opposite of `apply`: removes everything your deployments (or the ones you name) installed. It leaves the deployment files alone, so the next `apply` puts it all back. To stop deploying something for good, delete its deployment file and `apply` instead.
+
+- **Cloud deployments:** it deletes every resource in the deployment's state, the same way `apply` deletes a stub that's no longer deployed: through the runtime's API, or with a delete handoff to follow and then `fabrica confirm`. A create handoff that was never confirmed gets a delete handoff too, in case someone followed it anyway. Like `apply`, it takes the deployment's lock and records the results in one commit. Until a delete handoff is done, its stub can still run, because the server serves a deployment for as long as its file exists.
+- **Local tools,** for your personal home repo: it removes the `fabrica` MCP server, connector servers, hooks and scheduled tasks that `apply` installed. When you name local deployments and other local deployments still use the same tool, only the named ones' hooks and scheduled tasks go. The shared `fabrica` server stays, so it keeps serving their factories until you delete their files.
+
+It shows the plan, then asks before changing anything. `fabrica plan --destroy` shows the same plan and changes nothing.
+
+| Flag | What it does |
+|---|---|
+| `--yes`, `-y` | Destroy without asking. Without a terminal to ask on, destroy refuses unless you pass this. |
+| `--handoff-dir <folder>` | Where to write delete handoffs. Default `$FABRICA_CACHE/handoffs`. |
+
+Deleting needs no token, so unlike `apply`, destroy works without `FABRICA_SERVER_SECRET`. Like `apply`, it refuses to run with uncommitted changes in `deployments/` or `state/`, or with local commits that aren't pushed yet, and exits `1` if any deployment was skipped because of errors, or failed.
 
 ## `fabrica confirm <handoff-id>`
 

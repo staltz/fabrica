@@ -1,4 +1,6 @@
 // Package plan works out what `fabrica apply` would do, and what stops it.
+// With Env.Destroy, it works out what `fabrica destroy` would remove
+// instead.
 //
 // A plan compares what your home repo and its factories ask for with what's
 // installed, and sorts everything it finds into two kinds:
@@ -47,6 +49,10 @@ type Env struct {
 	Refresh bool
 	// Only limits the plan to these deployments. Empty means all.
 	Only []string
+	// Destroy plans `fabrica destroy`: nothing is wanted, so everything
+	// the deployments installed becomes a delete, as if their files were
+	// gone.
+	Destroy bool
 	// LockHolder is set by apply once it holds a deployment's lock, so the
 	// re-plan inside the lock doesn't report our own lock as a problem.
 	LockHolder string
@@ -65,6 +71,8 @@ type Plan struct {
 	Diags diag.List
 	// Notes are home-wide remarks, like "skipped local deployments in CI".
 	Notes []string
+	// Destroy is true for a plan made for `fabrica destroy`.
+	Destroy bool
 }
 
 // Deployment is the plan for one deployment.
@@ -86,6 +94,8 @@ type Deployment struct {
 	Pending []home.Pending
 	Diags   diag.List
 	Notes   []string
+	// Destroy is true when everything the deployment installed is to go.
+	Destroy bool
 }
 
 // Local reports whether this is a local deployment.
@@ -195,7 +205,7 @@ func (p *Plan) Deployment(name string) *Deployment {
 
 // Build plans every deployment in a home repo.
 func Build(ctx context.Context, env *Env, h *home.Home) *Plan {
-	p := &Plan{Home: h}
+	p := &Plan{Home: h, Destroy: env.Destroy}
 	only := map[string]bool{}
 	for _, n := range env.Only {
 		only[n] = true
@@ -211,6 +221,7 @@ func Build(ctx context.Context, env *Env, h *home.Home) *Plan {
 	}
 
 	var locals []*Deployment
+	destroyed := map[string]bool{} // local deployments to destroy
 	for _, name := range h.Names() {
 		d := h.Deployments[name]
 		if !selected(name) {
@@ -218,6 +229,10 @@ func Build(ctx context.Context, env *Env, h *home.Home) *Plan {
 		}
 		if d.Scope == provider.Local {
 			if env.SkipLocal {
+				continue
+			}
+			if env.Destroy {
+				destroyed[name] = true
 				continue
 			}
 			dp := env.planLocalDeployment(ctx, d)
@@ -233,9 +248,17 @@ func Build(ctx context.Context, env *Env, h *home.Home) *Plan {
 			p.Deployments = append(p.Deployments, env.PlanCloud(ctx, h, name))
 		}
 	}
-	if env.SkipLocal && hasLocal(h) {
+	switch {
+	case env.SkipLocal && hasLocal(h):
 		p.Notes = append(p.Notes, "Skipped local deployments: there's nothing local to set up in CI.")
-	} else if h.Personal && len(env.Only) == 0 {
+	case h.Personal && env.Destroy:
+		// Destroying only cloud deployments leaves the local tools alone.
+		if len(env.Only) == 0 || len(destroyed) > 0 {
+			var notes []string
+			p.Local, notes = env.planLocalDestroy(h, destroyed)
+			p.Notes = append(p.Notes, notes...)
+		}
+	case h.Personal && len(env.Only) == 0:
 		p.Local = env.planLocalTools(locals, h.Dir)
 	}
 	sort.Slice(p.Deployments, func(i, j int) bool { return p.Deployments[i].Name < p.Deployments[j].Name })

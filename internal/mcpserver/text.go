@@ -6,6 +6,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/fabline"
 	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/promptblock"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/runs"
 	"github.com/staltz/fabrica/internal/stub"
@@ -50,7 +51,7 @@ func RefusalInstructions(reason string) string {
 
 // LineHint explains how to add the Fabrica line.
 func LineHint() string {
-	return "To use Fabrica in this repo, make this the very first line of the root AGENTS.md (and of the root CLAUDE.md, if there is one):\n\n" + fabline.Sentence
+	return "To use Fabrica in this repo, make the line between the delimiters below the very first line of the root AGENTS.md (and of the root CLAUDE.md, if there is one):\n\n" + promptblock.Wrap(fabline.Sentence)
 }
 
 func skillText(sk *factory.Skill, folder string) string {

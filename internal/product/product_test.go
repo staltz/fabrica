@@ -2,6 +2,7 @@ package product_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/staltz/fabrica/internal/fabline"
@@ -47,6 +48,9 @@ func TestCheckWorkspace(t *testing.T) {
 	}
 	if diags.HasCode("product.unmet-expects") {
 		t.Errorf("test is provided by the repo, so nothing required is unmet:\n%s", diags)
+	}
+	if want := "\n-----BEGIN PROMPT-----\n" + fabline.Sentence + "\n-----END PROMPT-----"; !strings.Contains(diags.String(), want) {
+		t.Errorf("the hint should give the Fabrica line between delimiters, got:\n%s", diags)
 	}
 	if got := product.Clashes(ws, f); len(got) != 1 || got[0] != "pr-review" {
 		t.Errorf("Clashes = %v", got)

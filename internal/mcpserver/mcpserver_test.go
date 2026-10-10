@@ -261,6 +261,16 @@ func TestLocalStubNoLongerDeployed(t *testing.T) {
 	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in deployment my-default")
 }
 
+func TestLocalStubNoLongerRunsOnRuntime(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	fp := localStub(t, lw.opts, "review-before-push")
+	// The routine is narrowed to another runtime after the hook was
+	// installed.
+	lw.w.Home.Write(map[string]string{"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\nroutines: [{ routine: review-before-push, runtimes: [cursor-local] }]\n"})
+	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push doesn't run on runtime claude-code-local in deployment my-default")
+}
+
 type remoteWorld struct {
 	w      *testkit.World
 	srv    *Remote

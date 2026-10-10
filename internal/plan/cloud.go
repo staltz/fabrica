@@ -82,6 +82,9 @@ func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deploymen
 	routines := checkRoutinesAndParams(dp, d, f)
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
+			if !d.Runs(r.Ref.Name, rt.Name) {
+				continue
+			}
 			ev := stub.Evaluate(f, r, stub.Target{Deployment: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint()})
 			rt.Evaluations[r.Ref.Name] = ev
 			dp.Diags = append(dp.Diags, ev.Diags...)
@@ -99,6 +102,9 @@ func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deploymen
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
 			ev := rt.Evaluations[r.Ref.Name]
+			if ev == nil {
+				continue // the routine doesn't run on this runtime
+			}
 			fp := ev.Shape.Fingerprint()
 			for _, repo := range d.SpecificRepos() {
 				id := stub.Identity(d.Endpoint(), r.Ref.Name, repo)
@@ -431,6 +437,8 @@ func (e *Env) whyGone(dp *Deployment, r home.Resource) string {
 		return fmt.Sprintf("runtime %s was removed from the deployment", r.Runtime)
 	case !d.HasRoutine(r.Routine):
 		return fmt.Sprintf("routine %s was removed from the deployment", r.Routine)
+	case !d.Runs(r.Routine, r.Runtime):
+		return fmt.Sprintf("routine %s no longer runs on runtime %s", r.Routine, r.Runtime)
 	case !d.Covers(r.Repo):
 		return fmt.Sprintf("repo %s was removed from the deployment", r.Repo)
 	case d.Endpoint() != "" && !strings.HasPrefix(r.ID, stub.EndpointID(d.Endpoint())+"#"):

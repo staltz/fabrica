@@ -1,6 +1,6 @@
 # Writing a factory
 
-A factory is a git repo (or a folder inside one) that describes how agents should build software. This page is the full reference for the format. If you want a working example to copy, see [examples/starter-factory](../examples/starter-factory/).
+A factory is a git repo (or a folder inside one) that describes how agents should build software. This page is the full reference for the format. If you want a working example to copy, see [examples/starter-factory](../examples/starter-factory/), or run `fabrica new my-factory` to get your own copy of it (`fabrica new --empty my-factory` starts one from scratch).
 
 ## Layout
 

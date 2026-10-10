@@ -57,12 +57,13 @@ go install github.com/staltz/fabrica/cmd/fabrica@latest
 
 This sets up your own factory for every repo you work on, in Claude Code and Cursor.
 
-**1. Make a factory.** Start from the starter factory in this repo:
+**1. Make a factory.** Start from the [starter factory](examples/starter-factory/), which comes built into `fabrica`:
 
 ```sh
-cp -r examples/starter-factory ~/code/my-factory
-cd ~/code/my-factory && git init && git add -A && git commit -m "My factory"
+fabrica new ~/code/my-factory
+cd ~/code/my-factory
 fabrica check        # should say: No problems found.
+git add . && git commit -m "My factory"
 ```
 
 Push it somewhere git can reach, like `github.com/you/my-factory`.
@@ -100,6 +101,7 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 
 | Command | What it does |
 |---|---|
+| `fabrica new <folder>` | Starts a new factory repo, from the starter factory or (with `--empty`) from scratch. |
 | `fabrica check [folder]` | Lints a factory, validates a home repo's deployments, or checks a product repo. It works out which one the folder is. |
 | `fabrica lock` | Pins a factory's imports to exact commits, in `fabrica.lock`. |
 | `fabrica upgrade [alias…]` | Moves imports to newer commits, showing a diff first. |

@@ -105,9 +105,11 @@ type triggerFile struct {
 }
 
 type paramFile struct {
-	Required    bool       `yaml:"required"`
-	Default     *yaml.Node `yaml:"default"`
-	Description string     `yaml:"description"`
+	Required bool `yaml:"required"`
+	// Default is a yaml.Node (not a pointer, which the YAML library can't
+	// decode into); a zero Kind means it wasn't set.
+	Default     yaml.Node `yaml:"default"`
+	Description string    `yaml:"description"`
 }
 
 // parseRoutine reads routines/<name>.md.
@@ -185,7 +187,7 @@ func parseRoutine(data []byte, name, file string) *Routine {
 			return fail("params: %q isn't a valid param name; use lowercase letters, digits and underscores (like slack_channel)", pname)
 		}
 		param := Param{Name: pname, Required: p.Required, Description: strings.TrimSpace(p.Description)}
-		if p.Default != nil {
+		if p.Default.Kind != 0 {
 			if p.Default.Kind != yaml.ScalarNode {
 				return fail("params.%s.default must be a single value, not a list or map", pname)
 			}

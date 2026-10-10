@@ -44,9 +44,12 @@ func (w Worktree) Head(ctx context.Context) (string, error) {
 	return trimOut(out), nil
 }
 
-// RemoteURL returns the URL of the named remote, or "" if there's none.
+// RemoteURL returns the URL of the named remote as configured, or "" if
+// there's none. We read the raw setting on purpose: `git remote get-url`
+// applies `insteadOf` rewrites, and a rewrite changes how git connects, not
+// which repo it is.
 func (w Worktree) RemoteURL(ctx context.Context, remote string) string {
-	out, err := run(ctx, w.Dir, "remote", "get-url", remote)
+	out, err := run(ctx, w.Dir, "config", "--get", "remote."+remote+".url")
 	if err != nil {
 		return ""
 	}
@@ -153,7 +156,12 @@ func (w Worktree) DropLastCommit(ctx context.Context) error {
 func (w Worktree) Commit(ctx context.Context, message string, paths ...string) (bool, error) {
 	addArgs := append([]string{"add", "--all", "--"}, paths...)
 	if _, err := run(ctx, w.Dir, addArgs...); err != nil {
-		return false, err
+		// A path that doesn't exist and was never committed just means
+		// there's nothing to stage for it.
+		var gitErr *Error
+		if !errors.As(err, &gitErr) || !strings.Contains(gitErr.Stderr, "did not match any files") {
+			return false, err
+		}
 	}
 	diffArgs := append([]string{"diff", "--cached", "--quiet", "--"}, paths...)
 	if _, err := run(ctx, w.Dir, diffArgs...); err == nil {

@@ -31,9 +31,8 @@ func DecodeStrict(data []byte, v any) error {
 		// `connectors: [github, slack?]`, trips it up. Quote those items and
 		// try once more.
 		if fixed := quoteOptionalItems(data); !bytes.Equal(fixed, data) {
-			if retryErr := decodeStrict(fixed, v); retryErr == nil {
-				return nil
-			}
+			// Whatever the retry says is the real problem (or none at all).
+			return decodeStrict(fixed, v)
 		}
 	}
 	return err

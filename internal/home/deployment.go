@@ -168,7 +168,7 @@ func ParseDeployment(name, file string, data []byte, personal bool) (*Deployment
 	d.Factory = FactoryRef{Git: strings.TrimSpace(f.Factory.Git), Ref: strings.TrimSpace(f.Factory.Ref), Path: strings.Trim(strings.TrimSpace(f.Factory.Path), "/")}
 
 	if len(f.Runtimes) == 0 {
-		return fail("runtimes: is empty; list where the factory should run, like [claude-code-cloud, cursor] or [claude-code-local, cursor-ide]")
+		return fail("runtimes: is empty; list where the factory should run, like [claude-code-cloud, cursor-cloud] or [claude-code-local, cursor-local]")
 	}
 	seen := map[string]bool{}
 	scopes := map[provider.Scope][]string{}

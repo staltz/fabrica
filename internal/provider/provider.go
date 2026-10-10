@@ -29,7 +29,7 @@ type Provider struct {
 	handoff *template.Template
 }
 
-// Name is the runtime's name, like "claude-code-cloud" or "cursor-ide".
+// Name is the runtime's name, like "claude-code-cloud" or "cursor-local".
 func (p *Provider) Name() string { return p.Matrix.Name }
 
 // IsLocal reports whether this runtime runs on your machine.
@@ -90,16 +90,18 @@ func IsBuiltin(name string) bool {
 	return ok
 }
 
-// renamed maps built-in runtimes' names in Fabrica v0.1 to their current
-// names. The old names don't work anymore: Fabrica only recognizes them to
-// say what to use instead, and to move v0.1 state over.
+// renamed maps built-in runtimes' names in earlier Fabrica v0.1 releases to
+// their current names. The old names don't work anymore: Fabrica only
+// recognizes them to say what to use instead, and to move old state over.
 var renamed = map[string]string{
-	"claude":      "claude-code-cloud",
-	"claude-code": "claude-code-local",
+	"claude":      "claude-code-cloud", // until v0.1.1
+	"claude-code": "claude-code-local", // until v0.1.1
+	"cursor":      "cursor-cloud",      // until v0.1.3
+	"cursor-ide":  "cursor-local",      // until v0.1.3
 }
 
-// Renamed returns the current name of the built-in runtime that Fabrica
-// v0.1 called name.
+// Renamed returns the current name of the built-in runtime that an earlier
+// Fabrica release called name.
 func Renamed(name string) (string, bool) {
 	current, ok := renamed[name]
 	return current, ok

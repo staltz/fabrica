@@ -36,7 +36,7 @@ func setup(t *testing.T) (ws string, opts Options) {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/oss-work.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"deployments/oss-work.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	ws = filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
@@ -83,7 +83,7 @@ func TestPrePushHoldsBackOnce(t *testing.T) {
 
 func TestCursorFormats(t *testing.T) {
 	ws, o := setup(t)
-	o.Runtime = "cursor-ide"
+	o.Runtime = "cursor-local"
 	out := run(t, o, `{"conversation_id": "c1", "workspace_roots": ["`+ws+`"], "command": "git push"}`)
 	if out["permission"] != "deny" || !strings.Contains(out["agent_message"].(string), "run_begin") {
 		t.Errorf("Cursor should get permission/agent_message, got %v", out)

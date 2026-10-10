@@ -68,8 +68,8 @@ type Resource struct {
 	TokenHash string    `yaml:"token_hash,omitempty"`
 	Shape     Shape     `yaml:"shape"`
 	AppliedAt time.Time `yaml:"applied_at"`
-	// RenamedFrom is the runtime's old name, when Fabrica v0.1 recorded the
-	// resource under it. It isn't saved.
+	// RenamedFrom is the runtime's old name, when an earlier Fabrica release
+	// recorded the resource under it. It isn't saved.
 	RenamedFrom string `yaml:"-"`
 }
 
@@ -128,8 +128,8 @@ func ReadState(homeDir, name string) (*State, error) {
 	return &s, nil
 }
 
-// moveRenamedRuntimes moves what Fabrica v0.1 recorded under runtimes' old
-// names over to their current names. The stubs it installed still name the
+// moveRenamedRuntimes moves what earlier Fabrica releases recorded under
+// runtimes' old names over to their current names. The stubs it installed still name the
 // old runtime in their prompts, so their fingerprints are dropped: that
 // makes plan update them, even if this state gets saved before an apply.
 func moveRenamedRuntimes(s *State) {

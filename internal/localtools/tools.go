@@ -49,7 +49,7 @@ func For(runtime, homeDir string) (Tool, error) {
 	switch runtime {
 	case "claude-code-local":
 		return &claudeCode{home: homeDir}, nil
-	case "cursor-ide":
+	case "cursor-local":
 		return &cursorIDE{home: homeDir}, nil
 	case "codex-cli":
 		return &codexCLI{home: homeDir}, nil
@@ -58,7 +58,7 @@ func For(runtime, homeDir string) (Tool, error) {
 }
 
 // Runtimes lists the local runtimes this package can configure.
-func Runtimes() []string { return []string{"claude-code-local", "codex-cli", "cursor-ide"} }
+func Runtimes() []string { return []string{"claude-code-local", "codex-cli", "cursor-local"} }
 
 // hookTimeoutSeconds is how long a tool should wait for `fabrica hook`.
 const hookTimeoutSeconds = 30
@@ -151,7 +151,7 @@ func claudeEntryFromJSON(name string, raw json.RawMessage) (MCPEntry, error) {
 
 type cursorIDE struct{ home string }
 
-func (c *cursorIDE) Runtime() string { return "cursor-ide" }
+func (c *cursorIDE) Runtime() string { return "cursor-local" }
 
 func (c *cursorIDE) mcpFile() string   { return filepath.Join(c.home, ".cursor", "mcp.json") }
 func (c *cursorIDE) hooksFile() string { return filepath.Join(c.home, ".cursor", "hooks.json") }

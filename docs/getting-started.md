@@ -54,7 +54,7 @@ Add a **local deployment**: "use my factory in every repo, in Claude Code and Cu
 ```yaml
 # ~/.fabrica/deployments/my-default.yaml
 factory: { git: github.com/you/my-factory, ref: main }
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: ["*"]
 ```
 
@@ -75,12 +75,12 @@ Deployment my-default (local)
   · factory github.com/you/my-factory@main → 72ef761 (branch main; follows the branch: merges take effect on the next run, no apply needed)
   · repos: ["*"] matches every repo not covered by another local deployment; each repo still needs the Fabrica line, which is checked when a session starts
   claude-code-local: api mode, skills unpacked on disk
-  cursor-ide: api mode, skills unpacked on disk
+  cursor-local: api mode, skills unpacked on disk
 
 Local tools on this machine
   claude-code-local (~/.claude.json, ~/.claude/settings.json)
     + add MCP server fabrica
-  cursor-ide (~/.cursor/mcp.json, ~/.cursor/hooks.json)
+  cursor-local (~/.cursor/mcp.json, ~/.cursor/hooks.json)
     + add MCP server fabrica
 
 Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
@@ -140,7 +140,7 @@ Routines are things an agent does automatically when something happens. The star
 ```yaml
 # ~/.fabrica/deployments/my-default.yaml
 factory: { git: github.com/you/my-factory, ref: main }
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: ["*"]
 routines: [review-before-push]
 ```
@@ -201,7 +201,7 @@ Make a home repo for the team, like `github.com/acme/home`, and add a **cloud de
 # deployments/pr-review.yaml
 factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
 repos: [github.com/acme/app]
 params:
@@ -226,11 +226,11 @@ Deployment pr-review (cloud)
   · factory github.com/acme/factory@stable → 72ef761 (branch stable; follows the branch: merges take effect on the next run, no apply needed)
   claude-code-cloud: handoff mode, text-only skills, token in the url
     routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub e128f7aa2995
-  cursor: handoff mode, text-only skills, token in the header
+  cursor-cloud: handoff mode, text-only skills, token in the header
     routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub f1b3f4b57a0a
   Changes:
     + create pr-review @ github.com/acme/app on claude-code-cloud (handoff): it isn't installed yet
-    + create pr-review @ github.com/acme/app on cursor (handoff): it isn't installed yet
+    + create pr-review @ github.com/acme/app on cursor-cloud (handoff): it isn't installed yet
 
 Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
 ```
@@ -251,7 +251,7 @@ fabrica apply
 ```
 Deployment pr-review: took the lock.
   ✓ + create pr-review @ github.com/acme/app on claude-code-cloud (handoff): it isn't installed yet (handoff written to ~/.cache/fabrica/handoffs/pr-review/h_19345343ec.md)
-  ✓ + create pr-review @ github.com/acme/app on cursor (handoff): it isn't installed yet (handoff written to ~/.cache/fabrica/handoffs/pr-review/h_0eabba279a.md)
+  ✓ + create pr-review @ github.com/acme/app on cursor-cloud (handoff): it isn't installed yet (handoff written to ~/.cache/fabrica/handoffs/pr-review/h_0eabba279a.md)
 Deployment pr-review: recorded the results and released the lock.
 ```
 

@@ -73,7 +73,7 @@ Push it somewhere git can reach, like `github.com/you/my-factory`.
 ```sh
 cat > ~/.fabrica/deployments/my-default.yaml <<'EOF'
 factory: { git: github.com/you/my-factory, ref: main }
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: ["*"]                 # every repo not matched by another local deployment
 EOF
 ```

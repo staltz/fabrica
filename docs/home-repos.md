@@ -24,7 +24,7 @@ A deployment says: *this factory, these routines, these repos, these runtimes, t
 # deployments/pr-review.yaml
 factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
 repos:
   - github.com/acme/app
@@ -71,14 +71,14 @@ A local deployment is the same kind of file, with local runtimes, in your person
 ```yaml
 # deployments/my-default.yaml
 factory: { git: github.com/me/factory, ref: main }
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: ["*"]                     # every repo not matched by another local deployment
 ```
 
 ```yaml
 # deployments/oss-work.yaml
 factory: { git: github.com/me/oss-factory, ref: main }
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: [github.com/oss/project]
 routines: [review-before-push]   # optional local routines
 ```

@@ -1,0 +1,7 @@
+# My factory, in every repo I open, in Claude Code and Cursor.
+#
+# The wildcard matches every repo that no other local deployment claims.
+# It's quoted because a bare * means something else in YAML.
+factory: { git: github.com/me/my-factory, ref: main }
+runtimes: [claude-code, cursor-ide]
+repos: ["*"]

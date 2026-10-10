@@ -1,0 +1,10 @@
+description: >-
+  A starter factory for small teams. Write the test first, keep changes
+  small, review every pull request, and write commits and changelogs that
+  people can read.
+
+# Skills that each product repo provides for itself, because only the repo
+# knows the answer. A trailing ? means the skill is optional.
+expects:
+  - test      # how this repo runs its tests
+  - deploy?   # how this repo ships, if it ships at all

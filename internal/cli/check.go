@@ -15,6 +15,7 @@ import (
 	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
+	"github.com/staltz/fabrica/internal/paths"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/product"
 	"github.com/staltz/fabrica/internal/provider"
@@ -66,7 +67,7 @@ hook or a CI step.`,
 			case isHomeRepo(abs):
 				return checkHome(ctx, out, t, abs)
 			default:
-				return checkProduct(ctx, out, t, g, abs, factorySpec)
+				return checkProduct(ctx, out, t, g, abs, len(args) == 1, factorySpec)
 			}
 		},
 	}
@@ -163,11 +164,18 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 	return failIfErrors(errs)
 }
 
-func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir, factorySpec string) error {
+// checkProduct checks a product repo. A folder you name explicitly is
+// treated as the repo's root; otherwise it's the git repo you're in.
+func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir string, explicit bool, factorySpec string) error {
 	repo, top, repoErr := product.RepoName(ctx, dir)
-	if top == "" {
-		top = dir
+	root := dir
+	if !explicit && top != "" {
+		root = top
 	}
+	if top != "" && !paths.Same(top, root) {
+		repo, repoErr = "", fmt.Errorf("%s isn't the root of a git repo, so Fabrica can't tell which repo it is", root)
+	}
+	top = root
 	ws, err := product.InspectDir(ctx, top)
 	if err != nil {
 		return err

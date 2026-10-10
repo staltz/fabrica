@@ -1,0 +1,11 @@
+---
+description: Keep every change small, focused and easy to review
+alwaysApply: true
+---
+Make one change at a time. Small changes are easier to review, easier to revert and easier to bisect when something breaks later. A big change that mixes three things gets a worse review, because nobody can hold all of it in their head.
+
+- **One thing per change.** A bug fix, a feature or a refactor, not two of them at once. If you need to refactor before you can fix something, do the refactor first, as its own commit.
+- **Stay inside the task.** Don't reformat, rename or tidy code you didn't need to touch. If you notice something worth fixing, mention it at the end as a follow-up instead of fixing it now.
+- **Keep pull requests readable in one sitting.** Aim for under about 400 changed lines, not counting lockfiles and generated files. If a task is clearly bigger than that, suggest how to split it before you start.
+- **Commit in small steps** that each build and pass the tests. Write the messages with the `commit-messages` skill.
+- **Check in when the task grows.** If the work turns out bigger or different than expected, stop and tell the user before you carry on. A quick question is cheaper than a big change in the wrong direction.

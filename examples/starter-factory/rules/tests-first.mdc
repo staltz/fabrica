@@ -1,0 +1,13 @@
+---
+description: Write a failing test before changing behavior, and report test results honestly
+alwaysApply: true
+---
+Before you change what code does, write a test that fails without your change. Run it and watch it fail for the reason you expect. Then make it pass with the smallest change you can. A test you saw fail is proof that it tests something, and that your change is what fixed it.
+
+- Find out how to run tests from the repo's own `test` skill. If the repo doesn't have one, say so, and tell the user how you ran the tests instead.
+- For a bug fix, the first test reproduces the bug.
+- Never delete, skip or loosen a failing test to get to green. If a test really is wrong, fix it and say why in the commit message.
+- Before you say you're done, run the tests that cover what you changed. Report what you ran and what happened, including failures you couldn't fix.
+- Refactors, docs and config with no logic don't need a new test, but the existing tests must still pass.
+
+The `test-first` skill has the whole workflow, with tips for code that's hard to test.

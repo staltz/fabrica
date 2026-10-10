@@ -171,6 +171,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if env.Now != nil {
 		now = env.Now()
 	}
+	now = now.Truncate(time.Second) // tidy timestamps keep state diffs readable
 
 	// 1. Take the lock.
 	if err := repo.TakeLock(ctx, name, holder, now); err != nil {
@@ -444,7 +445,11 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 		if err := rt.Tool.Write(rt.Desired); err != nil {
 			return fmt.Errorf("%s: %w", rt.Name, err)
 		}
-		fmt.Fprintf(out, "Local %s: updated %s\n", rt.Name, strings.Join(rt.Tool.Files(), ", "))
+		var files []string
+		for _, f := range rt.Tool.Files() {
+			files = append(files, plan.Tildify(f))
+		}
+		fmt.Fprintf(out, "Local %s: updated %s\n", rt.Name, strings.Join(files, ", "))
 		for _, c := range rt.Changes {
 			fmt.Fprintf(out, "  ✓ %s\n", c)
 		}

@@ -104,3 +104,46 @@ func TestIDsSortByTime(t *testing.T) {
 		t.Errorf("ids %q, %q", a, b)
 	}
 }
+
+// TestDocQueries runs the queries from docs/run-history.md, so the docs
+// can't drift from the schema.
+func TestDocQueries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now()
+	id := NewID(now)
+	db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review", Routine: "pr-review", Runtime: "claude", Repo: "github.com/a/b", ServedBy: ServedRemote})
+	db.SkillLoaded(ctx, id, "pr-review", now)
+	db.AddCheckpoint(ctx, id, Checkpoint{At: now, Author: ByAgent, Status: Failed, Summary: "tests are red", Links: []string{"https://github.com/a/b/pull/3"}})
+	db.Close()
+
+	raw, _ := sql.Open("sqlite", path)
+	defer raw.Close()
+	queries := []string{
+		`SELECT started_at, runtime, repo, routine, intent, last_status FROM run_overview ORDER BY started_at DESC LIMIT 10`,
+		`SELECT routine, COUNT(*) AS runs, SUM(last_status = 'failed') AS failed FROM run_overview WHERE routine IS NOT NULL AND started_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-28 days') GROUP BY routine ORDER BY failed DESC`,
+		`SELECT r.started_at, r.repo, c.author, c.summary FROM checkpoints c JOIN runs r USING (run_id) WHERE c.status = 'failed' ORDER BY c.at DESC`,
+		`SELECT r.started_at, r.deployment, r.routine, r.runtime, r.repo, c.summary FROM checkpoints c JOIN runs r USING (run_id) WHERE c.author = 'fabrica' ORDER BY c.at DESC`,
+		`SELECT skill, COUNT(DISTINCT run_id) AS runs FROM skill_loads GROUP BY skill ORDER BY runs DESC`,
+		`SELECT r.routine, l.value AS link FROM checkpoints c JOIN runs r USING (run_id), json_each(c.links) l WHERE l.value LIKE '%/pull/%'`,
+	}
+	for _, q := range queries {
+		rows, err := raw.Query(q)
+		if err != nil {
+			t.Errorf("%v\n%s", err, q)
+			continue
+		}
+		n := 0
+		for rows.Next() {
+			n++
+		}
+		rows.Close()
+		if n == 0 && !strings.Contains(q, "author = 'fabrica'") {
+			t.Errorf("query returned nothing:\n%s", q)
+		}
+	}
+}

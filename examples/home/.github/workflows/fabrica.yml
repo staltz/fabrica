@@ -1,0 +1,65 @@
+# Fabrica in a team home repo's CI.
+#
+# - On every push to main (that is, after a deployment change is reviewed
+#   and merged), apply it.
+# - Every night, plan. It fails when something needs attention: a stub that
+#   went stale after a factory change, or a product repo that lost its
+#   Fabrica line. It's deliberately plan, not apply: a new trigger or
+#   connector is exactly what a person should review before it's installed.
+#
+# Set these repository secrets:
+#   FABRICA_SERVER_SECRET  the same secret your Fabrica server uses
+#   FABRICA_GIT_TOKEN      a token that can read the factories and product
+#                          repos (and push to this repo, for state)
+name: Fabrica
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+# Applies wait in line instead of racing. (Fabrica's lock keeps racing
+# safe anyway, but waiting is friendlier than failing.)
+concurrency:
+  group: fabrica
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fabrica:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FABRICA_GIT_TOKEN }}
+      - name: Install Fabrica
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/staltz/fabrica/main/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Let git read private repos
+        run: git config --global url."https://x-access-token:${{ secrets.FABRICA_GIT_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Plan
+        if: github.event_name != 'push'
+        env:
+          FABRICA_SERVER_SECRET: ${{ secrets.FABRICA_SERVER_SECRET }}
+        run: fabrica plan
+      - name: Apply
+        if: github.event_name == 'push'
+        env:
+          FABRICA_SERVER_SECRET: ${{ secrets.FABRICA_SERVER_SECRET }}
+        run: |
+          git config user.name "Fabrica"
+          git config user.email "fabrica@users.noreply.github.com"
+          fabrica apply --handoff-dir "$RUNNER_TEMP/handoffs"
+      - name: Keep the handoffs for whoever follows them
+        if: github.event_name == 'push' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: handoffs
+          path: ${{ runner.temp }}/handoffs
+          if-no-files-found: ignore
+          retention-days: 7

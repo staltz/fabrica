@@ -3,6 +3,7 @@ package plan
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -55,6 +56,9 @@ func (p *Plan) Summary() string {
 	parts = append(parts, plural(errors, "error"))
 	switch p.ExitCode() {
 	case 0:
+		if pending > 0 {
+			return fmt.Sprintf("Nothing for apply to do, but %s %s waiting for `fabrica confirm`.", plural(pending, "handoff"), map[bool]string{true: "is", false: "are"}[pending == 1])
+		}
 		return "Everything is in sync (" + strings.Join(parts, ", ") + ")."
 	case 2:
 		return "Plan: " + strings.Join(parts, ", ") + ". Run `fabrica apply` to make these changes."
@@ -133,7 +137,11 @@ func (c *Change) Describe() string {
 func (l *LocalPlan) Render(w io.Writer) {
 	fmt.Fprintln(w, "Local tools on this machine")
 	for _, rt := range l.Runtimes {
-		fmt.Fprintf(w, "  %s (%s)\n", rt.Name, strings.Join(rt.Tool.Files(), ", "))
+		var files []string
+		for _, f := range rt.Tool.Files() {
+			files = append(files, Tildify(f))
+		}
+		fmt.Fprintf(w, "  %s (%s)\n", rt.Name, strings.Join(files, ", "))
 		if len(rt.Changes) == 0 {
 			fmt.Fprintln(w, "    In sync.")
 		}
@@ -142,6 +150,19 @@ func (l *LocalPlan) Render(w io.Writer) {
 		}
 	}
 	renderDiags(w, "  ", l.Diags.Sorted())
+}
+
+// Tildify shortens a path inside your home folder to ~/…, which is easier
+// to read.
+func Tildify(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if rel, ok := strings.CutPrefix(p, home+string(os.PathSeparator)); ok {
+		return "~" + string(os.PathSeparator) + rel
+	}
+	return p
 }
 
 func describeRuntime(rt *Runtime) string {

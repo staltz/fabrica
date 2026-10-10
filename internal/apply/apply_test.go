@@ -551,7 +551,7 @@ func TestDestroyLocalDeployments(t *testing.T) {
 	h.w.MakePersonal(t)
 	h.w.Home.Write(map[string]string{
 		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	if res := h.apply(); res.ExitCode() != 0 {
 		t.Fatalf("apply failed:\n%s", h.out.String())

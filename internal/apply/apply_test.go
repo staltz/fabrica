@@ -359,3 +359,75 @@ func TestApplyRefusesUnpushedHomeChanges(t *testing.T) {
 		t.Fatalf("want an uncommitted-changes error, got %v", err)
 	}
 }
+
+func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.Home.Write(map[string]string{
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+	})
+	// Local deployments are read from the working tree; no commit or remote
+	// is needed.
+	p := h.plan()
+	if p.ExitCode() != 2 || p.Local == nil {
+		t.Fatalf("want local changes:\n%s", render(p))
+	}
+	out := render(p)
+	for _, want := range []string{"+ add MCP server fabrica", "+ add hook for routine oss-work/review-before-push on git.pre_push"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan is missing %q:\n%s", want, out)
+		}
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+
+	claude, _ := os.ReadFile(filepath.Join(h.env.UserHome, ".claude.json"))
+	if !strings.Contains(string(claude), `"--runtime"`) || !strings.Contains(string(claude), h.w.Home.Dir) {
+		t.Errorf("~/.claude.json should register fabrica mcp with the home repo:\n%s", claude)
+	}
+	cursorHooks, _ := os.ReadFile(filepath.Join(h.env.UserHome, ".cursor", "hooks.json"))
+	if !strings.Contains(string(cursorHooks), "beforeShellExecution") || !strings.Contains(string(cursorHooks), "--event git.pre_push") {
+		t.Errorf("Cursor should get a beforeShellExecution hook:\n%s", cursorHooks)
+	}
+	if _, err := os.Stat(filepath.Join(h.env.UserHome, ".codex", "config.toml")); !os.IsNotExist(err) {
+		t.Errorf("codex-cli isn't used by any deployment, so nothing should be written for it (got %v)", err)
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, local tools should be in sync:\n%s", render(p))
+	}
+
+	// Removing every local deployment removes Fabrica from the tools.
+	os.RemoveAll(filepath.Join(h.w.Home.Dir, "deployments"))
+	h.apply()
+	claude, _ = os.ReadFile(filepath.Join(h.env.UserHome, ".claude.json"))
+	if strings.Contains(string(claude), "fabrica") {
+		t.Errorf("fabrica should be gone from ~/.claude.json:\n%s", claude)
+	}
+}
+
+func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.UpdateFactory(map[string]string{"routines/hello.md": "---\ntrigger: { on: session.start }\n---\nSay hi.\n"})
+	h.w.Home.Write(map[string]string{
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\nroutines: [hello]\n",
+	})
+	p := h.plan()
+	d := p.Deployment("mine")
+	if !d.Diags.HasCode("capability.trigger") || !strings.Contains(render(p), "cursor-ide doesn't support trigger session.start") {
+		t.Fatalf("Cursor has no session.start hook, so this should be an error:\n%s", render(p))
+	}
+}
+
+func TestLocalDeploymentInTeamHomeIsAnError(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+	}).CommitPush("oops")
+	p := h.plan()
+	if p.ExitCode() != 1 || !strings.Contains(render(p), "personal home repo") {
+		t.Fatalf("want an error:\n%s", render(p))
+	}
+}

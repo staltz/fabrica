@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/staltz/fabrica/internal/promptblock"
 )
 
 // Claude Code desktop scheduled tasks live in
@@ -151,7 +153,9 @@ func writeClaudeTasks(dir string, desired []Task) error {
 }
 
 // TaskSetup is what you need to do in the Claude desktop app after
-// `fabrica apply` changed scheduled tasks from cur to want, one line each.
+// `fabrica apply` changed scheduled tasks from cur to want, one step each.
+// A step that has you prompt Claude ends with the prompt, wrapped by
+// promptblock.
 // now gives the local time zone, because the app reads cron in local time.
 func TaskSetup(cur, want []Task, now time.Time) []string {
 	byID := map[string]Task{}
@@ -178,7 +182,8 @@ func TaskSetup(cur, want []Task, now time.Time) []string {
 			// The app only runs tasks it created itself, so a new one has
 			// to be registered there once. After that, Fabrica's edits to
 			// its SKILL.md apply on the next run.
-			out = append(out, fmt.Sprintf("Register %s: in a desktop session on your checkout of %s, ask Claude to create a scheduled task from ~/.claude/scheduled-tasks/%s/SKILL.md, keeping its task ID, description and prompt exactly, on %s.", id, t.Repo, id, schedule))
+			prompt := fmt.Sprintf("Create a scheduled task from ~/.claude/scheduled-tasks/%s/SKILL.md. Keep its task ID (`%s`), description and prompt exactly as they are in that file, and schedule it on %s.", id, id, schedule)
+			out = append(out, fmt.Sprintf("Register %s: in a desktop session on your checkout of %s, send Claude this prompt:\n%s", id, t.Repo, promptblock.Wrap(prompt)))
 		}
 	}
 	for _, t := range cur {

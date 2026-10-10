@@ -27,6 +27,7 @@ import (
 	"github.com/staltz/fabrica/internal/fabline"
 	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
+	"github.com/staltz/fabrica/internal/promptblock"
 	"github.com/staltz/fabrica/internal/repourl"
 )
 
@@ -125,7 +126,7 @@ func Check(ws *Workspace, f *factory.Factory) diag.List {
 	}
 	for _, p := range ws.LineProblems {
 		diags.Errorf("product.fabrica-line", where, "%s", p).
-			Hintf("make this the very first line of the file:\n    %s", fabline.Sentence)
+			Hintf("make the line between these delimiters the very first line of the file:\n%s", promptblock.Wrap(fabline.Sentence))
 	}
 	for _, name := range sortedSkillNames(ws.Skills) {
 		if _, ok := f.Skills[name]; ok && !f.Expects(name) {

@@ -282,7 +282,9 @@ func TestTaskSetup(t *testing.T) {
 		t.Errorf("a prompt change needs nothing in the app:\n%s", got)
 	}
 	got = strings.Join(TaskSetup(nil, []Task{a}, now), "\n")
-	if !strings.Contains(got, "Register "+TaskID(a)+": in a desktop session on your checkout of github.com/x/y") || !strings.Contains(got, "on cron `0 12 * * 1`") {
+	wantPrompt := "send Claude this prompt:\n-----BEGIN PROMPT-----\nCreate a scheduled task from ~/.claude/scheduled-tasks/" + TaskID(a) + "/SKILL.md."
+	if !strings.Contains(got, "Register "+TaskID(a)+": in a desktop session on your checkout of github.com/x/y") || !strings.Contains(got, wantPrompt) ||
+		!strings.Contains(got, "on cron `0 12 * * 1` (`0 9 * * 1` in UTC, at today's offset of UTC+03:00).\n-----END PROMPT-----") {
 		t.Errorf("unexpected setup for a new task:\n%s", got)
 	}
 }

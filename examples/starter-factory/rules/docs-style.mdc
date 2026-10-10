@@ -1,0 +1,19 @@
+---
+description: How to write Markdown docs, like READMEs, guides and design notes
+globs: "**/*.md"
+alwaysApply: false
+---
+Docs are for a reader who's new, busy and trying to get one thing done. Write for that person.
+
+- **Use plain English.** Short sentences, one idea each. Explain any term a newcomer might not know the first time you use it.
+- **Start with what the reader wants to do**, then how to do it. Put the most common case first and the rare ones later.
+- **Explain why**, not only what. A rule people understand is a rule people follow.
+- **Show real examples.** A command or a snippet that works beats a paragraph describing it. Say what output to expect.
+- **Make commands copy-pasteable.** Put them in code blocks with a language tag (like `bash` or `yaml`), leave out the `$` prompt, and explain any placeholder like `<your-repo>`.
+- **Use headings in sentence case**, and keep their levels in order. Don't jump from `##` to `####`.
+- **Use lists for steps and options**, and prose for explanations.
+- **Link instead of copying.** Copied text goes out of date; a link stays right.
+- **Leave out filler and hype**, like "simply", "just", "easy", "obviously" and "powerful". They add nothing, and they make readers who are struggling feel worse.
+- **Update docs in the same change as the code** they describe, so they never drift apart.
+
+`CHANGELOG.md` has its own format. Follow the `changelog` skill for that file.

@@ -1,0 +1,33 @@
+# The capability matrix of "Acme Runner", a pretend in-house agent runner.
+# It's plain data: `fabrica check` and `fabrica plan` read it without
+# running any code.
+kind: cloud
+description: Acme Runner, our in-house agent runner (an example folder provider)
+
+# Try the API first. If the api program were missing, Fabrica would fall
+# back to writing handoff instructions from handoff.md.
+apply_modes: [api, handoff]
+
+# Our API can list resources and read their Fabrica identity back, which
+# api mode needs, so Fabrica never creates duplicates.
+find_by_identity: true
+
+# Cloud runtimes read skills file by file over MCP.
+skill_transport: text
+
+# Acme Runner can send an Authorization header to MCP servers.
+mcp_auth:
+  header: native
+  url: native
+
+triggers:
+  github.issues.opened: native
+  schedule: native
+
+connectors:
+  github: native
+  mcp.http: native
+
+side_effects:
+  github.issue_comment: native
+  "*": emulated

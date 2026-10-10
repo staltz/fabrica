@@ -1,0 +1,507 @@
+package plan
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/staltz/fabrica/internal/diag"
+	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/home"
+	"github.com/staltz/fabrica/internal/product"
+	"github.com/staltz/fabrica/internal/provider"
+	"github.com/staltz/fabrica/internal/repourl"
+	"github.com/staltz/fabrica/internal/stub"
+	"github.com/staltz/fabrica/internal/token"
+)
+
+func gitURL(spec string) string { return repourl.GitURL(spec) }
+
+// PlanCloud plans one cloud deployment, including one whose file was
+// deleted (all its resources become deletes). Apply calls it again once it
+// holds the deployment's lock.
+func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deployment {
+	d := h.Deployments[name]
+	dp := &Deployment{Name: name, Spec: d}
+	state, err := home.ReadState(h.Dir, name)
+	if err != nil {
+		dp.Diags.Errorf("state.invalid", home.StatePath(name), "%v", err)
+		return dp
+	}
+	dp.State = state
+	if state.Lock != nil && (e.LockHolder == "" || state.Lock.Holder != e.LockHolder) {
+		dp.Diags.Errorf("deployment.locked", home.StatePath(name), "deployment %s is locked by %q since %s", name, state.Lock.Holder, state.Lock.Since.Format(time.RFC3339)).
+			Hintf("another apply is running; wait for it. If it crashed, run `fabrica unlock %s` (the next apply adopts whatever it created)", name)
+	}
+	seen := map[home.Key]bool{}
+	for _, r := range state.Resources {
+		if seen[r.Key()] {
+			dp.Diags.Errorf("state.duplicate", home.StatePath(name), "state lists %s on %s twice", r.ID, r.Runtime).
+				Hintf("only Fabrica writes state files; restore this one from git history")
+		}
+		seen[r.Key()] = true
+	}
+
+	if d != nil {
+		e.planDesired(ctx, dp, d)
+	}
+	providers := e.providersForCleanup(ctx, dp)
+	current := e.refresh(ctx, dp, providers)
+	e.diff(dp, current, providers)
+	return dp
+}
+
+// planDesired works out every stub the deployment should have, and every
+// error that stands in the way.
+func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deployment) {
+	e.loadFactory(ctx, dp, d.Factory)
+	f := dp.Factory
+	if f == nil {
+		return
+	}
+	for _, rt := range d.Runtimes {
+		p, err := resolveProvider(rt, f)
+		if err != nil {
+			dp.Diags.Errorf("deployment.unknown-runtime", d.File, "%v", err)
+			continue
+		}
+		if p.Matrix.Scope != d.Scope {
+			dp.Diags.Errorf("deployment.runtime-scope", d.File, "runtime %s is a %s runtime, but this is a %s deployment", rt, p.Matrix.Scope, d.Scope)
+			continue
+		}
+		mode, err := p.Mode()
+		if err != nil {
+			dp.Diags.Errorf("provider.no-mode", d.File, "%v", err)
+			continue
+		}
+		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
+	}
+	routines := checkRoutinesAndParams(dp, d, f)
+	for _, rt := range dp.Runtimes {
+		for _, r := range routines {
+			ev := stub.Evaluate(f, r, stub.Target{Deployment: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint()})
+			rt.Evaluations[r.Ref.Name] = ev
+			dp.Diags = append(dp.Diags, ev.Diags...)
+		}
+	}
+	e.checkProductRepos(ctx, dp, d, f)
+
+	if dp.Diags.HasErrors() {
+		return // no point working out stubs that can't be installed
+	}
+	tokenHash := ""
+	if e.Secret != "" {
+		tokenHash = token.Hash(token.For(e.Secret, d.Name))
+	}
+	for _, rt := range dp.Runtimes {
+		for _, r := range routines {
+			ev := rt.Evaluations[r.Ref.Name]
+			fp := ev.Shape.Fingerprint()
+			for _, repo := range d.SpecificRepos() {
+				id := stub.Identity(d.Endpoint(), r.Ref.Name, repo)
+				dp.Desired = append(dp.Desired, &Resource{
+					Key: home.Key{Runtime: rt.Name, ID: id}, Deployment: d.Name, Runtime: rt.Name,
+					Routine: r.Ref.Name, Repo: repo, Endpoint: d.Endpoint(), Eval: ev, Fingerprint: fp,
+					Prompt: stub.Prompt(id, r.Ref.Name, rt.Name, repo, fp), TokenHash: tokenHash,
+					Mode: rt.Mode, Provider: rt.Provider,
+				})
+			}
+		}
+	}
+}
+
+// checkProductRepos reads each deployed repo's default branch and checks
+// it can be served: remote runs can't inspect the workspace, so this is
+// where a missing Fabrica line or a skill clash gets caught.
+func (e *Env) checkProductRepos(ctx context.Context, dp *Deployment, d *home.Deployment, f *factory.Factory) {
+	for _, repo := range d.SpecificRepos() {
+		ws, err := product.InspectRemote(ctx, e.Git, repo)
+		if err != nil {
+			dp.Diags.Errorf("product.unreadable", repo, "couldn't read the repo's default branch: %v", err)
+			continue
+		}
+		for _, diagnostic := range product.Check(ws, f) {
+			if diagnostic.Severity == diag.Note {
+				continue
+			}
+			dp.Diags.Add(diagnostic)
+		}
+	}
+}
+
+// providersForCleanup finds the provider of every runtime that has
+// something in state, including runtimes the deployment no longer uses.
+func (e *Env) providersForCleanup(ctx context.Context, dp *Deployment) map[string]*provider.Provider {
+	out := map[string]*provider.Provider{}
+	for _, rt := range dp.Runtimes {
+		out[rt.Name] = rt.Provider
+	}
+	if dp.State == nil {
+		return out
+	}
+	needed := map[string]bool{}
+	for _, r := range dp.State.Resources {
+		needed[r.Runtime] = true
+	}
+	for _, p := range dp.State.Pending {
+		needed[p.Runtime] = true
+	}
+	var oldFactory *factory.Factory
+	for rt := range needed {
+		if out[rt] != nil {
+			continue
+		}
+		if p, ok := provider.Builtin(rt); ok {
+			out[rt] = p
+			continue
+		}
+		// A folder provider the deployment no longer uses: load it from
+		// the factory the last apply used.
+		if oldFactory == nil && dp.State.Factory != nil {
+			sf := dp.State.Factory
+			oldFactory, _ = e.Loader.LoadGit(ctx, sf.Git, sf.Commit, sf.Path)
+		}
+		if p, err := resolveProvider(rt, oldFactory); err == nil {
+			out[rt] = p
+		} else {
+			dp.Diags.Errorf("cleanup.unknown-runtime", home.StatePath(dp.Name), "can't clean up resources on runtime %s: %v", rt, err)
+		}
+	}
+	return out
+}
+
+// refresh returns what's installed. It starts from state and, for
+// runtimes whose API can find resources by identity, asks the runtime.
+func (e *Env) refresh(ctx context.Context, dp *Deployment, providers map[string]*provider.Provider) map[home.Key]home.Resource {
+	current := map[home.Key]home.Resource{}
+	if dp.State != nil {
+		for _, r := range dp.State.Resources {
+			current[r.Key()] = r
+		}
+	}
+	if !e.Refresh || dp.Diags.HasErrors() {
+		return current
+	}
+	endpoints := endpointsToList(dp)
+	for _, rt := range sortedProviderNames(providers) {
+		p := providers[rt]
+		if mode, _ := p.Mode(); mode != provider.API || p.IsLocal() {
+			continue
+		}
+		api, err := p.API()
+		if err != nil {
+			continue
+		}
+		var found []provider.RemoteResource
+		failed := false
+		for _, endpoint := range endpoints {
+			list, err := api.List(ctx, dp.Name, endpoint)
+			if err != nil {
+				dp.Diags.Errorf("refresh.failed", rt, "couldn't list resources: %v", err)
+				failed = true
+				break
+			}
+			found = append(found, list...)
+		}
+		if failed {
+			continue
+		}
+		byID := map[string][]provider.RemoteResource{}
+		for _, r := range found {
+			byID[r.Identity] = append(byID[r.Identity], r)
+		}
+		for _, id := range sortedRemoteIDs(byID) {
+			list := byID[id]
+			if len(list) > 1 {
+				var ids []string
+				for _, r := range list {
+					ids = append(ids, r.RemoteID)
+				}
+				dp.Diags.Errorf("refresh.duplicate", rt, "two or more resources share the identity %s: %s", id, strings.Join(ids, ", ")).
+					Hintf("Fabrica won't pick one to delete; remove the extra ones by hand, then plan again")
+				continue
+			}
+			key := home.Key{Runtime: rt, ID: id}
+			r, inState := current[key]
+			if !inState {
+				r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API)}
+				r.Routine, r.Repo = splitIdentity(id)
+				dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
+					Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
+					Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
+			}
+			r.RemoteID = list[0].RemoteID
+			if list[0].Fingerprint != "" {
+				r.Shape.Fingerprint = list[0].Fingerprint
+			}
+			current[key] = r
+		}
+		// Resources state remembers but the runtime no longer has.
+		for key, r := range current {
+			if key.Runtime == rt && r.RemoteID != "" && len(byID[key.ID]) == 0 {
+				delete(current, key)
+				dp.Notes = append(dp.Notes, fmt.Sprintf("%s on %s is in state but gone from the runtime (deleted by hand?)", key.ID, rt))
+			}
+		}
+	}
+	return current
+}
+
+// endpointsToList is every endpoint this deployment may own resources
+// under: its current one, plus any older ones still recorded in state (from
+// before a server: change, or for a deleted deployment).
+func endpointsToList(dp *Deployment) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(endpoint string) {
+		// Compare without the scheme: identities don't carry one.
+		if id := stub.EndpointID(endpoint); endpoint != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, endpoint)
+		}
+	}
+	if dp.Spec != nil {
+		add(dp.Spec.Endpoint())
+	}
+	if dp.State != nil {
+		for _, r := range dp.State.Resources {
+			if prefix, _, ok := strings.Cut(r.ID, "#"); ok {
+				add("https://" + prefix)
+			}
+		}
+	}
+	return out
+}
+
+// diff compares what's wanted with what's there.
+func (e *Env) diff(dp *Deployment, current map[home.Key]home.Resource, providers map[string]*provider.Provider) {
+	pending := map[home.Key]home.Pending{}
+	if dp.State != nil {
+		for _, p := range dp.State.Pending {
+			pending[p.Key()] = p
+		}
+	}
+	wanted := map[home.Key]bool{}
+	for _, want := range dp.Desired {
+		wanted[want.Key] = true
+		pend, hasPend := pending[want.Key]
+		cur, hasCur := current[want.Key]
+		if hasPend && pend.Action != string(Delete) && pend.Shape != nil && pend.Shape.Fingerprint == want.Fingerprint && tokenMatches(pend.TokenHash, want.TokenHash) {
+			dp.Pending = append(dp.Pending, pend)
+			continue
+		}
+		c := &Change{Key: want.Key, Routine: want.Routine, Repo: want.Repo, Mode: want.Mode, Provider: want.Provider, Desired: want}
+		if hasPend {
+			c.Supersedes = pend.ID
+		}
+		if hasCur {
+			reasons := shapeReasons(cur.Shape, want)
+			if !tokenMatches(cur.TokenHash, want.TokenHash) {
+				reasons = append(reasons, "the deployment's token changed (the server secret was rotated)")
+			}
+			if len(reasons) == 0 && !hasPend {
+				continue // in sync
+			}
+			if len(reasons) == 0 {
+				reasons = []string{"a pending handoff was made for another version of this stub"}
+			}
+			curCopy := cur
+			c.Action, c.Current, c.Reasons = Update, &curCopy, reasons
+		} else {
+			c.Action, c.Reasons = Create, []string{"it isn't installed yet"}
+		}
+		dp.Changes = append(dp.Changes, c)
+	}
+
+	for _, key := range sortedKeysOf(current) {
+		if wanted[key] {
+			continue
+		}
+		cur := current[key]
+		if pend, ok := pending[key]; ok && pend.Action == string(Delete) {
+			dp.Pending = append(dp.Pending, pend)
+			continue
+		}
+		p := providers[key.Runtime]
+		mode := provider.Handoff
+		if p != nil {
+			mode, _ = p.Mode()
+		}
+		c := &Change{Action: Delete, Key: key, Routine: cur.Routine, Repo: cur.Repo, Mode: mode, Provider: p, Current: &cur,
+			Reasons: []string{e.whyGone(dp, cur)}}
+		if pend, ok := pending[key]; ok {
+			c.Supersedes = pend.ID
+		}
+		if p == nil {
+			continue // the error was reported in providersForCleanup
+		}
+		dp.Changes = append(dp.Changes, c)
+	}
+
+	// A create handoff that's still pending for something no longer
+	// wanted: we can't know whether someone already did it, so ask them to
+	// delete it if they did.
+	for _, key := range sortedPendingKeys(pending) {
+		pend := pending[key]
+		if wanted[key] || pend.Action != string(Create) {
+			continue
+		}
+		if _, ok := current[key]; ok {
+			continue
+		}
+		p := providers[key.Runtime]
+		if p == nil {
+			continue
+		}
+		mode, _ := p.Mode()
+		dp.Changes = append(dp.Changes, &Change{Action: Delete, Key: key, Routine: pend.Routine, Repo: pend.Repo, Mode: mode, Provider: p,
+			Current:    &home.Resource{ID: pend.Resource, Runtime: pend.Runtime, Routine: pend.Routine, Repo: pend.Repo, Mode: string(mode)},
+			Reasons:    []string{"a create handoff for it was never confirmed, and it's no longer deployed; if someone created it anyway, it needs to go"},
+			Supersedes: pend.ID})
+	}
+	sort.SliceStable(dp.Changes, func(i, j int) bool {
+		a, b := dp.Changes[i], dp.Changes[j]
+		if a.Key.ID != b.Key.ID {
+			return a.Key.ID < b.Key.ID
+		}
+		return a.Key.Runtime < b.Key.Runtime
+	})
+}
+
+// shapeReasons explains how an installed stub differs from the wanted one.
+func shapeReasons(cur home.Shape, want *Resource) []string {
+	if cur.Fingerprint == want.Fingerprint {
+		return nil
+	}
+	shape := want.Eval.Shape
+	var reasons []string
+	if cur.Trigger != "" && (cur.Trigger != shape.Trigger || cur.Cron != shape.Cron) {
+		reasons = append(reasons, fmt.Sprintf("the trigger changed from %s to %s", describeTrigger(cur.Trigger, cur.Cron), describeTrigger(shape.Trigger, shape.Cron)))
+	}
+	if cur.Trigger != "" {
+		if added, removed := diffNames(cur.Connectors, shape.ConnectorNames()); len(added)+len(removed) > 0 {
+			var parts []string
+			if len(added) > 0 {
+				parts = append(parts, "adds "+strings.Join(added, ", "))
+			}
+			if len(removed) > 0 {
+				parts = append(parts, "drops "+strings.Join(removed, ", "))
+			}
+			reasons = append(reasons, "the connectors changed ("+strings.Join(parts, "; ")+")")
+		}
+	}
+	if len(reasons) == 0 {
+		if cur.Fingerprint == "" {
+			reasons = append(reasons, "Fabrica can't tell which version of the stub is installed")
+		} else {
+			reasons = append(reasons, fmt.Sprintf("its shape changed (a connector's settings or the server address; stub %s → %s)", cur.Fingerprint, want.Fingerprint))
+		}
+	}
+	return reasons
+}
+
+func describeTrigger(on, cron string) string {
+	if cron != "" {
+		return on + " (" + cron + ")"
+	}
+	return on
+}
+
+// whyGone explains why an installed stub is no longer deployed.
+func (e *Env) whyGone(dp *Deployment, r home.Resource) string {
+	d := dp.Spec
+	switch {
+	case d == nil:
+		return "its deployment file was deleted"
+	case !d.HasRuntime(r.Runtime):
+		return fmt.Sprintf("runtime %s was removed from the deployment", r.Runtime)
+	case !d.HasRoutine(r.Routine):
+		return fmt.Sprintf("routine %s was removed from the deployment", r.Routine)
+	case !d.Covers(r.Repo):
+		return fmt.Sprintf("repo %s was removed from the deployment", r.Repo)
+	case d.Endpoint() != "" && !strings.HasPrefix(r.ID, stub.EndpointID(d.Endpoint())+"#"):
+		return "the deployment's server address changed, so this stub belongs to the old one"
+	}
+	return "it's no longer deployed"
+}
+
+func tokenMatches(have, want string) bool {
+	// When we don't know the wanted token (no secret), we can't tell.
+	return want == "" || have == want
+}
+
+func diffNames(before, after []string) (added, removed []string) {
+	b := map[string]bool{}
+	for _, n := range before {
+		b[n] = true
+	}
+	a := map[string]bool{}
+	for _, n := range after {
+		a[n] = true
+		if !b[n] {
+			added = append(added, n)
+		}
+	}
+	for _, n := range before {
+		if !a[n] {
+			removed = append(removed, n)
+		}
+	}
+	return added, removed
+}
+
+// splitIdentity pulls the routine and repo out of an identity like
+// host/deployment#routine@repo.
+func splitIdentity(id string) (routine, repo string) {
+	_, rest, _ := strings.Cut(id, "#")
+	routine, repo, _ = strings.Cut(rest, "@")
+	return routine, repo
+}
+
+func sortedKeysOf(m map[home.Key]home.Resource) []home.Key {
+	keys := make([]home.Key, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ID != keys[j].ID {
+			return keys[i].ID < keys[j].ID
+		}
+		return keys[i].Runtime < keys[j].Runtime
+	})
+	return keys
+}
+
+func sortedPendingKeys(m map[home.Key]home.Pending) []home.Key {
+	keys := make([]home.Key, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ID != keys[j].ID {
+			return keys[i].ID < keys[j].ID
+		}
+		return keys[i].Runtime < keys[j].Runtime
+	})
+	return keys
+}
+
+func sortedProviderNames(m map[string]*provider.Provider) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedRemoteIDs(m map[string][]provider.RemoteResource) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

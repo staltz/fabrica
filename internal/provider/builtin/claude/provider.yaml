@@ -1,0 +1,37 @@
+# Claude Code routines, running on claude.ai.
+#
+# Our best reading of the Claude Code docs as of October 2026. Routines can
+# fire on a schedule (at most hourly) or on GitHub pull request and release
+# events. There's no public API to create or list routines yet (the API can
+# only fire one), so Fabrica uses handoff: it writes instructions and you, or
+# an AI with computer use, click through the setup.
+kind: cloud
+description: Claude Code routines on claude.ai
+apply_modes: [handoff]
+find_by_identity: false
+skill_transport: text
+mcp_auth:
+  # Custom connectors may accept request headers, but it isn't documented
+  # whether routines send them, so we put the token in the URL to be safe.
+  header: unsupported
+  url: native
+triggers:
+  schedule: native
+  github.pull_request.opened: native
+  github.pull_request.synchronize: native
+  github.pull_request.reopened: native
+  github.pull_request.ready_for_review: native
+  github.pull_request.closed: native
+  github.release.published: native
+connectors:
+  github: native
+  slack: native
+  linear: native
+  notion: native
+  mcp.http: native
+  mcp.sse: native
+  mcp.stdio: unsupported
+side_effects:
+  # Claude acts through its connectors' tools, so every side effect turns
+  # into prompt instructions plus the connector that carries it out.
+  "*": emulated

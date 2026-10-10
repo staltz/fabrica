@@ -1,0 +1,15 @@
+# Review every new pull request, on Claude and Cursor, in two repos.
+#
+# The file name is the deployment's ID: pr-review. Its endpoint on the
+# Fabrica server is https://fabrica.acme.dev/pr-review, and it expands to
+# 1 routine × 2 repos × 2 runtimes = 4 stubs.
+factory: { git: github.com/acme/factory, ref: stable }   # a branch: follows it
+server: https://fabrica.acme.dev
+runtimes: [claude, cursor]
+routines: [pr-review]
+repos:
+  - github.com/acme/app
+  - repo: github.com/acme/api
+    params: { slack_channel: "#api" }     # this repo's reviews go to #api
+params:
+  slack_channel: "#eng"

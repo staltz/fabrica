@@ -1,0 +1,26 @@
+# OpenAI Codex CLI on your machine.
+#
+# `fabrica apply` adds a `fabrica` MCP server to ~/.codex/config.toml and
+# installs local routines as hooks in ~/.codex/hooks.json. Codex skips new or
+# changed hooks until you trust them in its /hooks screen, so after an apply
+# that changes a hook, open Codex and approve it there.
+kind: local
+description: OpenAI Codex CLI on your machine
+apply_modes: [api]
+find_by_identity: true
+skill_transport: directory
+triggers:
+  session.start: native
+  prompt.submit: native
+  session.stop: native
+  git.pre_commit: native
+  git.pre_push: native
+connectors:
+  mcp.http: native
+  mcp.stdio: native
+  mcp.sse: unsupported
+  github: emulated
+  slack: emulated
+  linear: emulated
+side_effects:
+  "*": emulated

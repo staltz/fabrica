@@ -19,7 +19,7 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `factory` | The factory format: manifest, lock, every item kind, import resolution (factories and plain repos), filters, collisions, overrides, expects, lint warnings, and `lock`/`upgrade`. |
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
-| `home` | Home repos: deployments, local matching, and state files. |
+| `home` | Home repos: deployments, local matching, state files, and creating your personal home repo when it's missing. |
 | `token` | Deployment tokens: `HMAC(secret, deployment name)`. |
 | `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries. |
 | `plan` | Compares what's wanted with what's installed, and sorts it into changes and errors. |

@@ -68,12 +68,10 @@ git add . && git commit -m "My factory"
 
 Push it somewhere git can reach, like `github.com/you/my-factory`.
 
-**2. Make your personal home repo** at `~/.fabrica`:
+**2. Add a deployment to your personal home repo** at `~/.fabrica`. Fabrica created it the first time you ran it (a git repo with an empty `deployments/` folder), so just add a file:
 
 ```sh
-mkdir -p ~/.fabrica/deployments && cd ~/.fabrica && git init
-echo "runs.db*" > .gitignore
-cat > deployments/my-default.yaml <<'EOF'
+cat > ~/.fabrica/deployments/my-default.yaml <<'EOF'
 factory: { git: github.com/you/my-factory, ref: main }
 runtimes: [claude-code, cursor-ide]
 repos: ["*"]                 # every repo not matched by another local deployment

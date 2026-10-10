@@ -43,15 +43,11 @@ Factory /home/you/code/my-factory
 
 Push your factory somewhere git can reach, like `github.com/you/my-factory`. While you're just trying things out, a local path works too.
 
-### 2. Make your personal home repo
+### 2. Set up your personal home repo
 
 Your personal home repo lives at `~/.fabrica` (set `FABRICA_HOME` to put it somewhere else). It's a normal git repo, so you can push it and clone it on your next laptop.
 
-```sh
-mkdir -p ~/.fabrica/deployments
-cd ~/.fabrica && git init
-echo "runs.db*" > .gitignore     # local run history lives here, but stays out of git
-```
+You don't need to make it: the first `fabrica` command you ran made it for you, with `git init`, an empty `deployments/` folder and a `.gitignore` that keeps local run history (`runs.db`) out of git. Nothing is committed yet.
 
 Add a **local deployment**: "use my factory in every repo, in Claude Code and Cursor".
 

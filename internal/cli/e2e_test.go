@@ -18,6 +18,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
+	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/mcpserver"
 	"github.com/staltz/fabrica/internal/runs"
 	"github.com/staltz/fabrica/internal/testkit"
@@ -32,7 +33,16 @@ func TestMain(m *testing.M) {
 	if os.Getenv("FABRICA_TEST_AS_CLI") == "1" {
 		os.Exit(Main(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
-	os.Exit(m.Run())
+	// Every command creates your personal home repo if it's missing, so
+	// tests that don't choose one get a throwaway one, never ~/.fabrica.
+	dir, err := os.MkdirTemp("", "fabrica-home-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("FABRICA_HOME", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // fab runs the CLI in-process and returns its output and exit code.
@@ -62,6 +72,11 @@ func setupCLI(t *testing.T) *testkit.World {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CI", "")
 	t.Setenv(token.EnvVar, testkit.Secret)
+	// Start with the personal home repo there already, as it is after your
+	// first command, so its creation doesn't show up in every output.
+	if _, _, err := home.EnsurePersonal(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	return w
 }
 
@@ -342,5 +357,36 @@ func TestVersionAndUsageErrors(t *testing.T) {
 	}
 	if out, code := fab(t, "", "mcp"); code != 1 || !strings.Contains(out, "--runtime is required") {
 		t.Errorf("mcp without --runtime: %d %s", code, out)
+	}
+}
+
+// TestAnyCommandCreatesPersonalHome checks that whatever you run, even a
+// command that fails, your personal home repo is there afterwards.
+func TestAnyCommandCreatesPersonalHome(t *testing.T) {
+	setupCLI(t)
+	for _, args := range [][]string{{"version"}, {"-v"}, {"--help"}, {"mcp"}} {
+		dir := filepath.Join(t.TempDir(), "fabrica-home")
+		t.Setenv("FABRICA_HOME", dir)
+		out, _ := fab(t, "", args...)
+		if !strings.HasPrefix(out, "Created your personal home repo at "+dir+".\n") {
+			t.Errorf("fabrica %s should say it created the home repo:\n%s", strings.Join(args, " "), out)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			t.Errorf("fabrica %s didn't create the home repo: %v", strings.Join(args, " "), err)
+		}
+		if out, _ := fab(t, "", args...); strings.Contains(out, "Created") {
+			t.Errorf("fabrica %s should create the home repo only once:\n%s", strings.Join(args, " "), out)
+		}
+	}
+
+	// When it can't, the command still runs.
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FABRICA_HOME", filepath.Join(file, "home"))
+	out := mustFab(t, 0, "", "version")
+	if !strings.Contains(out, "fabrica: couldn't create your personal home repo at "+filepath.Join(file, "home")) || !strings.Contains(out, "fabrica dev") {
+		t.Errorf("want a warning, then the version:\n%s", out)
 	}
 }

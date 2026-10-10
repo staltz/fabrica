@@ -27,6 +27,7 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `runs` | The run-history database. |
 | `mcpserver` | The MCP server: the eight tools, the local (stdio) and remote (HTTP) modes, stale-stub checks and skill unpacking. |
 | `hook` | What `fabrica hook` does when a local tool fires a hook. |
+| `selfupdate` | `fabrica self-update`: finds a release, downloads and checks it, and swaps it in for the running binary. |
 | `cli` | The cobra commands. Thin: they parse flags, call the packages above and print. |
 | `testkit` | Test helpers: a fake git host, home repos with a shared remote, the toy runtime, and a ready-made world. |
 

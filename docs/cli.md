@@ -20,6 +20,7 @@ Every command has `--help`.
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud deployments. `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
+| `FABRICA_DOWNLOAD_URL` | A mirror for `self-update` (and `install.sh`) to download from instead of GitHub releases: a folder with one release's `fabrica-<os>-<arch>` binaries and `checksums.txt`. |
 | `CI` | When set, `plan` and `apply` skip local deployments, since CI has nothing local to set up. |
 
 Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead.
@@ -115,6 +116,25 @@ Serves a factory over MCP.
 | `--listen <address>` | `:8080` | Where to listen. |
 | `--db <file>` | `fabrica-runs.db` | The run-history database. |
 | `--refresh <duration>` | `1m` | How often to re-fetch. |
+
+## `fabrica self-update`
+
+Updates the `fabrica` binary to the latest release. It downloads the same files as `install.sh` (the binary for your OS and CPU, and `checksums.txt`), checks the binary's checksum, and runs it once to make sure it works on your machine. Only then does it replace the old binary, in one atomic rename, at the same path. If anything goes wrong, your `fabrica` stays exactly as it was.
+
+The path matters because `fabrica apply` writes it into your local tools' configs, so they keep working across updates without a re-apply. When `fabrica` is a symlink, the file it points to is replaced and the link stays. Fabrica processes that are already running, like the MCP servers your AI tools started, keep the old version until they restart.
+
+It never downgrades on its own. If you're running something newer than the latest release (like a build from source), it says so and stops.
+
+| Flag | What it does |
+|---|---|
+| `--version <tag>` | Install this release, like `v0.2.0`, even if it's older than yours. |
+| `--check` | Only say whether there's an update. Exits `0` when you're up to date, `2` when there's an update, `1` on errors. |
+
+Set `FABRICA_DOWNLOAD_URL` to update from a mirror instead of GitHub. Then it installs whatever release the mirror has, if its binary is different from yours.
+
+If `fabrica` is installed somewhere you can't write to, like `/usr/local/bin`, run it with `sudo`. In the container image, rebuild the image instead.
+
+Fabrica v0.1.0 doesn't have `self-update`. To update from v0.1.0, run the install script again.
 
 ## `fabrica version`
 

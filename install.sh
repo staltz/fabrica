@@ -65,6 +65,7 @@ mkdir -p "$install_dir"
 chmod +x "$tmp/$asset"
 mv "$tmp/$asset" "$install_dir/fabrica"
 say "Installed $("$install_dir/fabrica" version) to $install_dir/fabrica"
+say "To update it later, run: fabrica self-update"
 
 case ":$PATH:" in
   *":$install_dir:"*) ;;

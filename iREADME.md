@@ -47,6 +47,8 @@ curl -fsSL https://raw.githubusercontent.com/staltz/fabrica/main/install.sh | ba
 
 That puts `fabrica` in `~/.local/bin` (set `FABRICA_INSTALL_DIR` to change it). You also need `git`, since Fabrica runs it to read factories and to commit state.
 
+To update it later, run `fabrica self-update`. It replaces the binary in place with the latest release, after checking it the same way the install script does.
+
 Prefer building from source? You'll need Go 1.26 or newer:
 
 ```sh
@@ -108,6 +110,7 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 | `fabrica confirm <id>` | Closes a handoff once someone has followed its instructions. |
 | `fabrica unlock <deployment>` | Removes a lock left behind by a crashed apply. |
 | `fabrica mcp [--http]` | Serves a factory over MCP: locally over stdio, or remotely over HTTP. |
+| `fabrica self-update` | Updates the `fabrica` binary to the latest release. |
 
 Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 

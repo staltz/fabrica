@@ -60,11 +60,13 @@ went away. It calls out changes to items you override (so you can decide
 whether your version needs the same change) and new provider code (which
 can run with your runtime credentials during apply).
 
-It asks before writing fabrica.lock, unless you pass --yes.`,
+It asks before writing fabrica.lock, unless you pass --yes.
+
+To update the fabrica binary itself, use ` + "`fabrica self-update`" + `.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			abs, err := factoryDir([]string{dir})
 			if err != nil {
-				return err
+				return fmt.Errorf("%w (to update fabrica itself, run `fabrica self-update`)", err)
 			}
 			t, err := newTools()
 			if err != nil {

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,6 +29,14 @@ import (
 
 // version is set at build time with -ldflags "-X …/cli.version=v0.1.0".
 var version = "dev"
+
+func init() {
+	// `go install …@v0.1.0` sets no -ldflags, but Go records the module's
+	// version in the binary, and self-update needs to know it.
+	if info, ok := debug.ReadBuildInfo(); ok && version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+}
 
 // ExitError carries a specific exit code out of a command. `fabrica plan`
 // uses it to exit with 2 when there are changes.
@@ -105,6 +114,7 @@ Typical workflow:
 		newUnlock(g),
 		newMCP(g),
 		newHook(g),
+		newSelfUpdate(),
 		newVersion(),
 	)
 	return root

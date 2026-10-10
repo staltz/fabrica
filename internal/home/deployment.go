@@ -283,7 +283,7 @@ func parseRepoEntry(node *yaml.Node) (RepoEntry, error) {
 			return RepoEntry{}, fmt.Errorf("params of %s: %v", raw, err)
 		}
 		if raw == "" {
-			return RepoEntry{}, fmt.Errorf("line %d: a repo entry needs repo:", node.Line)
+			return RepoEntry{}, fmt.Errorf("line %d: a repo entry needs a repo key", node.Line)
 		}
 	default:
 		return RepoEntry{}, fmt.Errorf("line %d: each repo is a name like github.com/acme/app, or `{ repo: …, params: … }`", node.Line)

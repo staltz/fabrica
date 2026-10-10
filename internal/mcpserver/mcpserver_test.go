@@ -80,6 +80,7 @@ func connect(t *testing.T, srv *mcp.Server, roots ...string) *client {
 	go func() { _ = srv.Run(ctx, st) }()
 	cl := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1"}, nil)
 	for _, r := range roots {
+		//lint:ignore SA1019 the local server still reads roots during their deprecation window
 		cl.AddRoots(&mcp.Root{URI: "file://" + r})
 	}
 	cs, err := cl.Connect(ctx, ct, nil)

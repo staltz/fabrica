@@ -54,13 +54,6 @@ type Env struct {
 	Now func() time.Time
 }
 
-func (e *Env) now() time.Time {
-	if e.Now != nil {
-		return e.Now()
-	}
-	return time.Now().UTC()
-}
-
 // Plan is the whole plan for a home repo.
 type Plan struct {
 	Home        *home.Home

@@ -16,7 +16,7 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 {{- else -}}
 # {{if eq .Action "create"}}Create{{else}}Update{{end}} Cursor automation for `{{.Routine}}` on `{{.Repo}}`
 
-{{if eq .Action "update"}}This routine's shape changed (its trigger or connectors), so the Cursor automation needs updating. Until it is, the Fabrica server refuses its runs.
+{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors or memory setting), so the Cursor automation needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
 1. Open Cursor's automations (cursor.com → Cloud Agents → Automations){{if eq .Action "update"}} and find the automation named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and create a new automation{{end}}.
@@ -28,13 +28,14 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 {{- range .Connectors}}
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
-6. Prompt. Replace the whole prompt with this, exactly:
+6. Memory: {{if .Memory.Needed}}turn the automation's memory tool **on**. This routine keeps notes between runs, in the automation's own memory.{{else}}turn the automation's memory tool **off** (it's on by default). This routine doesn't use memory, so nothing from earlier runs should steer it.{{end}}
+7. Prompt. Replace the whole prompt with this, exactly:
 
    ```
 {{indent 3 .Prompt}}
    ```
 
-7. Save it, copy the automation's ID, and tell Fabrica you're done:
+8. Save it, copy the automation's ID, and tell Fabrica you're done:
 
    ```
    {{.ConfirmCommand}}

@@ -277,7 +277,7 @@ If you can't find an ID, leave `--remote-id` out. Fabrica then tracks the resour
 
 Now say someone improves the `pr-review` skill and merges that to `stable`. The next PR review uses the new version, with no apply and no handoff, because the stub only says "load your instructions from Fabrica".
 
-What *does* need an apply is a change to the routine's **shape**: its trigger or its connectors. Those are baked into the runtime. If someone changes the trigger, the Fabrica server notices on the next run that the stub's fingerprint doesn't match anymore, and **refuses to run it**, with an error that says the deployment needs `fabrica apply`. Meanwhile `fabrica plan` lists the stub as an update. That's deliberate: a new trigger or connector is exactly the kind of thing someone should review before it's installed.
+What *does* need an apply is a change to the routine's **shape**: its trigger or its connectors (and, on runtimes with their own memory feature, its `memory:` setting). Those are baked into the runtime. If someone changes the trigger, the Fabrica server notices on the next run that the stub's fingerprint doesn't match anymore, and **refuses to run it**, with an error that says the deployment needs `fabrica apply`. Meanwhile `fabrica plan` lists the stub as an update. That's deliberate: a new trigger or connector is exactly the kind of thing someone should review before it's installed.
 
 ### 7. Put it in CI
 

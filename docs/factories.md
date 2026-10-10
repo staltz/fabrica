@@ -210,6 +210,7 @@ side_effects:
   - slack.notify: { channel: "{{params.slack_channel}}" }
 params:
   slack_channel: { required: false, default: "#eng", description: Where to post a summary }
+memory: false                                       # optional; true keeps notes between runs
 ---
 Review the PR using the `pr-review` skill, post one comment, then tell {{params.slack_channel}}.
 ```
@@ -222,6 +223,7 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | `connectors` | The connectors the routine needs. `name?` marks one as optional. Don't list `fabrica`: it's added automatically. |
 | `side_effects` | What the routine may do to the outside world. Each is `connector.action`, optionally with settings. Its connector must be in `connectors:`. |
 | `params` | Values deployments can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
+| `memory` | Optional. `true` if the routine keeps notes between runs; default `false`. See [Memory](#memory). |
 
 The Markdown body is the routine's prompt. It must not be empty.
 
@@ -249,6 +251,22 @@ Side effects are listed in what the agent sees as "allowed side effects", and it
 ### Params
 
 Deployments set params, and individual repos can override them (see [Home repos](home-repos.md#params)). Use `{{params.name}}` in the prompt and in side effect settings. Every placeholder must be declared under `params:`, and a deployment setting a param that no routine declares is an error, which catches typos on both sides.
+
+### Memory
+
+Some routines get better when they remember things between runs: a weekly check that knows what it reported last week, or a reviewer that has learned where a repo keeps its tests. Others shouldn't remember anything, because notes left by one run (maybe written from a stranger's PR text) would steer the next. The routine decides, with one key:
+
+```yaml
+memory: true
+```
+
+The routine file is the source of truth, and every runtime mirrors it:
+
+- **Runtimes with their own memory feature** (`memory: native` in the [capability matrix](providers.md#capability-matrices), like Cursor automations) get it turned **on** for routines with `memory: true` and **off** for every other routine, even where the runtime turns it on by default. The setting is part of the stub's [shape](concepts.md#stubs-and-shapes), so changing `memory:` means a re-apply there, and `plan` shows the stub as an update.
+- **Runtimes without one** (`memory: emulated`, like Claude routines, Codex and every local tool) get their memory from Fabrica. Fabrica keeps one Markdown memory per deployment, routine and repo, in its run-history database. `routine_get` shows the memory to each run, and the run replaces it with `memory_save` before it finishes. Their handoffs say to leave any memory setting of the runtime's own off. Nothing is baked into the stub, so changing `memory:` takes effect on the next run.
+- A runtime whose matrix doesn't list `memory` can't run a routine with `memory: true`: that's an error in `check` and `plan`.
+
+Fabrica's memories are capped at 16 KiB each, since every run reads the whole thing. Agents are told to keep notes, not logs; never to keep secrets; and never to keep instructions that came from untrusted input. Your factory's own process (what to remember, and when) belongs in the routine's prompt.
 
 ### Checks
 

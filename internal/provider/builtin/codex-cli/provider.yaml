@@ -24,3 +24,6 @@ connectors:
   linear: emulated
 side_effects:
   "*": emulated
+# Local tools' own memories are per project, not per routine, so a routine
+# that needs memory gets it from Fabrica, in runs.db.
+memory: emulated

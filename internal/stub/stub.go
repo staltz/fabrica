@@ -9,7 +9,8 @@
 //
 // What a stub bakes into the runtime is its shape: the trigger, plus the
 // connectors and their definitions (including connectors that emulated side
-// effects need), plus the address of the Fabrica server. A short
+// effects need), plus the runtime's memory setting where it has its own
+// memory feature, plus the address of the Fabrica server. A short
 // fingerprint of the shape goes into the stub, and the server compares it
 // on every run to catch stubs that went stale.
 package stub
@@ -43,6 +44,11 @@ type Shape struct {
 	Trigger    string           `json:"trigger"`
 	Cron       string           `json:"cron,omitempty"`
 	Connectors []ShapeConnector `json:"connectors"`
+	// Memory is the runtime's own memory setting for the stub, "on" or
+	// "off", mirroring the routine's memory: key. It's only set on runtimes
+	// with a native memory feature: elsewhere Fabrica keeps the memory, and
+	// nothing about it is baked into the runtime.
+	Memory string `json:"memory,omitempty"`
 	// Endpoint and TokenPlacement describe the connection to the Fabrica
 	// server (cloud only).
 	Endpoint       string `json:"endpoint,omitempty"`
@@ -60,6 +66,12 @@ type ShapeConnector struct {
 	Kind   string             `json:"kind"`
 	Server *factory.MCPServer `json:"server,omitempty"`
 }
+
+// Memory settings in a shape.
+const (
+	MemoryOn  = "on"
+	MemoryOff = "off"
+)
 
 // Fingerprint is a short hash of the shape. The same shape always gives
 // the same fingerprint.
@@ -96,7 +108,10 @@ type Evaluation struct {
 	Trigger     Use
 	Connectors  []Use
 	SideEffects []Use
-	Shape       Shape
+	// Memory is how the runtime gives the routine its memory. Its Support
+	// is empty when the routine doesn't use memory.
+	Memory Use
+	Shape  Shape
 	// Diags holds an error for everything the runtime can't do.
 	Diags diag.List
 }
@@ -190,6 +205,20 @@ func Evaluate(f *factory.Factory, r *factory.Routine, t Target) *Evaluation {
 		e.SideEffects = append(e.SideEffects, use)
 	}
 
+	if m.Memory == provider.Native {
+		shape.Memory = MemoryOff
+		if r.Memory {
+			shape.Memory = MemoryOn
+		}
+	}
+	if r.Memory {
+		e.Memory = Use{Name: "memory", Support: m.Memory}
+		if m.Memory != provider.Native && m.Memory != provider.Emulated {
+			e.Diags.Errorf("capability.memory", where, "runtime %s can't give routine %s the memory it asks for", rt, r.Ref.Name).
+				Hintf("drop memory: true from the routine if it can run without remembering anything, or deploy it to a runtime whose capability matrix has memory: native or emulated")
+		}
+	}
+
 	if m.SkillTransport == provider.Text {
 		for _, name := range r.Skills {
 			s := f.Skills[name]
@@ -267,6 +296,22 @@ func DescribeTrigger(tr factory.Trigger, repo string) string {
 		return fmt.Sprintf("GitHub event `%s` on `%s`", tr.On, repo)
 	}
 	return fmt.Sprintf("event `%s` on `%s`", tr.On, repo)
+}
+
+// DescribeMemory says what to do with the runtime's memory feature, for
+// handoff instructions. needed is the routine's memory: key, and support is
+// how the runtime provides memory.
+func DescribeMemory(needed bool, support provider.Support) string {
+	switch {
+	case support == provider.Native && needed:
+		return "turn the runtime's own memory **on**: this routine keeps notes between runs"
+	case support == provider.Native:
+		return "turn the runtime's own memory **off**: this routine doesn't use memory, so nothing from earlier runs should steer it"
+	case needed:
+		return "leave the runtime's own memory **off**, if it has one: Fabrica keeps this routine's memory and serves it over MCP"
+	default:
+		return "leave the runtime's own memory **off**, if it has one: this routine doesn't use memory"
+	}
 }
 
 // DescribeConnector says how to set up one installed connector, for

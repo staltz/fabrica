@@ -98,6 +98,7 @@ type routineFile struct {
 	Connectors  []string             `yaml:"connectors"`
 	SideEffects []yaml.Node          `yaml:"side_effects"`
 	Params      map[string]paramFile `yaml:"params"`
+	Memory      bool                 `yaml:"memory"`
 }
 
 type triggerFile struct {
@@ -135,6 +136,7 @@ func parseRoutine(data []byte, name, file string) *Routine {
 		return fail("%v", err)
 	}
 	r.Description = strings.TrimSpace(f.Description)
+	r.Memory = f.Memory
 	r.Prompt = strings.TrimSpace(fm.Body)
 	if r.Prompt == "" {
 		return fail("the routine has no prompt; write its instructions below the frontmatter")

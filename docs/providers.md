@@ -16,6 +16,7 @@ What the values mean:
 - **Triggers** are `native` or `unsupported`. Triggers can't be emulated.
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
 - **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`.
+- **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](factories.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
 - Anything a matrix doesn't list is unsupported.
 
 ### The built-in providers
@@ -41,6 +42,9 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 | Built-in connectors | github, slack, linear, notion | github, slack, linear | github |
 | MCP servers | http, sse | http | http |
 | Side effects | all emulated | all emulated | all emulated |
+| Memory | emulated | native (the automation's memory tool) | emulated |
+
+Cursor's memory tool is on by default, so every Cursor handoff says whether to turn it on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and Codex's memory works per project rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
 None of these three has a public API for creating and listing triggered automations yet, so the built-in cloud providers use **handoff** mode. Claude routines can only be fired through their API; Cursor's Cloud Agents API can launch agents but not create automations; Codex has no automation API. When an API appears, a provider can switch to `api` mode without changing anything else.
 
@@ -58,6 +62,7 @@ None of these three has a public API for creating and listing triggered automati
 | `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) |
 | `schedule` | native (desktop app scheduled task) | — | — |
 | Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks |
+| Memory | emulated (in `runs.db`) | emulated | emulated |
 
 A few things worth knowing about local hooks:
 
@@ -113,6 +118,7 @@ connectors:
 side_effects:
   github.pr_comment: native
   "*": emulated
+memory: emulated                     # native, emulated or unsupported (the default)
 ```
 
 Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it; if it lists `handoff`, there must be a `handoff.md`.
@@ -164,6 +170,7 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.RemoteID` | The runtime's own ID, for updates and deletes, when known. |
 | `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. |
 | `.Connectors` | A list, each with `.Name` and `.Setup` (a sentence saying how to set it up). |
+| `.Memory.Needed`, `.Memory.Support`, `.Memory.Setup` | Whether the routine has `memory: true`, how the runtime provides memory (`native`, `emulated` or `unsupported`), and a sentence saying what to do with the runtime's own memory setting. Every handoff should have a memory step, so the runtime mirrors the routine. |
 | `.Fabrica.URL`, `.Fabrica.Header` | The Fabrica server URL (with the token in it, for URL placement) and the `Authorization` header value (for header placement). |
 | `.Prompt`, `.Fingerprint` | The stub prompt to paste in, and its fingerprint. |
 | `.ConfirmCommand` | The exact `fabrica confirm …` line to end with. |

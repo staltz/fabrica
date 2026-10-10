@@ -149,8 +149,8 @@ func TestLocalSession(t *testing.T) {
 		t.Errorf("instructions = %s", instructions)
 	}
 	tools, err := c.cs.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 8 {
-		t.Fatalf("want the 8 Fabrica tools, got %d (%v)", len(tools.Tools), err)
+	if err != nil || len(tools.Tools) != 9 {
+		t.Fatalf("want the 9 Fabrica tools, got %d (%v)", len(tools.Tools), err)
 	}
 
 	// An interactive session.
@@ -427,4 +427,52 @@ func TestRemoteDeletedDeploymentStopsServing(t *testing.T) {
 	if res.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 once the deployment is deleted", res.StatusCode)
 	}
+}
+
+func TestRemoteRoutineMemory(t *testing.T) {
+	rw := newRemoteWorld(t)
+	rw.w.UpdateFactory(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nmemory: true\n", 1)})
+	if err := rw.srv.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	path := "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
+	args := map[string]any{"intent": "review PR 7", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/app", "stub": rw.remoteStub(t)}
+
+	// Claude routines have no memory of their own, so Fabrica keeps it.
+	c := rw.connect(t, path)
+	c.fails("memory_save", map[string]any{"run_id": "run_nope", "content": "x"}, "isn't a routine run begun in this session")
+	runID := c.runID(c.ok("run_begin", args))
+	if r := c.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(r, "## Memory") || !strings.Contains(r, "Nothing is saved yet") || !strings.Contains(r, "call memory_save") {
+		t.Errorf("routine_get should explain the routine's memory:\n%s", r)
+	}
+	c.fails("memory_save", map[string]any{"run_id": runID, "content": strings.Repeat("x", runs.MaxMemoryBytes+1)}, "the limit is")
+	c.ok("memory_save", map[string]any{"run_id": runID, "content": "- The app's tests live in `spec/`."})
+
+	// The next run on the same repo sees it; another repo doesn't.
+	next := rw.connect(t, path)
+	next.ok("run_begin", args)
+	if r := next.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(r, "-----BEGIN MEMORY-----\n- The app's tests live in `spec/`.\n-----END MEMORY-----") || !strings.Contains(r, "saved on") {
+		t.Errorf("the next run should get the memory:\n%s", r)
+	}
+	other := rw.connect(t, path)
+	apiArgs := map[string]any{}
+	for k, v := range args {
+		apiArgs[k] = v
+	}
+	apiArgs["repo"] = "github.com/acme/api"
+	other.ok("run_begin", apiArgs)
+	if r := other.ok("routine_get", map[string]any{"name": "pr-review"}); strings.Contains(r, "spec/") {
+		t.Errorf("memories are per repo:\n%s", r)
+	}
+}
+
+func TestLocalMemoryOnlyForRoutinesThatAskForIt(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	fp := localStub(t, lw.opts, "review-before-push")
+	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "review my diff", "routine": "review-before-push", "stub": fp}))
+	if r := c.ok("routine_get", map[string]any{"name": "review-before-push"}); strings.Contains(r, "## Memory") {
+		t.Errorf("a routine without memory: true gets no memory section here:\n%s", r)
+	}
+	c.fails("memory_save", map[string]any{"run_id": runID, "content": "x"}, "doesn't use memory")
 }

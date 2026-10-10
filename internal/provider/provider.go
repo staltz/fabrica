@@ -177,6 +177,7 @@ type HandoffData struct {
 	RemoteID    string
 	Trigger     HandoffTrigger
 	Connectors  []HandoffConnector
+	Memory      HandoffMemory
 	Fabrica     HandoffFabrica
 	Prompt      string
 	Fingerprint string
@@ -196,6 +197,21 @@ type HandoffConnector struct {
 	Name string
 	// Setup is a one-line description of how to set it up, like "the
 	// built-in GitHub integration" or "MCP server at https://…".
+	Setup string
+}
+
+// HandoffMemory describes what to do with the runtime's own memory
+// feature, mirroring the routine's memory: key.
+type HandoffMemory struct {
+	// Needed is the routine's memory: key: it keeps notes between runs.
+	Needed bool
+	// Support is how the runtime provides memory: "native" (its own memory
+	// feature, to turn on when Needed and off otherwise), "emulated"
+	// (Fabrica keeps the memory, so the runtime's own stays off) or
+	// "unsupported".
+	Support string
+	// Setup is a one-line description of what to set, like "turn the
+	// runtime's own memory **off**: …".
 	Setup string
 }
 

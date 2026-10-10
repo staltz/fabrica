@@ -21,3 +21,6 @@ connectors:
   mcp.stdio: unsupported
 side_effects:
   "*": emulated
+# Codex's memory (a preview) is per project, with no per-task setting, so a
+# routine that needs memory gets it from Fabrica.
+memory: emulated

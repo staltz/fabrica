@@ -71,6 +71,7 @@ type globals struct {
 
 func newRoot() *cobra.Command {
 	g := &globals{}
+	var update bool
 	root := &cobra.Command{
 		Use:   "fabrica",
 		Short: "Write down how your AI agents build software, once, and run it on many AI tools",
@@ -87,15 +88,24 @@ Typical workflow:
   fabrica check      lint a factory, a home repo or a product repo
   fabrica lock       pin a factory's imports in fabrica.lock
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
-  fabrica apply      install stubs in runtimes, and Fabrica in your local tools`,
+  fabrica apply      install stubs in runtimes, and Fabrica in your local tools
+
+Run fabrica -u to update Fabrica itself to the latest release.`,
 		Version:       versionLine(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if update {
+				return selfUpdate(cmd)
+			}
+			return cmd.Help()
+		},
 	}
 	// Cobra's own -v says "version for fabrica" and prints "fabrica version
 	// …", unlike `fabrica version`. Make both match.
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.Flags().BoolP("version", "v", false, "print Fabrica's version")
+	root.Flags().BoolVarP(&update, "update", "u", false, "update fabrica to the latest release")
 	root.PersistentFlags().StringVar(&g.home, "home", "", "the home repo to use (default: the current folder if it's a home repo, otherwise $FABRICA_HOME or ~/.fabrica)")
 	root.AddCommand(
 		newNew(),

@@ -1,0 +1,1 @@
+Before starting, load this repo's working rules from the Fabrica MCP server; if you don't have it, ignore this line.

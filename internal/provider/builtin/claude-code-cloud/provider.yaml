@@ -35,3 +35,7 @@ side_effects:
   # Claude acts through its connectors' tools, so every side effect turns
   # into prompt instructions plus the connector that carries it out.
   "*": emulated
+# Routines have no documented memory setting of their own, so a routine
+# that needs memory gets it from Fabrica (memory_save, and the memory that
+# routine_get shows).
+memory: emulated

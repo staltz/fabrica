@@ -19,13 +19,14 @@
 {{- range .Connectors}}
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
-5. Prompt, exactly:
+5. Memory: {{.Memory.Setup}}.
+6. Prompt, exactly:
 
    ```
 {{indent 3 .Prompt}}
    ```
 
-6. Save it, then run:
+7. Save it, then run:
 
    ```
    {{.ConfirmCommand}}

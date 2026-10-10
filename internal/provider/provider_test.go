@@ -34,11 +34,29 @@ func TestParseMatrixRejectsMistakes(t *testing.T) {
 		"no token path":     "kind: cloud\napply_modes: [handoff]\nskill_transport: text\n",
 		"unknown key":       "kind: cloud\napply_mode: [handoff]\n",
 		"bad support value": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nconnectors: {github: yes}\n",
+		"bad memory value":  "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmemory: sometimes\n",
 	}
 	for name, yaml := range cases {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
+	}
+}
+
+func TestMemorySupport(t *testing.T) {
+	want := map[string]Support{
+		"claude-code-cloud": Emulated, "cursor-cloud": Native, "codex": Emulated,
+		"claude-code-local": Emulated, "cursor-local": Emulated, "codex-cli": Emulated,
+	}
+	for name, w := range want {
+		p, _ := Builtin(name)
+		if p.Matrix.Memory != w {
+			t.Errorf("%s: memory = %s, want %s", name, p.Matrix.Memory, w)
+		}
+	}
+	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\n"))
+	if err != nil || m.Memory != Unsupported {
+		t.Errorf("a matrix without memory: should mean unsupported, got %q, %v", m.Memory, err)
 	}
 }
 
@@ -192,6 +210,23 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			if action != "delete" && !strings.Contains(out, "   line two") {
 				t.Errorf("%s %s: prompt isn't included and indented:\n%s", name, action, out)
 			}
+			if action != "delete" && !strings.Contains(out, "6. Memory: ") {
+				t.Errorf("%s %s: handoff doesn't say what to do with the runtime's memory:\n%s", name, action, out)
+			}
+		}
+	}
+}
+
+func TestCursorHandoffMirrorsTheRoutinesMemory(t *testing.T) {
+	p, _ := Builtin("cursor-cloud")
+	for needed, want := range map[bool]string{true: "memory tool **on**", false: "memory tool **off** (it's on by default)"} {
+		out, err := p.RenderHandoff(HandoffData{
+			ID: "h_abc", Action: "create", Runtime: "cursor-cloud", Deployment: "pr-review",
+			Identity: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app", Routine: "pr-review", Repo: "github.com/acme/app",
+			Memory: HandoffMemory{Needed: needed, Support: string(Native)}, Prompt: "x", ConfirmCommand: "fabrica confirm h_abc",
+		})
+		if err != nil || !strings.Contains(out, want) {
+			t.Errorf("memory needed=%v: want %q in:\n%s (%v)", needed, want, out, err)
 		}
 	}
 }

@@ -213,6 +213,9 @@ func describeEvaluation(ev *stub.Evaluation) string {
 	if len(ev.SideEffects) > 0 {
 		parts = append(parts, "side effects "+describeUses(ev.SideEffects))
 	}
+	if ev.Memory.Support != "" {
+		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
+	}
 	parts = append(parts, "stub "+ev.Shape.Fingerprint())
 	return strings.Join(parts, " · ")
 }

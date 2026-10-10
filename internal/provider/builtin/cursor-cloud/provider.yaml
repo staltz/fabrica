@@ -30,3 +30,7 @@ connectors:
   mcp.stdio: unsupported
 side_effects:
   "*": emulated
+# Each automation has its own memory tool, which is on by default and can
+# be turned off. The stub turns it on for routines that need memory and off
+# for the rest, so memory never steers a routine that didn't ask for it.
+memory: native

@@ -21,7 +21,7 @@ Fields written by the server (times, factory commit, deployment, skills loaded) 
 
 ## The schema
 
-The database's `PRAGMA user_version` is the schema version, `1` for this one.
+The database's `PRAGMA user_version` is the schema version, `2` for this one. Version 2 added `memories`; Fabrica migrates older databases when it opens them.
 
 ### `runs`
 
@@ -57,6 +57,19 @@ One row per `run_report` (and per refusal).
 ### `skill_loads`
 
 One row per `skill_load` during a run: `id`, `run_id`, `at` and `skill`.
+
+### `memories`
+
+One row per deployment, routine and repo: the notes a routine with `memory: true` keeps for its own next runs, on runtimes where Fabrica keeps them (see [Memory](factories.md#memory)).
+
+| Column | What it is |
+|---|---|
+| `deployment`, `routine`, `repo` | Whose memory it is. Together they're the primary key. |
+| `content` | Markdown written by the agent with `memory_save`, at most 16 KiB. |
+| `updated_at` | RFC 3339, UTC, set by the server. |
+| `updated_by` | The run that saved it. |
+
+Only the latest version is kept. Saving an empty memory deletes the row.
 
 ### `run_overview`
 
@@ -111,6 +124,14 @@ SELECT skill, COUNT(DISTINCT run_id) AS runs
 FROM skill_loads
 GROUP BY skill
 ORDER BY runs DESC;
+```
+
+What each routine remembers:
+
+```sql
+SELECT deployment, routine, repo, updated_at, content
+FROM memories
+ORDER BY updated_at DESC;
 ```
 
 Every PR a routine touched:

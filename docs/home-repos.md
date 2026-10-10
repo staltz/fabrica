@@ -153,7 +153,7 @@ The `token_hash` is a short one-way fingerprint of the token, never the token it
 
 `fabrica plan` compares what the home repo and its factories ask for with what's installed, and sorts everything it finds into two kinds:
 
-- **Changes** are work for `apply`: resources to create, update, delete or adopt, and handoffs to issue. That includes repairing stubs that went stale after a merge. When a routine's trigger or connectors change (to ones the runtime supports), its installed stub is an **update**. A stub whose routine, repo or runtime is no longer in its deployment is a **delete**.
+- **Changes** are work for `apply`: resources to create, update, delete or adopt, and handoffs to issue. That includes repairing stubs that went stale after a merge. When a routine's trigger, connectors or (on runtimes with their own memory) memory setting change (to ones the runtime supports), its installed stub is an **update**. A stub whose routine, repo or runtime is no longer in its deployment is a **delete**.
 - **Errors** are problems `apply` can't fix: a trigger the runtime doesn't support, a product repo without the Fabrica line, duplicate identities, a held lock and so on. `apply` won't touch a deployment while it has any. An error in one repo blocks the whole deployment, so to unblock the others, fix that repo or take it out of the deployment.
 
 `plan` exits with `0` when there's nothing to do, `2` when there are only changes, and `1` when there are errors. Pending handoffs aren't apply's work, so on their own they don't change the exit code, but `plan` lists them.

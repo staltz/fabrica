@@ -31,3 +31,7 @@ connectors:
 side_effects:
   github.issue_comment: native
   "*": emulated
+
+# Acme Runner can't remember anything between jobs, so routines that need
+# memory get it from Fabrica.
+memory: emulated

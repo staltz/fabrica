@@ -407,6 +407,9 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 			}
 			reasons = append(reasons, "the connectors changed ("+strings.Join(parts, "; ")+")")
 		}
+		if cur.Memory != shape.Memory {
+			reasons = append(reasons, fmt.Sprintf("the runtime's memory should be %s", describeMemory(shape.Memory)))
+		}
 	}
 	if len(reasons) == 0 {
 		if cur.Fingerprint == "" {
@@ -416,6 +419,13 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		}
 	}
 	return reasons
+}
+
+func describeMemory(setting string) string {
+	if setting == "" {
+		return "left to Fabrica"
+	}
+	return setting
 }
 
 func describeTrigger(on, cron string) string {

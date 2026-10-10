@@ -93,6 +93,11 @@ type Matrix struct {
 	Triggers    map[string]Support
 	Connectors  map[string]Support
 	SideEffects map[string]Support
+	// Memory says how the runtime lets a routine keep notes between runs:
+	// Native means it has its own memory feature, which a stub turns on or
+	// off to match the routine; Emulated means Fabrica keeps the memory
+	// itself and serves it over MCP. Not listed means unsupported.
+	Memory Support
 }
 
 // matrixFile is the on-disk shape of provider.yaml.
@@ -106,6 +111,7 @@ type matrixFile struct {
 	Triggers       map[string]Support `yaml:"triggers"`
 	Connectors     map[string]Support `yaml:"connectors"`
 	SideEffects    map[string]Support `yaml:"side_effects"`
+	Memory         Support            `yaml:"memory"`
 }
 
 var (
@@ -131,6 +137,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		Triggers:       orEmpty(f.Triggers),
 		Connectors:     orEmpty(f.Connectors),
 		SideEffects:    orEmpty(f.SideEffects),
+		Memory:         f.Memory,
 	}
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -216,6 +223,12 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		if !s.valid() {
 			add("side_effects.%s: is %q; use native, emulated or unsupported", key, s)
 		}
+	}
+
+	if m.Memory == "" {
+		m.Memory = Unsupported
+	} else if !m.Memory.valid() {
+		add("memory: is %q; use native, emulated or unsupported", f.Memory)
 	}
 
 	if len(problems) > 0 {

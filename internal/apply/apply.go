@@ -94,9 +94,7 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	res.Plan = p
 	if p.Diags.HasErrors() {
 		fmt.Fprintf(out, "The home repo has problems, so nothing was %s:\n", pastTense(&env))
-		for _, d := range p.Diags.Only(diag.Error) {
-			fmt.Fprintf(out, "  %s\n", d)
-		}
+		printErrors(out, p.Diags)
 		res.Failed = append(res.Failed, "home repo")
 		return res, nil
 	}

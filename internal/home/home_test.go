@@ -192,3 +192,19 @@ func TestStateMovesRenamedRuntimes(t *testing.T) {
 		t.Errorf("v0.1 state should move to the new name and forget its stubs' fingerprints: %+v, %+v", r, p)
 	}
 }
+
+func TestMissingServerSaysWhatToDo(t *testing.T) {
+	yaml := "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-cloud]\nroutines: [r]\nrepos: [github.com/a/b]\n"
+	for _, personal := range []bool{false, true} {
+		h := openHome(t, personal, map[string]string{"deployments/dogfood.yaml": yaml})
+		got := h.Diags.String()
+		for _, want := range []string{"claude-code-cloud", "deployments/dogfood.yaml", "server: https://", "fabrica mcp --http", "mcp-server.md#running-the-remote-server"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("personal=%v: want %q in:\n%s", personal, want, got)
+			}
+		}
+		if strings.Contains(got, "claude-code-local") != personal {
+			t.Errorf("personal=%v: local runtimes should only be suggested in the personal home repo:\n%s", personal, got)
+		}
+	}
+}

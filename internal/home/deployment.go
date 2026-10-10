@@ -153,6 +153,10 @@ func ParseDeployment(name, file string, data []byte, personal bool) (*Deployment
 		diags.Errorf("deployment.invalid", file, format, args...)
 		return nil, diags
 	}
+	failHint := func(hint, format string, args ...any) (*Deployment, diag.List) {
+		diags.Errorf("deployment.invalid", file, format, args...).Hintf("%s", hint)
+		return nil, diags
+	}
 	if err := names.Validate(name); err != nil {
 		return fail("the file name isn't a valid deployment name: %v", err)
 	}
@@ -239,7 +243,9 @@ func ParseDeployment(name, file string, data []byte, personal bool) (*Deployment
 	switch d.Scope {
 	case provider.Cloud:
 		if d.Server == "" {
-			return fail("cloud deployments need server: set to the URL of your Fabrica server, like `server: https://fabrica.acme.dev`")
+			return failHint(missingServerHint(file, personal),
+				"server: is missing; runtimes: [%s] run in the cloud, and cloud runtimes reach Fabrica through a Fabrica server that you host",
+				strings.Join(d.Runtimes, ", "))
 		}
 		u, err := url.Parse(d.Server)
 		if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" ||
@@ -261,6 +267,23 @@ func ParseDeployment(name, file string, data []byte, personal bool) (*Deployment
 		}
 	}
 	return d, diags
+}
+
+// remoteServerDocs explains how to run a Fabrica server.
+const remoteServerDocs = "https://github.com/staltz/fabrica/blob/main/docs/mcp-server.md#running-the-remote-server"
+
+// missingServerHint says, step by step, how to fix a cloud deployment
+// without server:.
+func missingServerHint(file string, personal bool) string {
+	steps := []string{
+		fmt.Sprintf("if you already run a Fabrica server, add its URL to %s as a line like `server: https://fabrica.acme.dev`, then run this command again.", file),
+		fmt.Sprintf("If you don't have one yet, start one with `fabrica mcp --http --home <this home repo's git URL>` (it needs FABRICA_SERVER_SECRET set), put it behind HTTPS, and use that URL as server:. Instructions: %s", remoteServerDocs),
+	}
+	if personal {
+		steps = append(steps, "Or, to run the routines on this machine instead, change runtimes: to local ones, like [claude-code-local, cursor-local]; local deployments don't need a server.")
+	}
+	// Indent the later lines so they line up under "hint:".
+	return strings.Join(steps, "\n  ")
 }
 
 func parseRepoEntry(node *yaml.Node) (RepoEntry, error) {

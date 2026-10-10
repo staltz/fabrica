@@ -1,0 +1,25 @@
+# Cursor IDE on your machine.
+#
+# `fabrica apply` adds a user-level `fabrica` MCP server to
+# ~/.cursor/mcp.json and installs local routines as hooks in
+# ~/.cursor/hooks.json. Cursor's sessionStart hook is fire-and-forget and
+# beforeSubmitPrompt can't add context, so session.start and prompt.submit
+# aren't supported here.
+kind: local
+description: Cursor IDE on your machine
+apply_modes: [api]
+find_by_identity: true
+skill_transport: directory
+triggers:
+  session.stop: native     # stop hook, with a follow-up message
+  git.pre_commit: native   # beforeShellExecution hook
+  git.pre_push: native     # beforeShellExecution hook
+connectors:
+  mcp.http: native
+  mcp.sse: native
+  mcp.stdio: native
+  github: emulated
+  slack: emulated
+  linear: emulated
+side_effects:
+  "*": emulated

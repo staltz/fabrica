@@ -1,0 +1,13 @@
+# Build output
+/dist/
+/fabrica
+/bin/
+
+# Local run history if someone points FABRICA_HOME at the repo by accident
+runs.db
+runs.db-*
+
+# Editor and OS clutter
+.DS_Store
+.idea/
+.vscode/

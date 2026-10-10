@@ -1,0 +1,23 @@
+# OpenAI Codex cloud.
+#
+# Our best reading of the Codex docs as of October 2026. Codex can review
+# pull requests automatically and run scheduled tasks. There's no public API
+# to create automations, so Fabrica uses handoff.
+kind: cloud
+description: OpenAI Codex cloud tasks
+apply_modes: [handoff]
+find_by_identity: false
+skill_transport: text
+mcp_auth:
+  header: unsupported
+  url: native
+triggers:
+  schedule: native
+  github.pull_request.opened: native
+connectors:
+  github: native
+  mcp.http: native
+  mcp.sse: unsupported
+  mcp.stdio: unsupported
+side_effects:
+  "*": emulated

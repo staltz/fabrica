@@ -1,0 +1,29 @@
+# Claude Code on your machine.
+#
+# `fabrica apply` adds a user-level `fabrica` MCP server to ~/.claude.json
+# and installs local routines as hooks in ~/.claude/settings.json. It never
+# writes into a product repo. Local runtimes count as api mode, because
+# Fabrica edits their config files directly, and Fabrica finds its own
+# installs by their names (`fabrica`, `fabrica-…`) and hook commands.
+kind: local
+description: Claude Code (CLI and IDE extensions) on your machine
+apply_modes: [api]
+find_by_identity: true
+skill_transport: directory
+triggers:
+  session.start: native    # SessionStart hook
+  prompt.submit: native    # UserPromptSubmit hook
+  session.stop: native     # Stop hook
+  git.pre_commit: native   # PreToolUse hook on Bash, for `git commit`
+  git.pre_push: native     # PreToolUse hook on Bash, for `git push`
+connectors:
+  mcp.http: native
+  mcp.sse: native
+  mcp.stdio: native
+  # There's no built-in GitHub integration locally, but a GitHub connector
+  # with an MCP fallback works: Fabrica registers the fallback server.
+  github: emulated
+  slack: emulated
+  linear: emulated
+side_effects:
+  "*": emulated

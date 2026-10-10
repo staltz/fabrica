@@ -1,8 +1,8 @@
 // Package token makes and checks the secret tokens that let cloud runtimes
 // talk to a Fabrica server.
 //
-// Each deployment gets its own token, computed as HMAC(server secret,
-// deployment name). The server can check a token without storing any, and
+// Each factory gets its own token, computed as HMAC(server secret,
+// factory name). The server can check a token without storing any, and
 // `fabrica apply` (holding the same secret, for example as a CI secret)
 // computes the same token to put into each runtime's connector. To rotate
 // every token at once, change the server secret and re-apply.
@@ -42,17 +42,17 @@ func SecretFromEnv() (string, error) {
 	return s, nil
 }
 
-// For computes the token of one deployment.
-func For(secret, deployment string) string {
+// For computes the token of one factory.
+func For(secret, factory string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(deployment))
+	mac.Write([]byte(factory))
 	return prefix + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// Valid reports whether tok is the right token for the deployment. It
+// Valid reports whether tok is the right token for the factory. It
 // compares in constant time, so timing can't leak the token.
-func Valid(secret, deployment, tok string) bool {
-	want := For(secret, deployment)
+func Valid(secret, factory, tok string) bool {
+	want := For(secret, factory)
 	return hmac.Equal([]byte(want), []byte(tok))
 }
 

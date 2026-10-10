@@ -15,7 +15,7 @@ func TestTokens(t *testing.T) {
 		t.Error("the right token should be valid")
 	}
 	if Valid(secret, "other", tok) || Valid(strings.Repeat("x", 32), "pr-review", tok) || Valid(secret, "pr-review", tok+"x") {
-		t.Error("a token must only work for its own deployment and secret")
+		t.Error("a token must only work for its own factory and secret")
 	}
 	if len(Hash(tok)) != 12 || Hash(tok) == Hash(For(secret, "other")) {
 		t.Error("Hash should be short and differ between tokens")

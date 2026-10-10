@@ -36,12 +36,12 @@ func setup(t *testing.T) (ws string, opts Options) {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/oss-work.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"factories/oss-work.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	ws = filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
 	return ws, Options{
-		Runtime: "claude-code-local", Deployment: "oss-work", Routine: "review-before-push",
+		Runtime: "claude-code-local", Factory: "oss-work", Routine: "review-before-push",
 		Fingerprint: "abc123abc123", Event: "git.pre_push", HomeDir: w.Home.Dir,
 		MarkerDir: t.TempDir(), Getenv: func(string) string { return "" },
 	}
@@ -117,9 +117,9 @@ func TestQuietWhenItDoesNotApply(t *testing.T) {
 	ws, o := setup(t)
 	in := `{"cwd": "` + ws + `", "tool_input": {"command": "git push"}}`
 	other := o
-	other.Deployment = "something-else"
+	other.Factory = "something-else"
 	if out := run(t, other, in); out != nil {
-		t.Errorf("a hook for another deployment must stay quiet, got %v", out)
+		t.Errorf("a hook for another factory must stay quiet, got %v", out)
 	}
 	inCursor := o
 	inCursor.Getenv = func(k string) string {

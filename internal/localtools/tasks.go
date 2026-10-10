@@ -29,7 +29,7 @@ func (c *claudeCode) tasksDir() string { return filepath.Join(c.home, ".claude",
 // TaskID is the scheduled task's ID, which is also its folder name. The
 // hash keeps it unique when names would otherwise collide.
 func TaskID(t Task) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{t.Deployment, t.Routine, t.Repo}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{t.Factory, t.Routine, t.Repo}, "\x00")))
 	return "fabrica-" + slug(t.Routine) + "-" + hex.EncodeToString(sum[:4])
 }
 
@@ -40,11 +40,11 @@ func slug(s string) string {
 }
 
 func taskDescription(t Task) string {
-	return fmt.Sprintf("Fabrica routine `%s` from deployment `%s` on `%s` (stub `%s`), cron `%s` in UTC",
-		t.Routine, t.Deployment, t.Repo, t.Fingerprint, t.Cron)
+	return fmt.Sprintf("Fabrica routine `%s` from factory `%s` on `%s` (stub `%s`), cron `%s` in UTC",
+		t.Routine, t.Factory, t.Repo, t.Fingerprint, t.Cron)
 }
 
-var taskDescriptionRe = regexp.MustCompile("^Fabrica routine `([^`]+)` from deployment `([^`]+)` on `([^`]+)` \\(stub `([^`]*)`\\), cron `([^`]+)` in UTC$")
+var taskDescriptionRe = regexp.MustCompile("^Fabrica routine `([^`]+)` from factory `([^`]+)` on `([^`]+)` \\(stub `([^`]*)`\\), cron `([^`]+)` in UTC$")
 
 func renderTask(t Task) []byte {
 	name, _ := json.Marshal(TaskID(t))
@@ -74,7 +74,7 @@ func parseTask(data []byte) (Task, bool) {
 	if m == nil {
 		return Task{}, false
 	}
-	return Task{Routine: m[1], Deployment: m[2], Repo: m[3], Fingerprint: m[4], Cron: m[5], Prompt: strings.TrimSpace(body)}, true
+	return Task{Routine: m[1], Factory: m[2], Repo: m[3], Fingerprint: m[4], Cron: m[5], Prompt: strings.TrimSpace(body)}, true
 }
 
 // unquoteYAML undoes the quoting Fabrica (or the app, if it rewrites the

@@ -15,7 +15,7 @@ import (
 // ProtocolVersion is the version of the JSON protocol Fabrica speaks with a
 // folder provider's `api` program. It goes into every request so programs
 // can refuse versions they don't understand.
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 // Resource is everything a runtime needs to set up one stub: one routine,
 // on one repo, in one runtime.
@@ -25,7 +25,7 @@ type Resource struct {
 	// runtime must store it somewhere it can read back (a name or metadata
 	// field), so `list` can return it.
 	Identity    string              `json:"identity"`
-	Deployment  string              `json:"deployment"`
+	Factory     string              `json:"factory"`
 	Routine     string              `json:"routine"`
 	Repo        string              `json:"repo"`
 	Trigger     ResourceTrigger     `json:"trigger"`
@@ -57,7 +57,7 @@ type ResourceConnector struct {
 }
 
 // ResourceFabrica is the connection to the Fabrica server. It carries the
-// deployment's secret token, so programs must never log it.
+// factory's secret token, so programs must never log it.
 type ResourceFabrica struct {
 	URL       string `json:"url"`
 	Placement string `json:"placement"` // "header" or "url"
@@ -74,12 +74,12 @@ type RemoteResource struct {
 
 // request is what Fabrica sends on the program's stdin.
 type request struct {
-	Version    int       `json:"version"`
-	Op         string    `json:"op"`
-	Deployment string    `json:"deployment,omitempty"`
-	Endpoint   string    `json:"endpoint,omitempty"`
-	RemoteID   string    `json:"remote_id,omitempty"`
-	Resource   *Resource `json:"resource,omitempty"`
+	Version  int       `json:"version"`
+	Op       string    `json:"op"`
+	Factory  string    `json:"factory,omitempty"`
+	Endpoint string    `json:"endpoint,omitempty"`
+	RemoteID string    `json:"remote_id,omitempty"`
+	Resource *Resource `json:"resource,omitempty"`
 }
 
 // response is what the program prints on stdout.
@@ -116,10 +116,10 @@ func (p *Provider) API() (*APIClient, error) {
 	return &APIClient{Path: p.APIPath, Timeout: 2 * time.Minute}, nil
 }
 
-// List asks the runtime for every resource belonging to one deployment
+// List asks the runtime for every resource belonging to one factory
 // endpoint, with the identity each one carries.
-func (c *APIClient) List(ctx context.Context, deployment, endpoint string) ([]RemoteResource, error) {
-	resp, err := c.call(ctx, request{Op: "list", Deployment: deployment, Endpoint: endpoint})
+func (c *APIClient) List(ctx context.Context, factory, endpoint string) ([]RemoteResource, error) {
+	resp, err := c.call(ctx, request{Op: "list", Factory: factory, Endpoint: endpoint})
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (c *APIClient) List(ctx context.Context, deployment, endpoint string) ([]Re
 
 // Create creates a resource and returns the runtime's ID for it.
 func (c *APIClient) Create(ctx context.Context, res Resource) (string, error) {
-	resp, err := c.call(ctx, request{Op: "create", Deployment: res.Deployment, Resource: &res})
+	resp, err := c.call(ctx, request{Op: "create", Factory: res.Factory, Resource: &res})
 	if err != nil {
 		return "", err
 	}
@@ -145,13 +145,13 @@ func (c *APIClient) Create(ctx context.Context, res Resource) (string, error) {
 
 // Update replaces an existing resource's trigger, connectors and prompt.
 func (c *APIClient) Update(ctx context.Context, remoteID string, res Resource) error {
-	_, err := c.call(ctx, request{Op: "update", Deployment: res.Deployment, RemoteID: remoteID, Resource: &res})
+	_, err := c.call(ctx, request{Op: "update", Factory: res.Factory, RemoteID: remoteID, Resource: &res})
 	return err
 }
 
 // Delete deletes a resource.
-func (c *APIClient) Delete(ctx context.Context, deployment, remoteID string) error {
-	_, err := c.call(ctx, request{Op: "delete", Deployment: deployment, RemoteID: remoteID})
+func (c *APIClient) Delete(ctx context.Context, factory, remoteID string) error {
+	_, err := c.call(ctx, request{Op: "delete", Factory: factory, RemoteID: remoteID})
 	return err
 }
 

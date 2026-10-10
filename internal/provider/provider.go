@@ -107,7 +107,7 @@ func Renamed(name string) (string, bool) {
 	return current, ok
 }
 
-// LoadFolder loads a folder provider from providers/<name>/ in a factory.
+// LoadFolder loads a folder provider from providers/<name>/ in a blueprint.
 //
 // A folder provider must have a provider.yaml. If its apply modes include
 // api it needs an executable `api` program next to it, and if they include
@@ -164,9 +164,9 @@ type HandoffData struct {
 	// ID is the handoff's ID, used with `fabrica confirm`.
 	ID string
 	// Action is "create", "update" or "delete".
-	Action     string
-	Runtime    string
-	Deployment string
+	Action  string
+	Runtime string
+	Factory string
 	// Identity is the resource's stable identity. Templates should ask for
 	// it to be used as the resource's name, so Fabrica can recognize it.
 	Identity string
@@ -184,6 +184,10 @@ type HandoffData struct {
 	// ConfirmCommand is the exact `fabrica confirm …` line to run at the end.
 	ConfirmCommand string
 }
+
+// Deployment is Factory under its old name, for handoff.md templates
+// written before deployments were renamed to factories.
+func (d HandoffData) Deployment() string { return d.Factory }
 
 // HandoffTrigger describes the trigger to set up.
 type HandoffTrigger struct {

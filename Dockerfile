@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -o /fabrica ./cmd/fabrica
 
 FROM alpine:3.22
-# Fabrica runs git to read home repos and factories.
+# Fabrica runs git to read home repos and blueprints.
 RUN apk add --no-cache git ca-certificates openssh-client \
  && adduser -D -u 10001 fabrica \
  && mkdir /data && chown fabrica /data

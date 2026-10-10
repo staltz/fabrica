@@ -39,7 +39,7 @@ type Hook struct {
 	Binary      string
 	Runtime     string
 	Event       string
-	Deployment  string
+	Factory     string
 	Routine     string
 	Fingerprint string
 }
@@ -48,9 +48,9 @@ type Hook struct {
 // Code desktop scheduled task (one per repo, since a task runs in one
 // folder).
 type Task struct {
-	Deployment string
-	Routine    string
-	Repo       string
+	Factory string
+	Routine string
+	Repo    string
 	// Cron is the routine's schedule, in UTC like everywhere in Fabrica.
 	Cron        string
 	Fingerprint string
@@ -87,7 +87,7 @@ func (c Config) Normalize() Config {
 }
 
 func hookKey(h Hook) string {
-	return strings.Join([]string{h.Event, h.Deployment, h.Routine, h.Fingerprint, h.Runtime, h.Binary}, "\x00")
+	return strings.Join([]string{h.Event, h.Factory, h.Routine, h.Fingerprint, h.Runtime, h.Binary}, "\x00")
 }
 
 // IsFabricaEntry reports whether an MCP entry name is one Fabrica owns.
@@ -101,7 +101,7 @@ func HookCommand(h Hook) string {
 	return strings.Join([]string{
 		shellQuote(h.Binary), "hook",
 		"--runtime", h.Runtime,
-		"--deployment", h.Deployment,
+		"--factory", h.Factory,
 		"--routine", h.Routine,
 		"--stub", h.Fingerprint,
 		"--event", h.Event,
@@ -119,8 +119,8 @@ func ParseHookCommand(cmd string) (Hook, bool) {
 		switch args[i] {
 		case "--runtime":
 			h.Runtime = args[i+1]
-		case "--deployment":
-			h.Deployment = args[i+1]
+		case "--factory", "--deployment": // --deployment is from before the rename
+			h.Factory = args[i+1]
 		case "--routine":
 			h.Routine = args[i+1]
 		case "--stub":
@@ -131,7 +131,7 @@ func ParseHookCommand(cmd string) (Hook, bool) {
 			return Hook{}, false
 		}
 	}
-	if h.Deployment == "" || h.Routine == "" || h.Event == "" {
+	if h.Factory == "" || h.Routine == "" || h.Event == "" {
 		return Hook{}, false
 	}
 	return h, true

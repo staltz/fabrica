@@ -1,0 +1,9 @@
+# A different blueprint for one open source project, plus a local routine
+# that reviews my commits before every push.
+#
+# A specific repo always beats the wildcard, so in github.com/oss/project
+# this factory wins over my-default.
+blueprint: { git: github.com/me/oss-blueprint, ref: main }
+runtimes: [claude-code-local, cursor-local]
+targets: [github.com/oss/project]
+routines: [review-before-push]

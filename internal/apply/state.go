@@ -1,7 +1,7 @@
 // Package apply carries out plans: `fabrica apply` and `fabrica destroy`,
 // `fabrica confirm` and `fabrica unlock`.
 //
-// Cloud deployments keep their state in the home repo, and every write to
+// Cloud factories keep their state in the home repo, and every write to
 // a state file goes through git. Git only accepts a push on top of the
 // latest commit, so a push works like a compare-and-swap: when two people
 // (or CI jobs) race, exactly one push gets through, and the other one pulls,
@@ -25,15 +25,15 @@ import (
 // maxAttempts bounds how often we retry after losing a push race.
 const maxAttempts = 5
 
-// ErrLocked means another apply holds a deployment's lock.
+// ErrLocked means another apply holds a factory's lock.
 type ErrLocked struct {
-	Deployment string
-	Lock       home.Lock
+	Factory string
+	Lock    home.Lock
 }
 
 func (e *ErrLocked) Error() string {
-	return fmt.Sprintf("deployment %s is locked by %q since %s; if that apply crashed, run `fabrica unlock %s`",
-		e.Deployment, e.Lock.Holder, e.Lock.Since.Format(time.RFC3339), e.Deployment)
+	return fmt.Sprintf("factory %s is locked by %q since %s; if that apply crashed, run `fabrica unlock %s`",
+		e.Factory, e.Lock.Holder, e.Lock.Since.Format(time.RFC3339), e.Factory)
 }
 
 // Repo is a home repo checkout that Fabrica commits state to.
@@ -44,16 +44,16 @@ type Repo struct {
 
 // OpenRepo checks that dir is a home repo Fabrica can safely commit to: a
 // git checkout on a branch that tracks a remote, with no uncommitted
-// changes to deployments/ or state/.
+// changes to factories/ or state/.
 func OpenRepo(ctx context.Context, dir string) (*Repo, error) {
 	wt, err := gitx.OpenWorktree(ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("cloud deployments keep their state in git, but %w", err)
+		return nil, fmt.Errorf("cloud factories keep their state in git, but %w", err)
 	}
 	if _, _, err := wt.Upstream(ctx); err != nil {
 		return nil, err
 	}
-	dirty, err := wt.DirtyPaths(ctx, home.DeploymentsDir, home.StateDir)
+	dirty, err := wt.DirtyPaths(ctx, home.FactoriesDir, home.StateDir)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func OpenRepo(ctx context.Context, dir string) (*Repo, error) {
 // Sync brings the checkout up to date with the remote.
 func (r *Repo) Sync(ctx context.Context) error { return r.wt.Sync(ctx) }
 
-// Update changes one deployment's state in a single commit, safely:
+// Update changes one factory's state in a single commit, safely:
 //
 //  1. bring the checkout up to date,
 //  2. read the state and let mutate change it,
@@ -117,7 +117,7 @@ func (r *Repo) Update(ctx context.Context, name, message string, mutate func(*ho
 
 // Release writes the final state (with the lock removed) while we hold the
 // lock. Nobody else writes this file while we hold it, so if the push is
-// rejected the newer commits must be unrelated (another deployment's
+// rejected the newer commits must be unrelated (another factory's
 // state, say), and rebasing on top of them is safe.
 func (r *Repo) Release(ctx context.Context, name, message string, state *home.State) error {
 	state.Lock = nil
@@ -143,10 +143,10 @@ func (r *Repo) Release(ctx context.Context, name, message string, state *home.St
 	return fmt.Errorf("couldn't push the final state of %s (the lock is still held; fix the problem, then run `fabrica unlock %s`): %w", name, name, lastErr)
 }
 
-// write saves a state file, or removes it when a deleted deployment has
+// write saves a state file, or removes it when a deleted factory has
 // nothing left.
 func (r *Repo) write(name string, state *home.State) error {
-	if state.Empty() && !deploymentExists(r.Dir, name) {
+	if state.Empty() && !factoryExists(r.Dir, name) {
 		err := os.Remove(filepath.Join(r.Dir, home.StatePath(name)))
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -156,14 +156,14 @@ func (r *Repo) write(name string, state *home.State) error {
 	return home.WriteState(r.Dir, name, state)
 }
 
-func deploymentExists(dir, name string) bool {
-	_, err := os.Stat(filepath.Join(dir, home.DeploymentsDir, name+".yaml"))
+func factoryExists(dir, name string) bool {
+	_, err := os.Stat(filepath.Join(dir, home.FactoriesDir, name+".yaml"))
 	return err == nil
 }
 
 var errNoChange = errors.New("no change")
 
-// TakeLock takes a deployment's lock by committing a lock entry to its
+// TakeLock takes a factory's lock by committing a lock entry to its
 // state file and pushing. Losing the race is always safe: nothing remote
 // has been touched yet.
 func (r *Repo) TakeLock(ctx context.Context, name, holder string, now time.Time) error {
@@ -175,7 +175,7 @@ func (r *Repo) TakeLock(ctx context.Context, name, holder string, now time.Time)
 func (r *Repo) takeLock(ctx context.Context, name, holder, verb string, now time.Time) error {
 	return r.Update(ctx, name, "fabrica: lock "+name+" for "+verb, func(s *home.State) error {
 		if s.Lock != nil {
-			return &ErrLocked{Deployment: name, Lock: *s.Lock}
+			return &ErrLocked{Factory: name, Lock: *s.Lock}
 		}
 		s.Lock = &home.Lock{Holder: holder, Since: now.UTC().Truncate(time.Second)}
 		return nil

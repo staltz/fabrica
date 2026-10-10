@@ -1,9 +1,9 @@
 # Providers
 
-A **provider** maps Fabrica's ideas onto one runtime. Factories describe *what* should happen, and providers translate that for each specific tool.
+A **provider** maps Fabrica's ideas onto one runtime. Blueprints describe *what* should happen, and providers translate that for each specific tool.
 
 - **Built-in providers** are compiled into the `fabrica` binary. v0.1 has three cloud ones (Claude routines, Cursor automations and Codex) and three local ones (Claude Code, Cursor IDE and Codex CLI).
-- **Folder providers** ship inside any factory, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
+- **Folder providers** ship inside any blueprint, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
 
 ## Capability matrices
 
@@ -16,7 +16,7 @@ What the values mean:
 - **Triggers** are `native` or `unsupported`. Triggers can't be emulated.
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
 - **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`.
-- **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](factories.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
+- **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](blueprints.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
 - Anything a matrix doesn't list is unsupported.
 
 ### The built-in providers
@@ -71,7 +71,7 @@ A few things worth knowing about local hooks:
 - Codex skips new or changed hooks until you trust them in its `/hooks` screen. After an apply that changes a hook, open Codex and approve it.
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
 
-A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its deployment has to list its repos (`repos: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
+A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
 
 ## Apply modes
 
@@ -83,7 +83,7 @@ Each provider supports one or more of these, tried in order:
 
 ## Folder providers
 
-A factory can ship a provider for a runtime Fabrica doesn't know:
+A blueprint can ship a provider for a runtime Fabrica doesn't know:
 
 ```
 providers/<name>/
@@ -92,7 +92,7 @@ providers/<name>/
   handoff.md       # template for handoff instructions
 ```
 
-In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Deployments use them by name, like any runtime: `runtimes: [acme-runner]`.
+In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
 
 Folder providers can run code (`api`) with your runtime credentials during `apply`. Imports are pinned by commit and `fabrica upgrade` shows diffs (calling out provider changes in particular), so new provider code never arrives unseen.
 
@@ -127,21 +127,21 @@ Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, t
 
 The protocol is deliberately boring, so you can write a provider in any language. Fabrica runs `api <op>`, writes one JSON request to its stdin, and reads one JSON response from its stdout. A non-zero exit, or an `"error"` field in the response, means the operation failed, and whatever the program printed on stderr is shown to the user. The environment is passed through, so the program can read its credentials from environment variables. Each call times out after two minutes.
 
-Every request has `"version": 1` and `"op"`. The operations are:
+Every request has `"version": 2` and `"op"`. (Version 1 called the `factory` field `deployment`.) The operations are:
 
 | Op | Request | Response |
 |---|---|---|
-| `list` | `deployment`, `endpoint` | `{"resources": [{"identity", "remote_id", "fingerprint"?}]}`: every resource whose identity starts with the endpoint minus its scheme, plus `#` (like `fabrica.acme.dev/pr-review#`) |
-| `create` | `deployment`, `resource` | `{"remote_id": "…"}` |
-| `update` | `deployment`, `remote_id`, `resource` | `{}` |
-| `delete` | `deployment`, `remote_id` | `{}` |
+| `list` | `factory`, `endpoint` | `{"resources": [{"identity", "remote_id", "fingerprint"?}]}`: every resource whose identity starts with the endpoint minus its scheme, plus `#` (like `fabrica.acme.dev/pr-review#`) |
+| `create` | `factory`, `resource` | `{"remote_id": "…"}` |
+| `update` | `factory`, `remote_id`, `resource` | `{}` |
+| `delete` | `factory`, `remote_id` | `{}` |
 
 A `resource` looks like this:
 
 ```json
 {
   "identity": "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app",
-  "deployment": "pr-review",
+  "factory": "pr-review",
   "routine": "pr-review",
   "repo": "github.com/acme/app",
   "trigger": { "on": "github.pull_request.opened" },
@@ -165,7 +165,7 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 |---|---|
 | `.ID` | The handoff's ID, for `fabrica confirm`. |
 | `.Action` | `create`, `update` or `delete`. |
-| `.Runtime`, `.Deployment`, `.Routine`, `.Repo` | What it's about. |
+| `.Runtime`, `.Factory`, `.Routine`, `.Repo` | What it's about. |
 | `.Identity` | The resource's Fabrica identity. Ask for it to be used as the resource's name. |
 | `.RemoteID` | The runtime's own ID, for updates and deletes, when known. |
 | `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. |

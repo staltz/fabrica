@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"fmt"
@@ -12,16 +12,16 @@ import (
 )
 
 // Origin says where an item came from: nowhere (it's defined right here in
-// this factory) or through a chain of imports, like ["base", "community"]
+// this blueprint) or through a chain of imports, like ["base", "community"]
 // for an item that `base` imported from its own `community` import.
 type Origin []string
 
-// Local reports whether the item is defined in this factory itself.
+// Local reports whether the item is defined in this blueprint itself.
 func (o Origin) Local() bool { return len(o) == 0 }
 
 func (o Origin) String() string {
 	if o.Local() {
-		return "this factory"
+		return "this blueprint"
 	}
 	return "import " + strings.Join(o, " › ")
 }
@@ -35,7 +35,7 @@ func (o Origin) Prepend(alias string) Origin {
 type ItemInfo struct {
 	Ref    names.Ref
 	Origin Origin
-	// File is the item's path inside the factory it was defined in, like
+	// File is the item's path inside the blueprint it was defined in, like
 	// "routines/pr-review.md" or "skills/pdf". Used in messages.
 	File string
 	// Hash is a fingerprint of the item's content, used to tell when
@@ -132,7 +132,7 @@ type Arg struct {
 	Value string
 }
 
-// Param is a value a deployment can (or must) set for a routine.
+// Param is a value a factory can (or must) set for a routine.
 type Param struct {
 	Name        string
 	Required    bool
@@ -146,7 +146,7 @@ type Routine struct {
 	ItemInfo
 	Description string
 	Trigger     Trigger
-	// Skills are the factory skills the routine uses.
+	// Skills are the blueprint skills the routine uses.
 	Skills      []string
 	Connectors  []names.MaybeName
 	SideEffects []SideEffect
@@ -238,7 +238,7 @@ type MCPServer struct {
 	Env       []string `json:"env,omitempty"`
 }
 
-// ProviderItem is a folder provider shipped inside a factory.
+// ProviderItem is a folder provider shipped inside a blueprint.
 type ProviderItem struct {
 	ItemInfo
 	Provider *provider.Provider

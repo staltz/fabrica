@@ -10,21 +10,21 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 )
 
 func newLock() *cobra.Command {
 	return &cobra.Command{
-		Use:   "lock [factory-folder]",
-		Short: "Pin every import of a factory to an exact commit, in fabrica.lock",
+		Use:   "lock [blueprint-folder]",
+		Short: "Pin every import of a blueprint to an exact commit, in fabrica.lock",
 		Long: `Lock resolves each import's ref to an exact commit and writes them to
 fabrica.lock. Imports that are already pinned keep their commit: locking
 never moves a pin on its own (that's what ` + "`fabrica upgrade`" + ` is for).
-It only writes the lock when the factory has no errors with it, like two
+It only writes the lock when the blueprint has no errors with it, like two
 imports bringing the same item.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := factoryDir(args)
+			dir, err := blueprintDir(args)
 			if err != nil {
 				return err
 			}
@@ -35,12 +35,12 @@ imports bringing the same item.`,
 			out := cmd.OutOrStdout()
 			lock, changes, _, diags := t.loader.Lock(cmd.Context(), dir)
 			if len(changes) > 0 {
-				fmt.Fprint(out, factory.FormatChanges(changes))
+				fmt.Fprint(out, blueprint.FormatChanges(changes))
 			}
 			errs, warns := printDiags(out, diags, false)
 			if errs > 0 {
 				fmt.Fprintln(out, countSummary(errs, warns))
-				fmt.Fprintf(out, "%s wasn't written.\n", factory.LockFile)
+				fmt.Fprintf(out, "%s wasn't written.\n", blueprint.LockFile)
 				return &ExitError{Code: 1}
 			}
 			return writeLock(out, dir, lock)
@@ -62,7 +62,7 @@ can run with your runtime credentials during apply).
 
 It asks before writing fabrica.lock, unless you pass --yes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			abs, err := factoryDir([]string{dir})
+			abs, err := blueprintDir([]string{dir})
 			if err != nil {
 				return err
 			}
@@ -77,11 +77,11 @@ It asks before writing fabrica.lock, unless you pass --yes.`,
 				fmt.Fprintln(out, "Every import is already at the newest commit of its ref.")
 				return nil
 			}
-			fmt.Fprint(out, factory.FormatChanges(changes))
+			fmt.Fprint(out, blueprint.FormatChanges(changes))
 			errs, warns := printDiags(out, diags, false)
 			if errs > 0 {
 				fmt.Fprintln(out, countSummary(errs, warns))
-				fmt.Fprintf(out, "%s wasn't written: the upgraded factory has errors. Fix them (often with only: or exclude:), then upgrade again.\n", factory.LockFile)
+				fmt.Fprintf(out, "%s wasn't written: the upgraded blueprint has errors. Fix them (often with only: or exclude:), then upgrade again.\n", blueprint.LockFile)
 				return &ExitError{Code: 1}
 			}
 			if dryRun {
@@ -90,9 +90,9 @@ It asks before writing fabrica.lock, unless you pass --yes.`,
 			}
 			if !yes {
 				if !isTerminal(cmd.InOrStdin()) {
-					return &ExitError{Code: 1, Err: fmt.Errorf("not writing %s without confirmation; review the diff above and run again with --yes", factory.LockFile)}
+					return &ExitError{Code: 1, Err: fmt.Errorf("not writing %s without confirmation; review the diff above and run again with --yes", blueprint.LockFile)}
 				}
-				if !ask(cmd.InOrStdin(), out, "Write the new "+factory.LockFile+"? [y/N] ") {
+				if !ask(cmd.InOrStdin(), out, "Write the new "+blueprint.LockFile+"? [y/N] ") {
 					fmt.Fprintln(out, "Nothing was written.")
 					return nil
 				}
@@ -100,13 +100,13 @@ It asks before writing fabrica.lock, unless you pass --yes.`,
 			return writeLock(out, abs, lock)
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", ".", "the factory folder")
+	cmd.Flags().StringVar(&dir, "dir", ".", "the blueprint folder")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "write fabrica.lock without asking")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "only show what would change")
 	return cmd
 }
 
-func factoryDir(args []string) (string, error) {
+func blueprintDir(args []string) (string, error) {
 	dir := "."
 	if len(args) > 0 && args[0] != "" {
 		dir = args[0]
@@ -115,28 +115,28 @@ func factoryDir(args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !exists(filepath.Join(abs, factory.ManifestFile)) {
-		return "", fmt.Errorf("there's no %s in %s, so it isn't a factory", factory.ManifestFile, abs)
+	if !exists(filepath.Join(abs, blueprint.ManifestFile)) {
+		return "", fmt.Errorf("there's no %s in %s, so it isn't a blueprint", blueprint.ManifestFile, abs)
 	}
 	return abs, nil
 }
 
 // writeLock writes fabrica.lock when it differs from what's on disk.
-func writeLock(out io.Writer, dir string, lock *factory.Lock) error {
-	path := filepath.Join(dir, factory.LockFile)
-	existing, _ := factory.ReadLock(dir)
+func writeLock(out io.Writer, dir string, lock *blueprint.Lock) error {
+	path := filepath.Join(dir, blueprint.LockFile)
+	existing, _ := blueprint.ReadLock(dir)
 	switch {
 	case len(lock.Imports) == 0 && !exists(path):
-		fmt.Fprintln(out, "This factory has no imports, so there's nothing to lock.")
+		fmt.Fprintln(out, "This blueprint has no imports, so there's nothing to lock.")
 		return nil
 	case existing != nil && reflect.DeepEqual(existing.Imports, lock.Imports):
-		fmt.Fprintf(out, "%s is up to date.\n", factory.LockFile)
+		fmt.Fprintf(out, "%s is up to date.\n", blueprint.LockFile)
 		return nil
 	}
-	if err := factory.WriteLock(dir, lock); err != nil {
+	if err := blueprint.WriteLock(dir, lock); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Wrote %s. Commit it together with %s.\n", factory.LockFile, factory.ManifestFile)
+	fmt.Fprintf(out, "Wrote %s. Commit it together with %s.\n", blueprint.LockFile, blueprint.ManifestFile)
 	return nil
 }
 

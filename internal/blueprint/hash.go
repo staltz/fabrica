@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"crypto/sha256"

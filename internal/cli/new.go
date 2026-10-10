@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/paths"
 	"github.com/staltz/fabrica/internal/product"
@@ -22,20 +22,20 @@ func newNew() *cobra.Command {
 	var empty, noGit bool
 	cmd := &cobra.Command{
 		Use:   "new <folder>",
-		Short: "Start a new factory repo in a folder",
-		Long: `New writes a new factory into a folder (creating it if needed) and runs
-git init there, so you get a factory repo that's ready to edit and commit.
+		Short: "Start a new blueprint repo in a folder",
+		Long: `New writes a new blueprint into a folder (creating it if needed) and runs
+git init there, so you get a blueprint repo that's ready to edit and commit.
 
-The factory is a copy of Fabrica's starter factory, built into this
+The blueprint is a copy of Fabrica's starter blueprint, built into this
 binary: skills, routines and rules for writing the test first, keeping
 changes small and reviewing every pull request, plus GitHub and Slack
 connectors. It works as it is, and it's yours to change. With --empty,
-you get a factory with nothing in it yet: a fabrica.yaml with every key
+you get a blueprint with nothing in it yet: a fabrica.yaml with every key
 commented out, and a README.
 
 New never overwrites a file: if the folder already has any file it would
 write, it writes nothing. When the folder is inside a git repo already, it
-doesn't run git init, since a factory can live in a subfolder of a repo.
+doesn't run git init, since a blueprint can live in a subfolder of a repo.
 It never commits for you either. Look the files over, then commit them.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,19 +48,19 @@ It never commits for you either. Look the files over, then commit them.`,
 			if empty {
 				tmpl = scaffold.Empty
 			}
-			written, err := scaffold.Factory(dir, tmpl)
+			written, err := scaffold.Blueprint(dir, tmpl)
 			if err != nil {
 				return err
 			}
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
-			// A new factory has no imports, so loading it never needs git.
-			f, diags := factory.NewLoader(nil).LoadDir(ctx, dir, factory.LoadOptions{})
+			// A new blueprint has no imports, so loading it never needs git.
+			f, diags := blueprint.NewLoader(nil).LoadDir(ctx, dir, blueprint.LoadOptions{})
 			if empty {
-				fmt.Fprintf(out, "Created an empty factory in %s.\n", dir)
+				fmt.Fprintf(out, "Created an empty blueprint in %s.\n", dir)
 			} else {
-				fmt.Fprintf(out, "Created a factory in %s, from Fabrica's starter factory.\n", dir)
+				fmt.Fprintf(out, "Created a blueprint in %s, from Fabrica's starter blueprint.\n", dir)
 				if f != nil {
 					fmt.Fprintf(out, "  %s\n", itemCounts(f))
 				}
@@ -72,8 +72,8 @@ It never commits for you either. Look the files over, then commit them.`,
 				return &ExitError{Code: 1}
 			}
 
-			// Work out the repo the factory lives in, for git init and for
-			// the deployment to suggest.
+			// Work out the repo the blueprint lives in, for git init and for
+			// the factory to suggest.
 			repo, top, branch, subpath := "", "", "", ""
 			if !noGit {
 				repo, top, _ = product.RepoName(ctx, dir)
@@ -81,7 +81,7 @@ It never commits for you either. Look the files over, then commit them.`,
 				switch {
 				case top == "":
 					if wt, err = gitx.Init(ctx, dir); err != nil {
-						return fmt.Errorf("the factory is written, but git init failed: %w", err)
+						return fmt.Errorf("the blueprint is written, but git init failed: %w", err)
 					}
 					top = wt.Dir
 					fmt.Fprintln(out, "Initialized a new git repo there.")
@@ -116,25 +116,25 @@ It never commits for you either. Look the files over, then commit them.`,
 			}
 			fmt.Fprintln(out, "  fabrica check")
 			if !noGit {
-				fmt.Fprintln(out, `  git add . && git commit -m "Start a factory"`)
+				fmt.Fprintln(out, `  git add . && git commit -m "Start a blueprint"`)
 			}
-			deployment := fmt.Sprintf("git: %s, ref: %s", repo, branch)
+			factory := fmt.Sprintf("git: %s, ref: %s", repo, branch)
 			if subpath != "" {
-				deployment += ", path: " + subpath
+				factory += ", path: " + subpath
 			}
-			fmt.Fprintf(out, "\nThen push it somewhere git can reach, and deploy it from a home repo with:\n\n  factory: { %s }\n\n", deployment)
+			fmt.Fprintf(out, "\nThen push it somewhere git can reach, and deploy it from a home repo with:\n\n  blueprint: { %s }\n\n", factory)
 			fmt.Fprintf(out, "Getting started walks you through it: %s\n", gettingStartedURL)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&empty, "empty", false, "start from an empty factory instead of the starter factory")
+	cmd.Flags().BoolVar(&empty, "empty", false, "start from an empty blueprint instead of the starter blueprint")
 	cmd.Flags().BoolVar(&noGit, "no-git", false, "don't run git init")
 	return cmd
 }
 
-// itemCounts sums up what's in a factory, like "5 skills, 3 routines, 4
+// itemCounts sums up what's in a blueprint, like "5 skills, 3 routines, 4
 // rules, 2 connectors, 0 providers".
-func itemCounts(f *factory.Factory) string {
+func itemCounts(f *blueprint.Blueprint) string {
 	return strings.Join([]string{
 		plural(len(f.Skills), "skill"), plural(len(f.Routines), "routine"), plural(len(f.Rules), "rule"),
 		plural(len(f.Connectors), "connector"), plural(len(f.Providers), "provider"),

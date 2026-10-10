@@ -32,14 +32,14 @@ import (
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
 // see docs/run-history.md.
-const Schema = schemaV1 + schemaV2
+const Schema = schemaV1 + schemaV2 + schemaV3
 
 // migrations[i] takes a database from schema version i to i+1.
-var migrations = []string{schemaV1, schemaV2}
+var migrations = []string{schemaV1, schemaV2, schemaV3}
 
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
@@ -101,6 +101,26 @@ CREATE TABLE memories (
   updated_by TEXT NOT NULL REFERENCES runs(run_id),
   PRIMARY KEY (deployment, routine, repo)
 );
+`
+
+// schemaV3 follows the renames of deployments to factories and of
+// factories to blueprints.
+const schemaV3 = `
+DROP VIEW run_overview;
+ALTER TABLE runs RENAME COLUMN deployment TO factory;
+ALTER TABLE runs RENAME COLUMN factory_sha TO blueprint_sha;
+ALTER TABLE memories RENAME COLUMN deployment TO factory;
+
+-- One row per run with its latest checkpoint, for quick looks.
+CREATE VIEW run_overview AS
+SELECT
+  r.run_id, r.started_at, r.intent, r.routine, r.runtime, r.repo,
+  r.factory, r.blueprint_sha, r.served_by,
+  (SELECT c.status  FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_status,
+  (SELECT c.summary FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_summary,
+  (SELECT COUNT(*)  FROM checkpoints c WHERE c.run_id = r.run_id) AS checkpoint_count,
+  (SELECT group_concat(skill, ',') FROM (SELECT DISTINCT s.skill FROM skill_loads s WHERE s.run_id = r.run_id ORDER BY s.skill)) AS skills_loaded
+FROM runs r;
 `
 
 // DB is a run-history database.
@@ -166,16 +186,16 @@ const (
 
 // Run is one run record.
 type Run struct {
-	ID         string
-	StartedAt  time.Time
-	Intent     string
-	Routine    string
-	Runtime    string
-	Repo       string
-	Deployment string
-	FactorySHA string
-	Stub       string
-	ServedBy   string
+	ID           string
+	StartedAt    time.Time
+	Intent       string
+	Routine      string
+	Runtime      string
+	Repo         string
+	Factory      string
+	BlueprintSHA string
+	Stub         string
+	ServedBy     string
 }
 
 // Checkpoint statuses.
@@ -203,10 +223,10 @@ type Checkpoint struct {
 // Begin records the start of a run.
 func (d *DB) Begin(ctx context.Context, r Run) error {
 	_, err := d.db.ExecContext(ctx,
-		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, deployment, factory_sha, stub, served_by)
+		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, stamp(r.StartedAt), r.Intent, null(r.Routine), null(r.Runtime), null(r.Repo),
-		null(r.Deployment), null(r.FactorySHA), null(r.Stub), r.ServedBy)
+		null(r.Factory), null(r.BlueprintSHA), null(r.Stub), r.ServedBy)
 	return err
 }
 
@@ -236,10 +256,10 @@ var ErrNoRun = errors.New("no such run")
 func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 	var r Run
 	var started string
-	var routine, runtime, repo, deployment, sha, stub sql.NullString
+	var routine, runtime, repo, factory, sha, stub sql.NullString
 	err := d.db.QueryRowContext(ctx,
-		`SELECT run_id, started_at, intent, routine, runtime, repo, deployment, factory_sha, stub, served_by FROM runs WHERE run_id = ?`, runID).
-		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &deployment, &sha, &stub, &r.ServedBy)
+		`SELECT run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by FROM runs WHERE run_id = ?`, runID).
+		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoRun
 	}
@@ -247,7 +267,7 @@ func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 		return nil, err
 	}
 	r.StartedAt, _ = time.Parse(time.RFC3339Nano, started)
-	r.Routine, r.Runtime, r.Repo, r.Deployment, r.FactorySHA, r.Stub = routine.String, runtime.String, repo.String, deployment.String, sha.String, stub.String
+	r.Routine, r.Runtime, r.Repo, r.Factory, r.BlueprintSHA, r.Stub = routine.String, runtime.String, repo.String, factory.String, sha.String, stub.String
 	return &r, nil
 }
 
@@ -302,14 +322,14 @@ type Memory struct {
 // keeps memories to notes, which every run reads in full, rather than logs.
 const MaxMemoryBytes = 16 * 1024
 
-// Memory reads a routine's memory for one deployment and repo. A routine
+// Memory reads a routine's memory for one factory and repo. A routine
 // that never saved anything has an empty one.
-func (d *DB) Memory(ctx context.Context, deployment, routine, repo string) (Memory, error) {
+func (d *DB) Memory(ctx context.Context, factory, routine, repo string) (Memory, error) {
 	var m Memory
 	var at string
 	err := d.db.QueryRowContext(ctx,
-		`SELECT content, updated_at, updated_by FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`,
-		deployment, routine, repo).Scan(&m.Content, &at, &m.UpdatedBy)
+		`SELECT content, updated_at, updated_by FROM memories WHERE factory = ? AND routine = ? AND repo = ?`,
+		factory, routine, repo).Scan(&m.Content, &at, &m.UpdatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Memory{}, nil
 	}
@@ -320,20 +340,20 @@ func (d *DB) Memory(ctx context.Context, deployment, routine, repo string) (Memo
 	return m, nil
 }
 
-// SaveMemory replaces a routine's memory for one deployment and repo, on
+// SaveMemory replaces a routine's memory for one factory and repo, on
 // behalf of a run. Empty content forgets everything.
-func (d *DB) SaveMemory(ctx context.Context, deployment, routine, repo, content, runID string, at time.Time) error {
+func (d *DB) SaveMemory(ctx context.Context, factory, routine, repo, content, runID string, at time.Time) error {
 	if len(content) > MaxMemoryBytes {
 		return fmt.Errorf("the memory is %d bytes, but the limit is %d; keep only what future runs need, and save it again", len(content), MaxMemoryBytes)
 	}
 	if strings.TrimSpace(content) == "" {
-		_, err := d.db.ExecContext(ctx, `DELETE FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`, deployment, routine, repo)
+		_, err := d.db.ExecContext(ctx, `DELETE FROM memories WHERE factory = ? AND routine = ? AND repo = ?`, factory, routine, repo)
 		return err
 	}
 	_, err := d.db.ExecContext(ctx,
-		`INSERT INTO memories (deployment, routine, repo, content, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT (deployment, routine, repo) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-		deployment, routine, repo, content, stamp(at), runID)
+		`INSERT INTO memories (factory, routine, repo, content, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (factory, routine, repo) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+		factory, routine, repo, content, stamp(at), runID)
 	return err
 }
 

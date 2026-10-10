@@ -16,8 +16,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/provider"
@@ -29,21 +29,21 @@ import (
 // RemoteOptions configure `fabrica mcp --http`.
 type RemoteOptions struct {
 	// Home is the home repo to serve: a git URL (or a local path to a git
-	// repo). The server serves exactly what its cloud deployments deploy.
+	// repo). The server serves exactly what its cloud factories deploy.
 	Home string
 	// HomeRef is the branch to read. Empty means the default branch.
 	HomeRef string
-	// PublicURL, when set, limits the server to deployments whose server:
-	// is this URL. That lets one home repo point different deployments at
+	// PublicURL, when set, limits the server to factories whose server:
+	// is this URL. That lets one home repo point different factories at
 	// different servers (staging and production, say).
 	PublicURL string
-	// Secret is the server secret. Each deployment's token is
-	// HMAC(secret, deployment name).
+	// Secret is the server secret. Each factory's token is
+	// HMAC(secret, factory name).
 	Secret string
-	// RefreshEvery is how often to re-fetch the home repo and factories.
+	// RefreshEvery is how often to re-fetch the home repo and blueprints.
 	RefreshEvery time.Duration
 	Git          *gitx.Cache
-	Loader       *factory.Loader
+	Loader       *blueprint.Loader
 	Runs         *runs.DB
 	Logger       *slog.Logger
 	Now          func() time.Time
@@ -62,17 +62,17 @@ type Remote struct {
 
 // remoteState is one reading of the home repo.
 type remoteState struct {
-	homeCommit  string
-	deployments map[string]*remoteDeployment
-	// routes maps a URL path (like /pr-review) to a deployment name.
+	homeCommit string
+	factories  map[string]*remoteFactory
+	// routes maps a URL path (like /pr-review) to a factory name.
 	routes map[string]string
 }
 
-type remoteDeployment struct {
-	deployment *home.Deployment
-	factory    *factory.Factory
-	// refusal is set when the deployment can't be served, like when its
-	// factory has errors. Sessions still connect, so agents can say why.
+type remoteFactory struct {
+	factory   *home.Factory
+	blueprint *blueprint.Blueprint
+	// refusal is set when the factory can't be served, like when its
+	// blueprint has errors. Sessions still connect, so agents can say why.
 	refusal string
 }
 
@@ -88,10 +88,10 @@ func NewRemote(opts RemoteOptions) (*Remote, error) {
 	if opts.RefreshEvery == 0 {
 		opts.RefreshEvery = time.Minute
 	}
-	return &Remote{opts: opts, handlers: map[string]*mcp.StreamableHTTPHandler{}, state: &remoteState{deployments: map[string]*remoteDeployment{}, routes: map[string]string{}}}, nil
+	return &Remote{opts: opts, handlers: map[string]*mcp.StreamableHTTPHandler{}, state: &remoteState{factories: map[string]*remoteFactory{}, routes: map[string]string{}}}, nil
 }
 
-// Refresh re-reads the home repo and the factories it deploys. When it
+// Refresh re-reads the home repo and the blueprints it deploys. When it
 // fails, the server keeps serving what it had.
 func (s *Remote) Refresh(ctx context.Context) error {
 	st, err := s.read(ctx)
@@ -103,7 +103,7 @@ func (s *Remote) Refresh(ctx context.Context) error {
 		return err
 	}
 	if st.homeCommit != s.state.homeCommit {
-		s.opts.Logger.Info("serving home repo", "commit", gitx.Short(st.homeCommit), "deployments", len(st.deployments))
+		s.opts.Logger.Info("serving home repo", "commit", gitx.Short(st.homeCommit), "factories", len(st.factories))
 	}
 	s.state = st
 	return nil
@@ -143,31 +143,31 @@ func (s *Remote) read(ctx context.Context) (*remoteState, error) {
 	s.mu.RLock()
 	prev := s.state
 	s.mu.RUnlock()
-	st := &remoteState{homeCommit: commit, deployments: map[string]*remoteDeployment{}, routes: map[string]string{}}
+	st := &remoteState{homeCommit: commit, factories: map[string]*remoteFactory{}, routes: map[string]string{}}
 	for _, name := range h.Names() {
-		d := h.Deployments[name]
+		d := h.Factories[name]
 		if d.Scope != provider.Cloud {
-			continue // local deployments are for `fabrica mcp` on laptops
+			continue // local factories are for `fabrica mcp` on laptops
 		}
 		if s.opts.PublicURL != "" && strings.TrimRight(d.Server, "/") != strings.TrimRight(s.opts.PublicURL, "/") {
 			continue
 		}
-		rd := &remoteDeployment{deployment: d}
-		resolved, err := s.opts.Git.Remote(repourl.GitURL(d.Factory.Git), gitx.Full).Resolve(ctx, d.Factory.Ref)
+		rd := &remoteFactory{factory: d}
+		resolved, err := s.opts.Git.Remote(repourl.GitURL(d.Blueprint.Git), gitx.Full).Resolve(ctx, d.Blueprint.Ref)
 		switch {
 		case err != nil:
-			rd.refusal = fmt.Sprintf("the server couldn't read the factory of deployment %s: %v", name, err)
-		case prev.deployments[name] != nil && prev.deployments[name].factory != nil && prev.deployments[name].factory.Source.Commit == resolved.Commit && prev.deployments[name].deployment.Factory == d.Factory:
-			rd.factory = prev.deployments[name].factory // same commit, nothing to reload
+			rd.refusal = fmt.Sprintf("the server couldn't read the blueprint of factory %s: %v", name, err)
+		case prev.factories[name] != nil && prev.factories[name].blueprint != nil && prev.factories[name].blueprint.Source.Commit == resolved.Commit && prev.factories[name].factory.Blueprint == d.Blueprint:
+			rd.blueprint = prev.factories[name].blueprint // same commit, nothing to reload
 		default:
-			f, diags := s.opts.Loader.LoadGit(ctx, d.Factory.Git, resolved.Commit, d.Factory.Path)
+			f, diags := s.opts.Loader.LoadGit(ctx, d.Blueprint.Git, resolved.Commit, d.Blueprint.Path)
 			if errs := diags.Only(diag.Error); len(errs) > 0 || f == nil {
-				rd.refusal = fmt.Sprintf("the factory of deployment %s (%s at %s) has problems: %s", name, d.Factory, gitx.Short(resolved.Commit), firstLines(errs, 3))
+				rd.refusal = fmt.Sprintf("the blueprint of factory %s (%s at %s) has problems: %s", name, d.Blueprint, gitx.Short(resolved.Commit), firstLines(errs, 3))
 			} else {
-				rd.factory = f
+				rd.blueprint = f
 			}
 		}
-		st.deployments[name] = rd
+		st.factories[name] = rd
 		st.routes[endpointPath(d.Endpoint())] = name
 	}
 	return st, nil
@@ -203,11 +203,11 @@ func (s *Remote) RunRefresher(ctx context.Context) {
 	}
 }
 
-// ServeHTTP routes requests to deployment endpoints:
+// ServeHTTP routes requests to factory endpoints:
 //
 //	/healthz                       health check (no token needed)
-//	/<deployment>                  token in an Authorization: Bearer header
-//	/<deployment>/t/<token>        token in the URL, for runtimes that only take a URL
+//	/<factory>                  token in an Authorization: Bearer header
+//	/<factory>/t/<token>        token in the URL, for runtimes that only take a URL
 func (s *Remote) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		s.health(w)
@@ -217,7 +217,7 @@ func (s *Remote) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	st := s.current()
 	name, ok := st.routes[p]
 	if !ok {
-		httpError(w, http.StatusNotFound, "there's no Fabrica deployment at "+p)
+		httpError(w, http.StatusNotFound, "there's no Fabrica factory at "+p)
 		return
 	}
 	if tok == "" {
@@ -225,7 +225,7 @@ func (s *Remote) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if tok == "" || !token.Valid(s.opts.Secret, name, strings.TrimSpace(tok)) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="fabrica"`)
-		httpError(w, http.StatusUnauthorized, "missing or wrong token for deployment "+name)
+		httpError(w, http.StatusUnauthorized, "missing or wrong token for factory "+name)
 		return
 	}
 	s.handlerFor(name).ServeHTTP(w, r)
@@ -244,9 +244,9 @@ func splitToken(p string) (string, string) {
 	return p[:i], tok
 }
 
-// handlerFor returns the MCP handler of one deployment. Each deployment
-// gets its own handler, so sessions of one deployment can never be used
-// through another deployment's endpoint.
+// handlerFor returns the MCP handler of one factory. Each factory
+// gets its own handler, so sessions of one factory can never be used
+// through another factory's endpoint.
 func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -256,7 +256,7 @@ func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.newSession(name) }, &mcp.StreamableHTTPOptions{
 		SessionTimeout: time.Hour,
 		Logger:         s.opts.Logger,
-		// Every request already needs the deployment's secret token, which
+		// Every request already needs the factory's secret token, which
 		// DNS rebinding can't get at, and Fabrica usually runs behind a
 		// reverse proxy that connects over localhost.
 		DisableLocalhostProtection: true,
@@ -265,14 +265,14 @@ func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
 	return h
 }
 
-// newSession starts a session for a deployment, fixed to the factory
+// newSession starts a session for a factory, fixed to the blueprint
 // commit the server has right now.
 func (s *Remote) newSession(name string) *mcp.Server {
-	rd := s.current().deployments[name]
+	rd := s.current().factories[name]
 	if rd == nil {
 		return nil
 	}
-	snap := &Snapshot{Mode: runs.ServedRemote, Deployment: rd.deployment, Factory: rd.factory, Refusal: rd.refusal}
+	snap := &Snapshot{Mode: runs.ServedRemote, Factory: rd.factory, Blueprint: rd.blueprint, Refusal: rd.refusal}
 	core := &Core{Runs: s.opts.Runs, Backend: &remoteBackend{server: s, snap: snap}, Now: s.opts.Now}
 	instructions := Instructions(snap)
 	if snap.Refusal != "" {
@@ -333,10 +333,10 @@ type remoteBackend struct {
 
 func (b *remoteBackend) Resolve(context.Context, *mcp.ServerSession) *Snapshot { return b.snap }
 
-func (b *remoteBackend) LatestDeployment(_ context.Context, snap *Snapshot, _, _ string) (*home.Deployment, string) {
-	rd := b.server.current().deployments[snap.deploymentName()]
+func (b *remoteBackend) LatestFactory(_ context.Context, snap *Snapshot, _, _ string) (*home.Factory, string) {
+	rd := b.server.current().factories[snap.factoryName()]
 	if rd == nil {
-		return nil, fmt.Sprintf("deployment %s isn't in the home repo anymore", snap.deploymentName())
+		return nil, fmt.Sprintf("factory %s isn't in the home repo anymore", snap.factoryName())
 	}
-	return rd.deployment, ""
+	return rd.factory, ""
 }

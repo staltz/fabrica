@@ -24,7 +24,7 @@ const (
 )
 
 // ToyProviderFiles are the files of the toy folder provider, ready to drop
-// into a factory under providers/toy/.
+// into a blueprint under providers/toy/.
 var ToyProviderFiles = map[string]string{
 	"providers/toy/provider.yaml": `kind: cloud
 description: A pretend runtime used in Fabrica's tests
@@ -153,7 +153,7 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return err
 	}
-	if req.Version != 1 {
+	if req.Version != 2 {
 		return fmt.Errorf("unsupported protocol version %d", req.Version)
 	}
 	enc := json.NewEncoder(out)

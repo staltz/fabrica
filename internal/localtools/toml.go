@@ -162,7 +162,7 @@ func writeCodexServers(data []byte, entries []MCPEntry) []byte {
 		}
 		if e.Name == "fabrica" {
 			// The first session after an upgrade may need to fetch the
-			// factory, which can take longer than Codex's 10-second default.
+			// blueprint, which can take longer than Codex's 10-second default.
 			kept = append(kept, fmt.Sprintf("startup_timeout_sec = %d", codexStartupTimeout))
 		}
 	}

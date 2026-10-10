@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"errors"
@@ -436,7 +436,7 @@ func parseConnector(data []byte, name, file string) *Connector {
 		return fail("the file name isn't a valid connector name: %v", err)
 	}
 	if name == "fabrica" {
-		return fail("the name fabrica is taken: Fabrica's own MCP server is added to every deployment automatically")
+		return fail("the name fabrica is taken: Fabrica's own MCP server is added to every factory automatically")
 	}
 	var f connectorFile
 	if err := yamlx.DecodeStrict(data, &f); err != nil {
@@ -516,7 +516,7 @@ func parseMCPServer(f mcpFile) (*MCPServer, error) {
 		}
 	case "bearer":
 		if s.Secret == "" {
-			return nil, fmt.Errorf("auth: bearer needs secret: set to the name of the secret holding the token (like LINEAR_API_KEY); the token itself never goes in a factory")
+			return nil, fmt.Errorf("auth: bearer needs secret: set to the name of the secret holding the token (like LINEAR_API_KEY); the token itself never goes in a blueprint")
 		}
 	default:
 		return nil, fmt.Errorf("auth is %q; use none, oauth or bearer", s.Auth)

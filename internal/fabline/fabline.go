@@ -3,7 +3,7 @@
 // with.
 //
 // AGENTS.md is the one file that Codex, Cursor and Claude Code all load on
-// their own. Putting this sentence at the very top is how factory rules
+// their own. Putting this sentence at the very top is how blueprint rules
 // become always-on in every tool, without Fabrica ever writing files into
 // your product repo.
 package fabline

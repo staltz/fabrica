@@ -14,7 +14,7 @@ import (
 
 func TestResolveBranchTagAndCommit(t *testing.T) {
 	host := testkit.NewHost(t)
-	repo := host.Repo("github.com/acme/factory")
+	repo := host.Repo("github.com/acme/blueprint")
 	first := repo.Write(map[string]string{"a.txt": "one"}).Commit("first")
 	repo.Tag("v1")
 	second := repo.Write(map[string]string{"a.txt": "two"}).Commit("second")
@@ -54,7 +54,7 @@ func TestResolveBranchTagAndCommit(t *testing.T) {
 
 func TestResolveRefusesAmbiguousRef(t *testing.T) {
 	host := testkit.NewHost(t)
-	repo := host.Repo("github.com/acme/factory")
+	repo := host.Repo("github.com/acme/blueprint")
 	repo.Write(map[string]string{"a.txt": "one"}).Commit("first")
 	repo.Tag("stable").Branch("stable")
 
@@ -67,7 +67,7 @@ func TestResolveRefusesAmbiguousRef(t *testing.T) {
 
 func TestTreeKeepsModesAndIsReadOnly(t *testing.T) {
 	host := testkit.NewHost(t)
-	repo := host.Repo("github.com/acme/factory")
+	repo := host.Repo("github.com/acme/blueprint")
 	commit := repo.Write(map[string]string{
 		"skills/pdf/SKILL.md":             "---\nname: pdf\n---\n",
 		"skills/pdf/scripts/extract.sh!x": "#!/bin/sh\necho hi\n",
@@ -172,7 +172,7 @@ func TestSyncRefusesUnpushedCommits(t *testing.T) {
 	host := testkit.NewHost(t)
 	home := host.Home("github.com/acme/home")
 	ctx := context.Background()
-	home.Write(map[string]string{"deployments/x.yaml": "x\n"})
+	home.Write(map[string]string{"factories/x.yaml": "x\n"})
 	testkit.Git(t, home.Dir, "add", "--all")
 	testkit.Git(t, home.Dir, "commit", "--quiet", "-m", "local only")
 

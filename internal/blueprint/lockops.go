@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"context"
@@ -46,13 +46,13 @@ func (d ItemDiff) Empty() bool {
 	return len(d.Added) == 0 && len(d.Removed) == 0 && len(d.Changed) == 0
 }
 
-// Lock pins every import of the factory in dir to an exact commit.
+// Lock pins every import of the blueprint in dir to an exact commit.
 //
 // Imports that are already pinned (and whose git, ref and path haven't
 // changed) keep their commit: locking never moves a pin on its own. Use
-// Upgrade for that. The returned lock is checked by loading the factory
+// Upgrade for that. The returned lock is checked by loading the blueprint
 // with it; the caller should only write it when there are no errors.
-func (l *Loader) Lock(ctx context.Context, dir string) (*Lock, []PinChange, *Factory, diag.List) {
+func (l *Loader) Lock(ctx context.Context, dir string) (*Lock, []PinChange, *Blueprint, diag.List) {
 	m, diags := ReadManifest(dir)
 	if m == nil {
 		return nil, nil, nil, diags
@@ -100,7 +100,7 @@ func (l *Loader) Lock(ctx context.Context, dir string) (*Lock, []PinChange, *Fac
 // Upgrade moves imports to the latest commit of their ref (all imports, or
 // only the given aliases) and reports what changed in each. Like Lock, it
 // returns the new lock for the caller to write once it's happy.
-func (l *Loader) Upgrade(ctx context.Context, dir string, aliases []string) (*Lock, []PinChange, *Factory, diag.List) {
+func (l *Loader) Upgrade(ctx context.Context, dir string, aliases []string) (*Lock, []PinChange, *Blueprint, diag.List) {
 	m, diags := ReadManifest(dir)
 	if m == nil {
 		return nil, nil, nil, diags
@@ -164,7 +164,7 @@ func (l *Loader) Upgrade(ctx context.Context, dir string, aliases []string) (*Lo
 }
 
 // fillDiffs works out the item diff of every pin change.
-func (l *Loader) fillDiffs(ctx context.Context, m *Manifest, f *Factory, changes []PinChange) {
+func (l *Loader) fillDiffs(ctx context.Context, m *Manifest, f *Blueprint, changes []PinChange) {
 	for i := range changes {
 		c := &changes[i]
 		spec, _ := m.Import(c.Alias)
@@ -177,7 +177,7 @@ func (l *Loader) fillDiffs(ctx context.Context, m *Manifest, f *Factory, changes
 	}
 }
 
-func diffItems(before, after map[names.Ref]item, spec ImportSpec, f *Factory) ItemDiff {
+func diffItems(before, after map[names.Ref]item, spec ImportSpec, f *Blueprint) ItemDiff {
 	var d ItemDiff
 	overridden := map[names.Ref]bool{}
 	for _, o := range f.Overrides {
@@ -280,10 +280,10 @@ type Drift struct {
 	Latest    string
 }
 
-// OverrideDrift checks, for every item this factory overrides, whether the
+// OverrideDrift checks, for every item this blueprint overrides, whether the
 // import's ref has moved on and changed that item upstream. `fabrica plan`
 // uses it to remind you about overrides that may need attention.
-func (l *Loader) OverrideDrift(ctx context.Context, f *Factory) ([]Drift, error) {
+func (l *Loader) OverrideDrift(ctx context.Context, f *Blueprint) ([]Drift, error) {
 	var out []Drift
 	for _, o := range f.Overrides {
 		imp := findImport(f.Imports, o.Alias)

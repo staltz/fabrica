@@ -27,19 +27,19 @@ params:
 Review the PR using the ` + "`pr-review`" + ` skill. Post one comment with your findings, then tell {{params.slack_channel}}.
 `
 
-// World is a small but complete Fabrica setup: a factory, two product
+// World is a small but complete Fabrica setup: a blueprint, two product
 // repos, a home repo and the toy runtime.
 type World struct {
-	Host    *Host
-	Factory *Repo
-	App     *Repo
-	API     *Repo
-	Home    *HomeRepo
-	Toy     *ToyRuntime
+	Host      *Host
+	Blueprint *Repo
+	App       *Repo
+	API       *Repo
+	Home      *HomeRepo
+	Toy       *ToyRuntime
 }
 
-// FactoryFiles are the factory's starting files.
-func FactoryFiles() map[string]string {
+// BlueprintFiles are the blueprint's starting files.
+func BlueprintFiles() map[string]string {
 	files := map[string]string{
 		"fabrica.yaml":                    "description: Acme's way of building software\nexpects: [test?]\n",
 		"skills/pr-review/SKILL.md":       "---\nname: pr-review\ndescription: How we review pull requests.\n---\nRead the diff. Check the tests. See `checklist.md`.\n",
@@ -65,9 +65,9 @@ func NewWorld(t *testing.T) *World {
 	t.Helper()
 	host := NewHost(t)
 	w := &World{Host: host}
-	w.Factory = host.Repo("github.com/acme/factory")
-	w.Factory.Write(FactoryFiles()).Commit("first factory")
-	w.Factory.Branch("stable")
+	w.Blueprint = host.Repo("github.com/acme/blueprint")
+	w.Blueprint.Write(BlueprintFiles()).Commit("first blueprint")
+	w.Blueprint.Branch("stable")
 	w.App = host.Repo("github.com/acme/app")
 	w.App.Write(map[string]string{"AGENTS.md": FabricaLine + "\n\n# App\n\nThis app uses pnpm.\n"}).Commit("init")
 	w.API = host.Repo("github.com/acme/api")
@@ -83,13 +83,13 @@ func (w *World) MakePersonal(t *testing.T) {
 	t.Setenv("FABRICA_HOME", w.Home.Dir)
 }
 
-// PRReviewDeployment is the cloud deployment from the design doc, on the
+// PRReviewFactory is the cloud factory from the design doc, on the
 // claude-code-cloud and toy runtimes.
-const PRReviewDeployment = `factory: { git: github.com/acme/factory, ref: stable }
+const PRReviewFactory = `blueprint: { git: github.com/acme/blueprint, ref: stable }
 server: https://fabrica.acme.dev
 runtimes: [claude-code-cloud, toy]
 routines: [pr-review]
-repos:
+targets:
   - github.com/acme/app
   - repo: github.com/acme/api
     params: { slack_channel: "#api" }
@@ -97,10 +97,10 @@ params:
   slack_channel: "#eng"
 `
 
-// UpdateFactory commits changes to the factory and moves the stable
+// UpdateBlueprint commits changes to the blueprint and moves the stable
 // branch to the new commit, like merging to a followed branch.
-func (w *World) UpdateFactory(files map[string]string) string {
-	commit := w.Factory.Write(files).Commit("factory change")
-	w.Factory.Branch("stable")
+func (w *World) UpdateBlueprint(files map[string]string) string {
+	commit := w.Blueprint.Write(files).Commit("blueprint change")
+	w.Blueprint.Branch("stable")
 	return commit
 }

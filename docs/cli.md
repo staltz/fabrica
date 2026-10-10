@@ -1,6 +1,6 @@
 # CLI reference
 
-Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: factory and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo. (`fabrica new` runs `git init` for a new factory, but leaves the first commit to you. Likewise, every command first creates your personal home repo if it's missing, without committing; see [Home repos](home-repos.md#personal-and-team-home-repos).)
+Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: blueprint and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo. (`fabrica new` runs `git init` for a new blueprint, but leaves the first commit to you. Likewise, every command first creates your personal home repo if it's missing, without committing; see [Home repos](home-repos.md#personal-and-team-home-repos).)
 
 Every command has `--help`.
 
@@ -9,7 +9,7 @@ Every command has `--help`.
 `plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
 
 1. the `--home <folder>` flag, if you give one,
-2. otherwise the current folder (or the git repo it's in), if it has `deployments/` or `state/`,
+2. otherwise the current folder (or the git repo it's in), if it has `factories/` or `state/`,
 3. otherwise your personal home repo: `$FABRICA_HOME`, or `~/.fabrica`.
 
 ## Environment variables
@@ -18,44 +18,44 @@ Every command has `--help`.
 |---|---|
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
-| `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud deployments (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
+| `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
-| `CI` | When set, `plan`, `apply` and `destroy` skip local deployments, since CI has nothing local to set up. |
+| `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
 
 Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead.
 
 ## `fabrica new <folder>`
 
-Starts a new factory repo. It writes a factory into the folder (creating it if needed), and runs `git init` there.
+Starts a new blueprint repo. It writes a blueprint into the folder (creating it if needed), and runs `git init` there.
 
-The factory is a copy of the [starter factory](../examples/starter-factory/), built into the binary, so you don't need a copy of Fabrica's repo: five skills, three routines, four rules and two connectors, ready to use and yours to change. With `--empty`, you get a factory with no items yet: a `fabrica.yaml` with every key commented out, and a README that explains the layout.
+The blueprint is a copy of the [starter blueprint](../examples/starter-blueprint/), built into the binary, so you don't need a copy of Fabrica's repo: five skills, three routines, four rules and two connectors, ready to use and yours to change. With `--empty`, you get a blueprint with no items yet: a `fabrica.yaml` with every key commented out, and a README that explains the layout.
 
 | Flag | What it does |
 |---|---|
-| `--empty` | Start from an empty factory instead of the starter factory. |
+| `--empty` | Start from an empty blueprint instead of the starter blueprint. |
 | `--no-git` | Don't run `git init`. |
 
-New never overwrites a file. If the folder already has any file the factory would write, it writes nothing and exits `1`. The one exception is a `README.md`, which it keeps, since a repo made on a git host often starts with one. So `git clone` an empty repo from your git host, then run `fabrica new` on the clone.
+New never overwrites a file. If the folder already has any file the blueprint would write, it writes nothing and exits `1`. The one exception is a `README.md`, which it keeps, since a repo made on a git host often starts with one. So `git clone` an empty repo from your git host, then run `fabrica new` on the clone.
 
-When the folder is inside a git repo already, like a subfolder of a monorepo, `new` doesn't run `git init`, and suggests a deployment with the matching `path:`. It never commits: look the files over, run `fabrica check`, and commit them yourself.
+When the folder is inside a git repo already, like a subfolder of a monorepo, `new` doesn't run `git init`, and suggests a factory with the matching `path:`. It never commits: look the files over, run `fabrica check`, and commit them yourself.
 
 ## `fabrica check [folder]`
 
 Checks a folder for problems. It works out what the folder is:
 
-- **A factory** (it has a `fabrica.yaml`): lints every item and import, and warns about likely mistakes.
-- **A home repo** (it has `deployments/` or `state/`): validates every deployment against its factory and the runtimes' capability matrices, and checks each deployed product repo's default branch.
-- **Anything else is a product repo:** checks the Fabrica line, skill clashes and unmet `expects:`, against the factory that serves it.
+- **A blueprint** (it has a `fabrica.yaml`): lints every item and import, and warns about likely mistakes.
+- **A home repo** (it has `factories/` or `state/`): validates every factory against its blueprint and the runtimes' capability matrices, and checks each deployed product repo's default branch.
+- **Anything else is a product repo:** checks the Fabrica line, skill clashes and unmet `expects:`, against the blueprint that serves it.
 
 | Flag | What it does |
 |---|---|
-| `--factory <folder or git[@ref]>` | For a product repo, the factory to check against. Without it, Fabrica uses the factories of the deployments in your home repo that cover this repo. |
+| `--blueprint <folder or git[@ref]>` | For a product repo, the blueprint to check against. Without it, Fabrica uses the blueprints of the factories in your home repo that cover this repo. |
 
-Exits `1` when there are errors, `0` otherwise (warnings don't fail it). It works well as a pre-commit hook in a factory repo, or as a CI step.
+Exits `1` when there are errors, `0` otherwise (warnings don't fail it). It works well as a pre-commit hook in a blueprint repo, or as a CI step.
 
-## `fabrica lock [factory-folder]`
+## `fabrica lock [blueprint-folder]`
 
-Pins every import to an exact commit, in `fabrica.lock`. Imports that are already pinned keep their commit. It shows what changed for newly pinned imports, and only writes the lock when the factory has no errors with it. Exits `1` on errors.
+Pins every import to an exact commit, in `fabrica.lock`. Imports that are already pinned keep their commit. It shows what changed for newly pinned imports, and only writes the lock when the blueprint has no errors with it. Exits `1` on errors.
 
 ## `fabrica upgrade [import-alias…]`
 
@@ -63,13 +63,13 @@ Moves imports (all, or the ones you name) to the newest commit of their ref, and
 
 | Flag | What it does |
 |---|---|
-| `--dir <folder>` | The factory folder. Default `.`. |
+| `--dir <folder>` | The blueprint folder. Default `.`. |
 | `--yes`, `-y` | Write the lock without asking. Without a terminal to ask on, upgrade refuses unless you pass this. |
 | `--dry-run` | Only show what would change. |
 
-## `fabrica plan [deployment…]`
+## `fabrica plan [factory…]`
 
-Shows what `apply` would do for every deployment (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, how each runtime handles each trigger, connector and side effect, each runtime's apply mode, follow versus frozen, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes.
+Shows what `apply` would do for every factory (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, how each runtime handles each trigger, connector and side effect, each runtime's apply mode, follow versus frozen, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes.
 
 It reads the home repo as it is on disk, and never changes anything.
 
@@ -77,7 +77,7 @@ It reads the home repo as it is on disk, and never changes anything.
 |---|---|
 | `--json` | Print the plan as JSON. |
 | `--no-refresh` | Trust state, instead of asking runtime APIs (folder providers with an `api`) what exists. |
-| `--destroy` | Show what [`destroy`](#fabrica-destroy-deployment) would remove, instead of what `apply` would do. |
+| `--destroy` | Show what [`destroy`](#fabrica-destroy-factory) would remove, instead of what `apply` would do. |
 
 | Exit code | Meaning |
 |---|---|
@@ -85,22 +85,22 @@ It reads the home repo as it is on disk, and never changes anything.
 | `2` | There are only changes, for `apply` to make. |
 | `1` | There are errors. |
 
-## `fabrica apply [deployment…]`
+## `fabrica apply [factory…]`
 
-Makes runtimes match your home repo. For each cloud deployment with changes and no errors, it syncs the home repo, takes the deployment's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. For your personal home repo, it also writes the local tools' configs.
+Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. For your personal home repo, it also writes the local tools' configs.
 
 | Flag | What it does |
 |---|---|
 | `--handoff-dir <folder>` | Where to write handoff instructions. Default `$FABRICA_CACHE/handoffs`. |
 
-Cloud deployments need `FABRICA_SERVER_SECRET`. Apply refuses to run with uncommitted changes in `deployments/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any deployment was skipped because of errors, or failed.
+Cloud factories need `FABRICA_SERVER_SECRET`. Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
 
-## `fabrica destroy [deployment…]`
+## `fabrica destroy [factory…]`
 
-The opposite of `apply`: removes everything your deployments (or the ones you name) installed. It leaves the deployment files alone, so the next `apply` puts it all back. To stop deploying something for good, delete its deployment file and `apply` instead.
+The opposite of `apply`: removes everything your factories (or the ones you name) installed. It leaves the factory files alone, so the next `apply` puts it all back. To stop deploying something for good, delete its factory file and `apply` instead.
 
-- **Cloud deployments:** it deletes every resource in the deployment's state, the same way `apply` deletes a stub that's no longer deployed: through the runtime's API, or with a delete handoff to follow and then `fabrica confirm`. A create handoff that was never confirmed gets a delete handoff too, in case someone followed it anyway. Like `apply`, it takes the deployment's lock and records the results in one commit. Until a delete handoff is done, its stub can still run, because the server serves a deployment for as long as its file exists.
-- **Local tools,** for your personal home repo: it removes the `fabrica` MCP server, connector servers, hooks and scheduled tasks that `apply` installed. When you name local deployments and other local deployments still use the same tool, only the named ones' hooks and scheduled tasks go. The shared `fabrica` server stays, so it keeps serving their factories until you delete their files.
+- **Cloud factories:** it deletes every resource in the factory's state, the same way `apply` deletes a stub that's no longer deployed: through the runtime's API, or with a delete handoff to follow and then `fabrica confirm`. A create handoff that was never confirmed gets a delete handoff too, in case someone followed it anyway. Like `apply`, it takes the factory's lock and records the results in one commit. Until a delete handoff is done, its stub can still run, because the server serves a factory for as long as its file exists.
+- **Local tools,** for your personal home repo: it removes the `fabrica` MCP server, connector servers, hooks and scheduled tasks that `apply` installed. When you name local factories and other local factories still use the same tool, only the named ones' hooks and scheduled tasks go. The shared `fabrica` server stays, so it keeps serving their blueprints until you delete their files.
 
 It shows the plan, then asks before changing anything. `fabrica plan --destroy` shows the same plan and changes nothing.
 
@@ -109,7 +109,7 @@ It shows the plan, then asks before changing anything. `fabrica plan --destroy` 
 | `--yes`, `-y` | Destroy without asking. Without a terminal to ask on, destroy refuses unless you pass this. |
 | `--handoff-dir <folder>` | Where to write delete handoffs. Default `$FABRICA_CACHE/handoffs`. |
 
-Deleting needs no token, so unlike `apply`, destroy works without `FABRICA_SERVER_SECRET`. Like `apply`, it refuses to run with uncommitted changes in `deployments/` or `state/`, or with local commits that aren't pushed yet, and exits `1` if any deployment was skipped because of errors, or failed.
+Deleting needs no token, so unlike `apply`, destroy works without `FABRICA_SERVER_SECRET`. Like `apply`, it refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet, and exits `1` if any factory was skipped because of errors, or failed.
 
 ## `fabrica confirm <handoff-id>`
 
@@ -119,15 +119,15 @@ Closes a pending handoff once someone has followed its instructions.
 |---|---|
 | `--remote-id <id>` | The runtime's own ID for the resource you created or updated. Without one, the resource is tracked as unverifiable. Not allowed for deletes. |
 
-Confirm commits and pushes the deployment's state, and refuses while an apply holds its lock.
+Confirm commits and pushes the factory's state, and refuses while an apply holds its lock.
 
-## `fabrica unlock <deployment>`
+## `fabrica unlock <factory>`
 
 Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created.
 
 ## `fabrica mcp`
 
-Serves a factory over MCP.
+Serves a blueprint over MCP.
 
 **Local mode** (without `--http`) serves one session over stdio. Local tools run it; `fabrica apply` registers it as `fabrica mcp --runtime <tool> --home <your home repo>`.
 
@@ -143,7 +143,7 @@ Serves a factory over MCP.
 |---|---|---|
 | `--home <git URL or path>` | (required) | The home repo to serve. |
 | `--ref <branch>` | the default branch | The home repo branch to serve. |
-| `--url <url>` | | Only serve deployments whose `server:` is this URL. |
+| `--url <url>` | | Only serve factories whose `server:` is this URL. |
 | `--listen <address>` | `:8080` | Where to listen. |
 | `--db <file>` | `fabrica-runs.db` | The run-history database. |
 | `--refresh <duration>` | `1m` | How often to re-fetch. |
@@ -165,8 +165,8 @@ Updates Fabrica itself to the latest release on GitHub. It downloads the same fi
 
 If you're already on the latest release, it says so and downloads nothing. If the download or the checksum check fails, your current binary is left as it was. When `fabrica` lives in a folder you can't write to, like `/usr/local/bin`, run the update as a user who can (`sudo fabrica -u`).
 
-Not to be confused with [`fabrica upgrade`](#fabrica-upgrade-import-alias), which moves a factory's imports.
+Not to be confused with [`fabrica upgrade`](#fabrica-upgrade-import-alias), which moves a blueprint's imports.
 
 ## `fabrica hook` (plumbing)
 
-Local tools run this for local routines; you won't need to run it yourself. `fabrica apply` installs hooks like `fabrica hook --runtime claude-code-local --deployment oss-work --routine review-before-push --stub 7f3a9c7f3a9c --event git.pre_push`. The command doubles as Fabrica's identifying mark, which is how Fabrica finds its own hooks again.
+Local tools run this for local routines; you won't need to run it yourself. `fabrica apply` installs hooks like `fabrica hook --runtime claude-code-local --factory oss-work --routine review-before-push --stub 7f3a9c7f3a9c --event git.pre_push`. The command doubles as Fabrica's identifying mark, which is how Fabrica finds its own hooks again.

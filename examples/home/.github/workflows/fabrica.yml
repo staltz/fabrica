@@ -1,15 +1,15 @@
 # Fabrica in a team home repo's CI.
 #
-# - On every push to main (that is, after a deployment change is reviewed
+# - On every push to main (that is, after a factory change is reviewed
 #   and merged), apply it.
 # - Every night, plan. It fails when something needs attention: a stub that
-#   went stale after a factory change, or a product repo that lost its
+#   went stale after a blueprint change, or a product repo that lost its
 #   Fabrica line. It's deliberately plan, not apply: a new trigger or
 #   connector is exactly what a person should review before it's installed.
 #
 # Set these repository secrets:
 #   FABRICA_SERVER_SECRET  the same secret your Fabrica server uses
-#   FABRICA_GIT_TOKEN      a token that can read the factories and product
+#   FABRICA_GIT_TOKEN      a token that can read the blueprints and product
 #                          repos (and push to this repo, for state)
 name: Fabrica
 

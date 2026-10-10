@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/staltz/fabrica/internal/apply"
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
@@ -36,7 +36,7 @@ func newHarness(t *testing.T) *harness {
 	w := testkit.NewWorld(t)
 	cache := gitx.NewCache(t.TempDir())
 	h := &harness{t: t, w: w, handof: t.TempDir(), env: &plan.Env{
-		Loader: factory.NewLoader(cache), Git: cache, Secret: testkit.Secret,
+		Loader: blueprint.NewLoader(cache), Git: cache, Secret: testkit.Secret,
 		Binary: "/usr/local/bin/fabrica", UserHome: t.TempDir(), Refresh: true,
 		Now: func() time.Time { return time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC) },
 	}}
@@ -101,14 +101,14 @@ func render(p *plan.Plan) string {
 
 func TestFullCloudLifecycle(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add pr-review")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add pr-review")
 
-	// 1. The first plan wants 4 stubs: 1 routine × 2 repos × 2 runtimes.
+	// 1. The first plan wants 4 stubs: 1 routine × 2 targets × 2 runtimes.
 	p := h.plan()
 	if p.ExitCode() != 2 {
 		t.Fatalf("exit code = %d, want 2\n%s", p.ExitCode(), render(p))
 	}
-	if got := len(p.Deployment("pr-review").Changes); got != 4 {
+	if got := len(p.Factory("pr-review").Changes); got != 4 {
 		t.Fatalf("changes = %d, want 4\n%s", got, render(p))
 	}
 	text := render(p)
@@ -161,7 +161,7 @@ func TestFullCloudLifecycle(t *testing.T) {
 	// 3. Planning again: the toy stubs are in sync, the handoffs pending.
 	// Pending handoffs aren't apply's work, so the plan is clean.
 	p = h.plan()
-	if p.ExitCode() != 0 || len(p.Deployment("pr-review").Pending) != 2 {
+	if p.ExitCode() != 0 || len(p.Factory("pr-review").Pending) != 2 {
 		t.Fatalf("second plan: exit %d\n%s", p.ExitCode(), render(p))
 	}
 	// Applying again issues nothing new.
@@ -189,11 +189,11 @@ func TestFullCloudLifecycle(t *testing.T) {
 		t.Errorf("plan should list the unverifiable resource:\n%s", out)
 	}
 
-	// 5. The factory changes the routine's trigger and merges to stable:
+	// 5. The blueprint changes the routine's trigger and merges to stable:
 	// every stub is now outdated, which is an update, not an error.
-	h.w.UpdateFactory(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "opened", "synchronize", 1)})
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "opened", "synchronize", 1)})
 	p = h.plan()
-	changes := p.Deployment("pr-review").Changes
+	changes := p.Factory("pr-review").Changes
 	if p.ExitCode() != 2 || len(changes) != 4 || changes[0].Action != plan.Update {
 		t.Fatalf("after a trigger change: exit %d\n%s", p.ExitCode(), render(p))
 	}
@@ -207,12 +207,12 @@ func TestFullCloudLifecycle(t *testing.T) {
 		}
 	}
 
-	// 6. Removing a repo from the deployment deletes its stubs.
+	// 6. Removing a repo from the factory deletes its stubs.
 	h.w.Home.Pull()
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": strings.Replace(testkit.PRReviewDeployment, "  - repo: github.com/acme/api\n    params: { slack_channel: \"#api\" }\n", "", 1)}).CommitPush("drop api")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": strings.Replace(testkit.PRReviewFactory, "  - repo: github.com/acme/api\n    params: { slack_channel: \"#api\" }\n", "", 1)}).CommitPush("drop api")
 	p = h.plan()
 	var deletes []string
-	for _, c := range p.Deployment("pr-review").Changes {
+	for _, c := range p.Factory("pr-review").Changes {
 		if c.Action == plan.Delete {
 			deletes = append(deletes, c.Key.Runtime+" "+c.Repo+" "+strings.Join(c.Reasons, ""))
 		}
@@ -226,38 +226,38 @@ func TestFullCloudLifecycle(t *testing.T) {
 	}
 }
 
-func TestProductRepoProblemsBlockTheDeployment(t *testing.T) {
+func TestProductRepoProblemsBlockTheFactory(t *testing.T) {
 	h := newHarness(t)
 	h.w.API.Write(map[string]string{
 		"AGENTS.md":                         "# API\n",
 		".claude/skills/pr-review/SKILL.md": "---\nname: pr-review\ndescription: Our own.\n---\n",
 	}).Commit("break it")
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 
 	p := h.plan()
-	d := p.Deployment("pr-review")
+	d := p.Factory("pr-review")
 	if p.ExitCode() != 1 || !d.Diags.HasCode("product.fabrica-line") || !d.Diags.HasCode("product.skill-clash") {
 		t.Fatalf("want product errors:\n%s", render(p))
 	}
 	res := h.apply()
 	if res.ExitCode() != 1 || len(h.w.Toy.Resources()) != 0 {
-		t.Errorf("apply should skip the whole deployment:\n%s", h.out.String())
+		t.Errorf("apply should skip the whole factory:\n%s", h.out.String())
 	}
 }
 
 func TestUnsupportedTriggerIsAnError(t *testing.T) {
 	h := newHarness(t)
-	h.w.UpdateFactory(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "github.pull_request.opened", "github.issues.opened", 1)})
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "github.pull_request.opened", "github.issues.opened", 1)})
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	p := h.plan()
-	if !p.Deployment("pr-review").Diags.HasCode("capability.trigger") {
+	if !p.Factory("pr-review").Diags.HasCode("capability.trigger") {
 		t.Fatalf("want a capability.trigger error:\n%s", render(p))
 	}
 }
 
 func TestLockIsRespectedAndCanBeRemoved(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 
 	// Someone else's apply took the lock and crashed.
 	other := h.w.Home.Clone(filepath.Join(t.TempDir(), "ci"))
@@ -278,11 +278,11 @@ func TestLockIsRespectedAndCanBeRemoved(t *testing.T) {
 
 	h.w.Home.Pull()
 	p := h.plan()
-	if !p.Deployment("pr-review").Diags.HasCode("deployment.locked") {
+	if !p.Factory("pr-review").Diags.HasCode("factory.locked") {
 		t.Fatalf("plan should report the lock:\n%s", render(p))
 	}
 	if res := h.apply(); res.ExitCode() != 1 || len(h.w.Toy.Resources()) != 0 {
-		t.Errorf("apply must not touch a locked deployment:\n%s", h.out.String())
+		t.Errorf("apply must not touch a locked factory:\n%s", h.out.String())
 	}
 
 	removed, err := apply.Unlock(context.Background(), h.w.Home.Dir, "pr-review")
@@ -296,14 +296,14 @@ func TestLockIsRespectedAndCanBeRemoved(t *testing.T) {
 
 func TestRefreshAdoptsAndRefusesDuplicates(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	id := "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app"
 
 	// A crashed apply created this but never recorded it.
 	h.w.Toy.Put(testkit.ToyResource{RemoteID: "orphan", Identity: id})
 	p := h.plan()
 	var actions []string
-	for _, c := range p.Deployment("pr-review").Changes {
+	for _, c := range p.Factory("pr-review").Changes {
 		if c.Key.Runtime == "toy" && c.Key.ID == id {
 			actions = append(actions, string(c.Action))
 		}
@@ -319,18 +319,18 @@ func TestRefreshAdoptsAndRefusesDuplicates(t *testing.T) {
 	// Someone copies a resource by hand: now two share one identity.
 	h.w.Toy.Put(testkit.ToyResource{RemoteID: "copy", Identity: id})
 	p = h.plan()
-	if !p.Deployment("pr-review").Diags.HasCode("refresh.duplicate") || !strings.Contains(render(p), "orphan, copy") && !strings.Contains(render(p), "copy, orphan") {
+	if !p.Factory("pr-review").Diags.HasCode("refresh.duplicate") || !strings.Contains(render(p), "orphan, copy") && !strings.Contains(render(p), "copy, orphan") {
 		t.Fatalf("want a duplicate error naming both:\n%s", render(p))
 	}
 }
 
 func TestRotatedSecretUpdatesStubs(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	h.apply()
 	h.env.Secret = strings.Repeat("rotated-secret-", 3)
 	p := h.plan()
-	if !strings.Contains(render(p), "the deployment's token changed") {
+	if !strings.Contains(render(p), "the factory's token changed") {
 		t.Fatalf("plan should notice the rotated secret:\n%s", render(p))
 	}
 	h.apply()
@@ -341,18 +341,18 @@ func TestRotatedSecretUpdatesStubs(t *testing.T) {
 	}
 }
 
-func TestDeletedDeploymentIsCleanedUp(t *testing.T) {
+func TestDeletedFactoryIsCleanedUp(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	h.apply()
 	h.w.Home.Pull()
-	testkit.Git(t, h.w.Home.Dir, "rm", "--quiet", "deployments/pr-review.yaml")
-	h.w.Home.CommitPush("delete deployment")
+	testkit.Git(t, h.w.Home.Dir, "rm", "--quiet", "factories/pr-review.yaml")
+	h.w.Home.CommitPush("delete factory")
 
 	p := h.plan()
-	d := p.Deployment("pr-review")
+	d := p.Factory("pr-review")
 	if d == nil || d.Spec != nil || len(d.Changes) != 4 {
-		t.Fatalf("want 4 deletes for the deleted deployment:\n%s", render(p))
+		t.Fatalf("want 4 deletes for the deleted factory:\n%s", render(p))
 	}
 	h.apply()
 	if got := h.w.Toy.Resources(); len(got) != 0 {
@@ -371,13 +371,13 @@ func TestDeletedDeploymentIsCleanedUp(t *testing.T) {
 	}
 	h.w.Home.Pull()
 	if _, err := os.Stat(filepath.Join(h.w.Home.Dir, "state", "pr-review.yaml")); !os.IsNotExist(err) {
-		t.Errorf("the state file of a fully cleaned-up deployment should be removed, got %v", err)
+		t.Errorf("the state file of a fully cleaned-up factory should be removed, got %v", err)
 	}
 }
 
 func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	h.apply()
 	// One claude-code-cloud stub is confirmed, the other's create handoff
 	// is still pending.
@@ -388,7 +388,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 	h.w.Home.Pull()
 
 	p := h.destroyPlan()
-	d := p.Deployment("pr-review")
+	d := p.Factory("pr-review")
 	if p.ExitCode() != 2 || len(d.Changes) != 4 {
 		t.Fatalf("want 4 deletes:\n%s", render(p))
 	}
@@ -398,7 +398,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 		}
 	}
 	text := render(p)
-	for _, want := range []string{"Deployment pr-review (cloud, destroying)", "the deployment is being destroyed", "a create handoff for it was never confirmed", "Destroy plan: 4 changes, 0 errors."} {
+	for _, want := range []string{"Factory pr-review (cloud, destroying)", "the factory is being destroyed", "a create handoff for it was never confirmed", "Destroy plan: 4 changes, 0 errors."} {
 		if !strings.Contains(text, want) {
 			t.Errorf("destroy plan is missing %q:\n%s", want, text)
 		}
@@ -437,8 +437,8 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 	if !strings.Contains(log, "fabrica: lock pr-review for destroy") || !strings.Contains(log, "fabrica: destroy pr-review (4 changes)") {
 		t.Errorf("home repo log should show the destroy:\n%s", log)
 	}
-	if _, err := os.Stat(filepath.Join(h.w.Home.Dir, "deployments", "pr-review.yaml")); err != nil {
-		t.Errorf("destroy must leave the deployment file alone: %v", err)
+	if _, err := os.Stat(filepath.Join(h.w.Home.Dir, "factories", "pr-review.yaml")); err != nil {
+		t.Errorf("destroy must leave the factory file alone: %v", err)
 	}
 	if p := h.destroyPlan(); p.ExitCode() != 0 || !strings.Contains(render(p), "Nothing to destroy, but 2 handoffs are waiting") {
 		t.Errorf("destroying again has nothing to do:\n%s", render(p))
@@ -454,7 +454,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 		t.Fatalf("state after confirming the deletes = %+v", s)
 	}
 	h.env.Secret = testkit.Secret
-	if p := h.plan(); p.ExitCode() != 2 || len(p.Deployment("pr-review").Changes) != 4 {
+	if p := h.plan(); p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 4 {
 		t.Fatalf("after destroy, plan should want everything again:\n%s", render(p))
 	}
 	h.apply()
@@ -465,7 +465,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 
 func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	h.apply()
 	for _, pend := range h.state().Pending {
 		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "trig_"+pend.ID, time.Now()); err != nil {
@@ -480,36 +480,36 @@ func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
 
 	// The stubs on claude.ai still name runtime claude in their prompts.
 	p := h.plan()
-	if d := p.Deployment("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 2 || !strings.Contains(render(p), "its prompt still names runtime claude, which is now called claude-code-cloud") {
+	if d := p.Factory("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 2 || !strings.Contains(render(p), "its prompt still names runtime claude, which is now called claude-code-cloud") {
 		t.Fatalf("want 2 updates on claude-code-cloud:\n%s", render(p))
 	}
 
-	// Once the deployment is gone, they can still be cleaned up.
-	testkit.Git(t, h.w.Home.Dir, "rm", "--quiet", "deployments/pr-review.yaml")
-	h.w.Home.CommitPush("delete deployment")
+	// Once the factory is gone, they can still be cleaned up.
+	testkit.Git(t, h.w.Home.Dir, "rm", "--quiet", "factories/pr-review.yaml")
+	h.w.Home.CommitPush("delete factory")
 	p = h.plan()
-	if d := p.Deployment("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 4 {
+	if d := p.Factory("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 4 {
 		t.Fatalf("want 4 deletes:\n%s", render(p))
 	}
 }
 
 func TestApplyRefusesUnpushedHomeChanges(t *testing.T) {
 	h := newHarness(t)
-	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment})
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory})
 	_, err := apply.Run(context.Background(), apply.Options{Plan: h.env, Out: &h.out, HandoffDir: h.handof}, h.w.Home.Dir)
 	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("want an uncommitted-changes error, got %v", err)
 	}
 }
 
-func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
+func TestLocalFactoriesInstallIntoTools(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [\"*\"]\n",
+		"factories/oss-work.yaml":   "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
-	// Local deployments are read from the working tree; no commit or remote
+	// Local factories are read from the working tree; no commit or remote
 	// is needed.
 	p := h.plan()
 	if p.ExitCode() != 2 || p.Local == nil {
@@ -534,14 +534,14 @@ func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
 		t.Errorf("Cursor should get a beforeShellExecution hook:\n%s", cursorHooks)
 	}
 	if _, err := os.Stat(filepath.Join(h.env.UserHome, ".codex", "config.toml")); !os.IsNotExist(err) {
-		t.Errorf("codex-cli isn't used by any deployment, so nothing should be written for it (got %v)", err)
+		t.Errorf("codex-cli isn't used by any factory, so nothing should be written for it (got %v)", err)
 	}
 	if p := h.plan(); p.ExitCode() != 0 {
 		t.Errorf("after applying, local tools should be in sync:\n%s", render(p))
 	}
 
-	// Removing every local deployment removes Fabrica from the tools.
-	os.RemoveAll(filepath.Join(h.w.Home.Dir, "deployments"))
+	// Removing every local factory removes Fabrica from the tools.
+	os.RemoveAll(filepath.Join(h.w.Home.Dir, "factories"))
 	h.apply()
 	claude, _ = os.ReadFile(filepath.Join(h.env.UserHome, ".claude.json"))
 	if strings.Contains(string(claude), "fabrica") {
@@ -549,12 +549,12 @@ func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
 	}
 }
 
-func TestDestroyLocalDeployments(t *testing.T) {
+func TestDestroyLocalFactories(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
+		"factories/oss-work.yaml":   "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	if res := h.apply(); res.ExitCode() != 0 {
 		t.Fatalf("apply failed:\n%s", h.out.String())
@@ -571,7 +571,7 @@ func TestDestroyLocalDeployments(t *testing.T) {
 	h.env.Only = []string{"oss-work"}
 	p := h.destroyPlan()
 	text := render(p)
-	for _, want := range []string{"- remove hook for routine oss-work/review-before-push", "- remove MCP server fabrica", "delete deployments/oss-work.yaml to stop that"} {
+	for _, want := range []string{"- remove hook for routine oss-work/review-before-push", "- remove MCP server fabrica", "delete factories/oss-work.yaml to stop that"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("destroy plan is missing %q:\n%s", want, text)
 		}
@@ -589,7 +589,7 @@ func TestDestroyLocalDeployments(t *testing.T) {
 		t.Errorf("nothing uses Cursor anymore, so Fabrica should be gone from it:\n%s", cursor)
 	}
 
-	// Destroying everything removes the rest, and leaves the deployment
+	// Destroying everything removes the rest, and leaves the factory
 	// files alone.
 	h.env.Only = nil
 	if res, err := h.destroy(yes); err != nil || res.ExitCode() != 0 {
@@ -609,21 +609,21 @@ func TestDestroyLocalDeployments(t *testing.T) {
 func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
-	h.w.UpdateFactory(map[string]string{"routines/hello.md": "---\ntrigger: { on: session.start }\n---\nSay hi.\n"})
+	h.w.UpdateBlueprint(map[string]string{"routines/hello.md": "---\ntrigger: { on: session.start }\n---\nSay hi.\n"})
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\nroutines: [hello]\n",
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [\"*\"]\nroutines: [hello]\n",
 	})
 	p := h.plan()
-	d := p.Deployment("mine")
+	d := p.Factory("mine")
 	if !d.Diags.HasCode("capability.trigger") || !strings.Contains(render(p), "cursor-local doesn't support trigger session.start") {
 		t.Fatalf("Cursor has no session.start hook, so this should be an error:\n%s", render(p))
 	}
 }
 
-func TestLocalDeploymentInTeamHomeIsAnError(t *testing.T) {
+func TestLocalFactoryInTeamHomeIsAnError(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
 	}).CommitPush("oops")
 	p := h.plan()
 	if p.ExitCode() != 1 || !strings.Contains(render(p), "personal home repo") {
@@ -634,9 +634,9 @@ func TestLocalDeploymentInTeamHomeIsAnError(t *testing.T) {
 func TestLocalScheduleRoutineBecomesClaudeScheduledTask(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
-	h.w.UpdateFactory(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
+	h.w.UpdateBlueprint(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/acme/app]\nroutines: [update-dep]\n",
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [github.com/acme/app]\nroutines: [update-dep]\n",
 	})
 	p := h.plan()
 	if p.ExitCode() != 2 || !strings.Contains(render(p), "+ add scheduled task fabrica-update-dep-") {
@@ -667,7 +667,7 @@ func TestLocalScheduleRoutineBecomesClaudeScheduledTask(t *testing.T) {
 	// Dropping the routine removes the task, and apply says to delete it in
 	// the app too.
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/acme/app]\n",
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [github.com/acme/app]\n",
 	})
 	h.out.Reset()
 	h.apply()
@@ -679,15 +679,15 @@ func TestLocalScheduleRoutineBecomesClaudeScheduledTask(t *testing.T) {
 	}
 }
 
-func TestLocalScheduleRoutineNeedsSpecificRepos(t *testing.T) {
+func TestLocalScheduleRoutineNeedsSpecificTargets(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
-	h.w.UpdateFactory(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
+	h.w.UpdateBlueprint(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\nroutines: [update-dep]\n",
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\nroutines: [update-dep]\n",
 	})
 	p := h.plan()
-	if !p.Deployment("mine").Diags.HasCode("deployment.schedule-wildcard") {
+	if !p.Factory("mine").Diags.HasCode("factory.schedule-wildcard") {
 		t.Fatalf("want a wildcard error:\n%s", render(p))
 	}
 }

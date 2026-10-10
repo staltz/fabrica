@@ -10,8 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/product"
@@ -22,7 +22,7 @@ import (
 // LocalOptions configure `fabrica mcp`.
 type LocalOptions struct {
 	// Runtime is the local tool this server is registered in, like
-	// claude-code-local. Deployments are matched per runtime.
+	// claude-code-local. Factories are matched per runtime.
 	Runtime string
 	// HomeDir is your personal home repo.
 	HomeDir string
@@ -31,7 +31,7 @@ type LocalOptions struct {
 	// the tool says (CLAUDE_PROJECT_DIR) or the working directory.
 	Workspace  string
 	Git        *gitx.Cache
-	Loader     *factory.Loader
+	Loader     *blueprint.Loader
 	Runs       *runs.DB
 	SkillCache string
 }
@@ -79,7 +79,7 @@ func RunLocal(ctx context.Context, opts LocalOptions) error {
 
 // Resolve prefers the workspace the client reports through MCP roots (the
 // first root is the main workspace). The session keeps whatever this
-// returns, so the factory commit stays fixed for the whole session.
+// returns, so the blueprint commit stays fixed for the whole session.
 func (b *localBackend) Resolve(ctx context.Context, ss *mcp.ServerSession) *Snapshot {
 	if b.opts.Workspace != "" || ss == nil {
 		return b.initial
@@ -146,7 +146,7 @@ func (b *localBackend) resolveDir(ctx context.Context, dir string) *Snapshot {
 	if d == nil {
 		return refuse("%s", why)
 	}
-	snap.Deployment = d
+	snap.Factory = d
 	ws, err := product.InspectDir(ctx, top)
 	if err != nil {
 		return refuse("couldn't inspect the workspace at %s: %v", top, err)
@@ -156,23 +156,23 @@ func (b *localBackend) resolveDir(ctx context.Context, dir string) *Snapshot {
 	if !ws.HasLine() {
 		return refuse("%s. %s", strings.Join(ws.LineProblems, "; "), LineHint())
 	}
-	resolved, err := b.opts.Git.Remote(repourl.GitURL(d.Factory.Git), gitx.Full).Resolve(ctx, d.Factory.Ref)
+	resolved, err := b.opts.Git.Remote(repourl.GitURL(d.Blueprint.Git), gitx.Full).Resolve(ctx, d.Blueprint.Ref)
 	if err != nil {
-		return refuse("couldn't reach the factory of deployment %s: %v", d.Name, err)
+		return refuse("couldn't reach the blueprint of factory %s: %v", d.Name, err)
 	}
-	f, diags := b.opts.Loader.LoadGit(ctx, d.Factory.Git, resolved.Commit, d.Factory.Path)
+	f, diags := b.opts.Loader.LoadGit(ctx, d.Blueprint.Git, resolved.Commit, d.Blueprint.Path)
 	if errs := diags.Only(diag.Error); len(errs) > 0 || f == nil {
-		return refuse("the factory of deployment %s (%s at %s) has problems: %s. Run `fabrica check` in the factory repo to see them all",
-			d.Name, d.Factory, gitx.Short(resolved.Commit), firstLines(errs, 3))
+		return refuse("the blueprint of factory %s (%s at %s) has problems: %s. Run `fabrica check` in the blueprint repo to see them all",
+			d.Name, d.Blueprint, gitx.Short(resolved.Commit), firstLines(errs, 3))
 	}
-	snap.Factory = f
+	snap.Blueprint = f
 	snap.Clashes = product.Clashes(ws, f)
 	return snap
 }
 
-// LatestDeployment re-reads your home repo: if you changed or removed the
-// local deployment since the session started, stubs notice right away.
-func (b *localBackend) LatestDeployment(ctx context.Context, snap *Snapshot, repo, runtime string) (*home.Deployment, string) {
+// LatestFactory re-reads your home repo: if you changed or removed the
+// local factory since the session started, stubs notice right away.
+func (b *localBackend) LatestFactory(ctx context.Context, snap *Snapshot, repo, runtime string) (*home.Factory, string) {
 	h, err := home.Open(b.opts.HomeDir)
 	if err != nil {
 		return nil, err.Error()
@@ -181,8 +181,8 @@ func (b *localBackend) LatestDeployment(ctx context.Context, snap *Snapshot, rep
 	if d == nil {
 		return nil, why
 	}
-	if d.Name != snap.deploymentName() {
-		return nil, fmt.Sprintf("this workspace is now served by deployment %s, not %s", d.Name, snap.deploymentName())
+	if d.Name != snap.factoryName() {
+		return nil, fmt.Sprintf("this workspace is now served by factory %s, not %s", d.Name, snap.factoryName())
 	}
 	return d, ""
 }

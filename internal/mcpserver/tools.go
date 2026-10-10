@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
 	"github.com/staltz/fabrica/internal/runs"
@@ -98,17 +98,17 @@ func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ no
 	} else {
 		out.HowTo += "skill_load unpacks the skill's folder on disk and tells you where; relative paths in the skill resolve against that folder, so run its scripts from there."
 	}
-	for _, name := range snap.Factory.SkillNames() {
-		sk := snap.Factory.Skills[name]
+	for _, name := range snap.Blueprint.SkillNames() {
+		sk := snap.Blueprint.Skills[name]
 		info := skillInfo{Name: name, Description: sk.Description, Available: true}
 		if snap.remote() && !sk.TextOnly {
 			info.Available, info.Reason = false, "this skill needs its folder on disk ("+sk.NotTextOnlyReason+"), which cloud runtimes can't have in v0.1"
 		}
 		out.Skills = append(out.Skills, info)
 	}
-	for _, e := range snap.Factory.Manifest.Expects {
+	for _, e := range snap.Blueprint.Manifest.Expects {
 		ex := expectedInfo{Name: e.Name, Optional: e.Optional}
-		_, fallback := snap.Factory.Skills[e.Name]
+		_, fallback := snap.Blueprint.Skills[e.Name]
 		if snap.Workspace != nil {
 			_, provided := snap.Workspace.Skills[e.Name]
 			ex.ProvidedByRepo = &provided
@@ -116,12 +116,12 @@ func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ no
 			case provided:
 				ex.Note = "the repo provides its own " + e.Name + " skill; use that one (your tool loads it from the repo)"
 			case fallback:
-				ex.Note = "the repo doesn't provide it, so use the factory's default with skill_load"
+				ex.Note = "the repo doesn't provide it, so use the blueprint's default with skill_load"
 			default:
 				ex.Note = "the repo doesn't provide it, and there's no default"
 			}
 		} else {
-			ex.Note = "if the repo has its own " + e.Name + " skill, use that one; otherwise use the factory's default, if there is one"
+			ex.Note = "if the repo has its own " + e.Name + " skill, use that one; otherwise use the blueprint's default, if there is one"
 		}
 		out.Expected = append(out.Expected, ex)
 	}
@@ -136,7 +136,7 @@ func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in na
 	if err := clashError(snap); err != nil {
 		return nil, nil, err
 	}
-	sk := snap.Factory.Skills[in.Name]
+	sk := snap.Blueprint.Skills[in.Name]
 	if sk == nil {
 		return nil, nil, fmt.Errorf("there's no skill called %q; skills_list shows the ones there are", in.Name)
 	}
@@ -162,7 +162,7 @@ func (s *session) skillFile(ctx context.Context, req *mcp.CallToolRequest, in sk
 	if err := clashError(snap); err != nil {
 		return nil, nil, err
 	}
-	sk := snap.Factory.Skills[in.Name]
+	sk := snap.Blueprint.Skills[in.Name]
 	if sk == nil {
 		return nil, nil, fmt.Errorf("there's no skill called %q", in.Name)
 	}
@@ -170,7 +170,7 @@ func (s *session) skillFile(ctx context.Context, req *mcp.CallToolRequest, in sk
 		return nil, nil, fmt.Errorf("skill %s isn't available on cloud runtimes in v0.1 (%s)", in.Name, sk.NotTextOnlyReason)
 	}
 	p := strings.TrimPrefix(filepath.ToSlash(filepath.Clean("/"+in.Path)), "/")
-	var found *factory.SkillFile
+	var found *blueprint.SkillFile
 	for i := range sk.Files {
 		if sk.Files[i].Path == p {
 			found = &sk.Files[i]
@@ -198,7 +198,7 @@ func (s *session) rulesGet(ctx context.Context, req *mcp.CallToolRequest, _ noAr
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
-	return textResult(rulesText(snap.Factory)), nil, nil
+	return textResult(rulesText(snap.Blueprint)), nil, nil
 }
 
 func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nameArgs) (*mcp.CallToolResult, any, error) {
@@ -206,7 +206,7 @@ func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nam
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
-	r := snap.Factory.Rules[in.Name]
+	r := snap.Blueprint.Rules[in.Name]
 	if r == nil {
 		return nil, nil, fmt.Errorf("there's no rule called %q; rules_get lists them", in.Name)
 	}
@@ -218,7 +218,7 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
-	r := snap.Factory.Routines[in.Name]
+	r := snap.Blueprint.Routines[in.Name]
 	if r == nil {
 		return nil, nil, fmt.Errorf("there's no routine called %q", in.Name)
 	}
@@ -239,8 +239,8 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 		repo, runtime = run.Repo, run.Runtime
 	}
 	var mem *runs.Memory
-	if r.Memory && run != nil && memorySupport(snap.Factory, runtime) == provider.Emulated {
-		m, err := s.core.Runs.Memory(ctx, run.Deployment, r.Ref.Name, run.Repo)
+	if r.Memory && run != nil && memorySupport(snap.Blueprint, runtime) == provider.Emulated {
+		m, err := s.core.Runs.Memory(ctx, run.Factory, r.Ref.Name, run.Repo)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couldn't read routine %s's memory: %v", r.Ref.Name, err)
 		}
@@ -250,7 +250,7 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 }
 
 // memorySupport says how a runtime gives routines their memory.
-func memorySupport(f *factory.Factory, runtime string) provider.Support {
+func memorySupport(f *blueprint.Blueprint, runtime string) provider.Support {
 	if p, ok := runtimeProvider(f, runtime); ok {
 		return p.Matrix.Memory
 	}
@@ -275,11 +275,11 @@ func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in m
 	if run == nil {
 		return nil, memorySaveOut{}, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
 	}
-	r := snap.Factory.Routines[run.Routine]
+	r := snap.Blueprint.Routines[run.Routine]
 	if r == nil || !r.Memory {
 		return nil, memorySaveOut{}, fmt.Errorf("routine %s doesn't use memory (its routine file has no `memory: true`), so it shouldn't keep notes between runs", run.Routine)
 	}
-	switch memorySupport(snap.Factory, run.Runtime) {
+	switch memorySupport(snap.Blueprint, run.Runtime) {
 	case provider.Emulated:
 	case provider.Native:
 		return nil, memorySaveOut{}, fmt.Errorf("runtime %s has its own memory feature, and routine %s keeps its notes there; use that instead of memory_save", run.Runtime, run.Routine)
@@ -290,7 +290,7 @@ func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in m
 	if !utf8.ValidString(content) {
 		return nil, memorySaveOut{}, errors.New("the memory must be UTF-8 text")
 	}
-	if err := s.core.Runs.SaveMemory(ctx, run.Deployment, run.Routine, run.Repo, content, run.ID, s.core.now()); err != nil {
+	if err := s.core.Runs.SaveMemory(ctx, run.Factory, run.Routine, run.Repo, content, run.ID, s.core.now()); err != nil {
 		return nil, memorySaveOut{}, fmt.Errorf("couldn't save the memory: %v", err)
 	}
 	note := "Saved. The next run of " + run.Routine + " on " + run.Repo + " gets it with routine_get."
@@ -309,7 +309,7 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 	run := runs.Run{
 		ID: runs.NewID(now), StartedAt: now, Intent: strings.Join(strings.Fields(in.Intent), " "),
 		Routine: in.Routine, Stub: in.Stub, ServedBy: snap.Mode,
-		Deployment: snap.deploymentName(), FactorySHA: snap.FactorySHA(),
+		Factory: snap.factoryName(), BlueprintSHA: snap.BlueprintSHA(),
 	}
 	refuse := func(err error) (*mcp.CallToolResult, runBeginOut, error) {
 		return nil, runBeginOut{}, s.recordRefusal(ctx, run, err)
@@ -348,9 +348,9 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 		if snap.remote() && (in.Runtime == "" || in.Repo == "" || in.Stub == "") {
 			return refuse(errors.New("on the Fabrica server, routines only run from stubs, so run_begin needs routine, runtime, repo and stub, exactly as your stub says"))
 		}
-		r := snap.Factory.Routines[in.Routine]
+		r := snap.Blueprint.Routines[in.Routine]
 		if r == nil {
-			return refuse(fmt.Errorf("there's no routine called %q in this factory", in.Routine))
+			return refuse(fmt.Errorf("there's no routine called %q in this blueprint", in.Routine))
 		}
 		if in.Stub != "" {
 			if err := s.checkStub(ctx, snap, r, run); err != nil {
@@ -380,29 +380,29 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 // checkStub runs the two stale-stub checks, in order: the stub is still
 // deployed, and its shape still matches. Both compare the latest home repo
 // with the values inside the stub, never with state.
-func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *factory.Routine, run runs.Run) error {
-	d, why := s.core.Backend.LatestDeployment(ctx, snap, run.Repo, run.Runtime)
+func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *blueprint.Routine, run runs.Run) error {
+	d, why := s.core.Backend.LatestFactory(ctx, snap, run.Repo, run.Runtime)
 	switch {
 	case d == nil:
-		return fmt.Errorf("this stub is no longer deployed: %s. The deployment needs `fabrica apply` to remove the stub", why)
+		return fmt.Errorf("this stub is no longer deployed: %s. The factory needs `fabrica apply` to remove the stub", why)
 	case !d.HasRoutine(r.Ref.Name):
-		return fmt.Errorf("this stub is no longer deployed: routine %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", r.Ref.Name, d.Name)
+		return fmt.Errorf("this stub is no longer deployed: routine %s isn't in factory %s anymore. The factory needs `fabrica apply` to remove the stub", r.Ref.Name, d.Name)
 	case !d.HasRuntime(run.Runtime):
-		return fmt.Errorf("this stub is no longer deployed: runtime %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", run.Runtime, d.Name)
+		return fmt.Errorf("this stub is no longer deployed: runtime %s isn't in factory %s anymore. The factory needs `fabrica apply` to remove the stub", run.Runtime, d.Name)
 	case !d.Covers(run.Repo) && !(snap.Mode == runs.ServedLocal && d.IsWildcard()):
-		return fmt.Errorf("this stub is no longer deployed: repo %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", run.Repo, d.Name)
+		return fmt.Errorf("this stub is no longer deployed: repo %s isn't in factory %s anymore. The factory needs `fabrica apply` to remove the stub", run.Repo, d.Name)
 	}
-	p, ok := runtimeProvider(snap.Factory, run.Runtime)
+	p, ok := runtimeProvider(snap.Blueprint, run.Runtime)
 	if !ok {
-		return fmt.Errorf("this stub is outdated: the factory doesn't know runtime %s. The deployment needs `fabrica apply`", run.Runtime)
+		return fmt.Errorf("this stub is outdated: the blueprint doesn't know runtime %s. The factory needs `fabrica apply`", run.Runtime)
 	}
 	endpoint := ""
 	if snap.remote() {
 		endpoint = d.Endpoint()
 	}
-	ev := stub.Evaluate(snap.Factory, r, stub.Target{Deployment: d.Name, Runtime: p, Endpoint: endpoint})
+	ev := stub.Evaluate(snap.Blueprint, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: endpoint})
 	if fp := ev.Shape.Fingerprint(); fp != run.Stub || !ev.OK() {
-		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger, connectors or memory setting) changed, so the stub (%s) doesn't match the factory (%s) anymore. The deployment needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
+		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger, connectors or memory setting) changed, so the stub (%s) doesn't match the blueprint (%s) anymore. The factory needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
 	}
 	return nil
 }
@@ -414,13 +414,13 @@ func (s *session) recordRefusal(ctx context.Context, run runs.Run, cause error) 
 	summary := "Fabrica refused to start this run; see the error it returned"
 	switch {
 	case strings.Contains(cause.Error(), "no longer deployed"):
-		summary = "Refused: stub is no longer deployed; the deployment needs fabrica apply"
+		summary = "Refused: stub is no longer deployed; the factory needs fabrica apply"
 	case strings.Contains(cause.Error(), "outdated"):
-		summary = "Refused: stub is outdated; the deployment needs fabrica apply"
+		summary = "Refused: stub is outdated; the factory needs fabrica apply"
 	case strings.Contains(cause.Error(), "Fabrica line"):
 		summary = "Refused: the repo's AGENTS.md is missing the Fabrica line"
-	case strings.Contains(cause.Error(), "same names as factory skills"):
-		summary = "Refused: repo skills clash with factory skills"
+	case strings.Contains(cause.Error(), "same names as blueprint skills"):
+		summary = "Refused: repo skills clash with blueprint skills"
 	}
 	if err := s.core.Runs.Begin(ctx, run); err == nil {
 		_ = s.core.Runs.AddCheckpoint(ctx, run.ID, runs.Checkpoint{At: s.core.now(), Author: runs.ByFabrica, Status: runs.Failed, Summary: summary})
@@ -453,8 +453,8 @@ func (s *session) runReport(ctx context.Context, req *mcp.CallToolRequest, in ru
 	if err != nil {
 		return nil, runReportOut{}, err
 	}
-	if snap.remote() && run.Deployment != snap.deploymentName() {
-		return nil, runReportOut{}, fmt.Errorf("run %s doesn't belong to this deployment", in.RunID)
+	if snap.remote() && run.Factory != snap.factoryName() {
+		return nil, runReportOut{}, fmt.Errorf("run %s doesn't belong to this factory", in.RunID)
 	}
 	if err := s.core.Runs.AddCheckpoint(ctx, run.ID, runs.Checkpoint{
 		At: s.core.now(), Author: runs.ByAgent, Status: status,

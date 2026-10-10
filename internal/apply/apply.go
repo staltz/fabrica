@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
 	"github.com/staltz/fabrica/internal/plan"
@@ -29,7 +29,7 @@ type Options struct {
 	// Out is where progress goes.
 	Out io.Writer
 	// HandoffDir is where handoff instructions are written. They contain
-	// the deployment's token, so they live outside the home repo.
+	// the factory's token, so they live outside the home repo.
 	HandoffDir string
 	// Holder names whoever is applying, for the lock entry.
 	Holder string
@@ -43,7 +43,7 @@ type Options struct {
 type Result struct {
 	// Plan is the plan apply started from.
 	Plan *plan.Plan
-	// Failed lists deployments (or "local tools") that couldn't be applied.
+	// Failed lists factories (or "local tools") that couldn't be applied.
 	Failed []string
 	// Handoffs are the handoff files written.
 	Handoffs []string
@@ -58,9 +58,9 @@ func (r *Result) ExitCode() int {
 	return 0
 }
 
-// Run applies a home repo: every cloud deployment that has changes and no
+// Run applies a home repo: every cloud factory that has changes and no
 // errors, then the local tools on this machine. With Plan.Destroy, those
-// changes remove everything the deployments installed.
+// changes remove everything the factories installed.
 func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	out := opts.Out
 	if out == nil {
@@ -72,8 +72,8 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Cloud deployments are applied from the latest home repo, so sync
-	// first. A home repo with only local deployments doesn't need a remote.
+	// Cloud factories are applied from the latest home repo, so sync
+	// first. A home repo with only local factories doesn't need a remote.
 	var repo *Repo
 	if needsGit(h) {
 		repo, err = OpenRepo(ctx, homeDir)
@@ -104,17 +104,17 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		}
 	}
 
-	for _, dp := range p.Deployments {
+	for _, dp := range p.Factories {
 		if dp.Local() {
 			if dp.Diags.HasErrors() {
-				fmt.Fprintf(out, "Deployment %s has errors, so its local routines weren't changed:\n", dp.Name)
+				fmt.Fprintf(out, "Factory %s has errors, so its local routines weren't changed:\n", dp.Name)
 				printErrors(out, dp.Diags)
 				res.Failed = append(res.Failed, dp.Name)
 			}
 			continue
 		}
 		if dp.Diags.HasErrors() {
-			fmt.Fprintf(out, "Deployment %s has errors, so it was skipped:\n", dp.Name)
+			fmt.Fprintf(out, "Factory %s has errors, so it was skipped:\n", dp.Name)
 			printErrors(out, dp.Diags)
 			res.Failed = append(res.Failed, dp.Name)
 			continue
@@ -125,7 +125,7 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		files, err := applyCloud(ctx, opts, &env, repo, dp.Name)
 		res.Handoffs = append(res.Handoffs, files...)
 		if err != nil {
-			fmt.Fprintf(out, "Deployment %s: %v\n", dp.Name, err)
+			fmt.Fprintf(out, "Factory %s: %v\n", dp.Name, err)
 			res.Failed = append(res.Failed, dp.Name)
 		}
 	}
@@ -165,7 +165,7 @@ func needsGit(h *home.Home) bool {
 	if len(h.StateNames) > 0 {
 		return true
 	}
-	for _, d := range h.Deployments {
+	for _, d := range h.Factories {
 		if d.Scope == provider.Cloud {
 			return true
 		}
@@ -181,7 +181,7 @@ func printErrors(out io.Writer, diags diag.List) {
 	}
 }
 
-// applyCloud applies one cloud deployment, following the steps in the
+// applyCloud applies one cloud factory, following the steps in the
 // design: take the lock, refresh, re-plan, apply, then record the results
 // and release the lock in one commit.
 func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, name string) (handoffs []string, err error) {
@@ -191,7 +191,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	}
 	// Deleting a stub needs no token, so destroy works without the secret.
 	if env.Secret == "" && !env.Destroy {
-		return nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the deployment's token", token.EnvVar)
+		return nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the factory's token", token.EnvVar)
 	}
 	holder := opts.Holder
 	if holder == "" {
@@ -211,7 +211,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		}
 		return nil, fmt.Errorf("couldn't take the lock: %w", err)
 	}
-	fmt.Fprintf(out, "Deployment %s: took the lock.\n", name)
+	fmt.Fprintf(out, "Factory %s: took the lock.\n", name)
 
 	// 2 and 3. Refresh and re-plan against the home repo as it is now.
 	locked := *env
@@ -229,8 +229,8 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 
 	// 4. Apply each change, recording as we go.
 	state := dp.State
-	if dp.Factory != nil {
-		state.Factory = &home.StateFactory{Git: dp.Spec.Factory.Git, Path: dp.Spec.Factory.Path, Commit: dp.Factory.Source.Commit}
+	if dp.Blueprint != nil {
+		state.Blueprint = &home.StateBlueprint{Git: dp.Spec.Blueprint.Git, Path: dp.Spec.Blueprint.Path, Commit: dp.Blueprint.Source.Commit}
 	}
 	tok := token.For(env.Secret, name)
 	var failures []string
@@ -256,7 +256,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if err := repo.Release(ctx, name, msg, state); err != nil {
 		return handoffs, err
 	}
-	fmt.Fprintf(out, "Deployment %s: recorded the results and released the lock.\n", name)
+	fmt.Fprintf(out, "Factory %s: recorded the results and released the lock.\n", name)
 	if len(failures) > 0 {
 		return handoffs, fmt.Errorf("%s failed:\n  %s", plural(len(failures), "change"), strings.Join(failures, "\n  "))
 	}
@@ -277,7 +277,7 @@ func releaseAfter(ctx context.Context, repo *Repo, name, verb string, cause erro
 }
 
 // applyChange carries out one change and updates state to match.
-func applyChange(ctx context.Context, opts Options, dp *plan.Deployment, state *home.State, c *plan.Change, tok string, now time.Time) (string, error) {
+func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time) (string, error) {
 	switch c.Action {
 	case plan.Adopt:
 		upsertResource(state, *c.Current)
@@ -322,7 +322,7 @@ func applyChange(ctx context.Context, opts Options, dp *plan.Deployment, state *
 func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Resource {
 	shape := r.Eval.Shape
 	res := provider.Resource{
-		Identity: r.Key.ID, Deployment: r.Deployment, Routine: r.Routine, Repo: r.Repo,
+		Identity: r.Key.ID, Factory: r.Factory, Routine: r.Routine, Repo: r.Repo,
 		Trigger: provider.ResourceTrigger{On: shape.Trigger, Cron: shape.Cron},
 		Prompt:  r.Prompt, Fingerprint: r.Fingerprint,
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
@@ -347,10 +347,10 @@ func fabricaURL(endpoint string, p *provider.Provider, tok string) string {
 	return endpoint
 }
 
-func recordFor(r *plan.Resource, remoteID string, dp *plan.Deployment, now time.Time) home.Resource {
+func recordFor(r *plan.Resource, remoteID string, dp *plan.Factory, now time.Time) home.Resource {
 	return home.Resource{
 		ID: r.Key.ID, Runtime: r.Runtime, Routine: r.Routine, Repo: r.Repo, RemoteID: remoteID,
-		Mode: string(r.Mode), FactoryCommit: factoryCommit(dp), TokenHash: r.TokenHash,
+		Mode: string(r.Mode), BlueprintCommit: blueprintCommit(dp), TokenHash: r.TokenHash,
 		Shape: stateShape(r.Eval.Shape), AppliedAt: now,
 	}
 }
@@ -359,9 +359,9 @@ func stateShape(s stub.Shape) home.Shape {
 	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Fingerprint: s.Fingerprint()}
 }
 
-func factoryCommit(dp *plan.Deployment) string {
-	if dp.Factory != nil {
-		return dp.Factory.Source.Commit
+func blueprintCommit(dp *plan.Factory) string {
+	if dp.Blueprint != nil {
+		return dp.Blueprint.Source.Commit
 	}
 	return ""
 }
@@ -369,14 +369,14 @@ func factoryCommit(dp *plan.Deployment) string {
 // writeHandoff writes the instructions for a change and records it as
 // pending. Handoff IDs come from what the handoff does, so issuing the same
 // handoff twice gives the same ID.
-func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.Change, tok string, now time.Time) (string, error) {
+func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time) (string, error) {
 	fingerprint, tokenHash := "", ""
 	if c.Desired != nil {
 		fingerprint, tokenHash = c.Desired.Fingerprint, c.Desired.TokenHash
 	}
 	id := HandoffID(dp.Name, c.Key, string(c.Action), fingerprint+tokenHash)
 	data := provider.HandoffData{
-		ID: id, Action: string(c.Action), Runtime: c.Key.Runtime, Deployment: dp.Name,
+		ID: id, Action: string(c.Action), Runtime: c.Key.Runtime, Factory: dp.Name,
 		Identity: c.Key.ID, Routine: c.Routine, Repo: c.Repo,
 	}
 	if c.Current != nil {
@@ -390,7 +390,7 @@ func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.
 	}
 	if r := c.Desired; r != nil {
 		shape := r.Eval.Shape
-		data.Trigger = provider.HandoffTrigger{On: shape.Trigger, Cron: shape.Cron, Description: stub.DescribeTrigger(factory.Trigger{On: shape.Trigger, Cron: shape.Cron}, r.Repo)}
+		data.Trigger = provider.HandoffTrigger{On: shape.Trigger, Cron: shape.Cron, Description: stub.DescribeTrigger(blueprint.Trigger{On: shape.Trigger, Cron: shape.Cron}, r.Repo)}
 		for _, conn := range shape.Connectors {
 			data.Connectors = append(data.Connectors, provider.HandoffConnector{Name: conn.Name, Setup: stub.DescribeConnector(conn)})
 		}
@@ -412,7 +412,7 @@ func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.
 		return "", err
 	}
 	file := filepath.Join(dir, id+".md")
-	// The instructions contain the deployment's token, so only you can
+	// The instructions contain the factory's token, so only you can
 	// read them.
 	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
 		return "", err
@@ -421,7 +421,7 @@ func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.
 	dropPending(state, c.Supersedes)
 	pend := home.Pending{
 		ID: id, Action: string(c.Action), Resource: c.Key.ID, Runtime: c.Key.Runtime,
-		Routine: c.Routine, Repo: c.Repo, FactoryCommit: factoryCommit(dp), IssuedAt: now,
+		Routine: c.Routine, Repo: c.Repo, BlueprintCommit: blueprintCommit(dp), IssuedAt: now,
 	}
 	if c.Current != nil {
 		pend.RemoteID = c.Current.RemoteID
@@ -437,8 +437,8 @@ func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.
 }
 
 // HandoffID makes a short, stable ID for a handoff.
-func HandoffID(deployment string, key home.Key, action, version string) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{deployment, key.Runtime, key.ID, action, version}, "\x00")))
+func HandoffID(factory string, key home.Key, action, version string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{factory, key.Runtime, key.ID, action, version}, "\x00")))
 	return "h_" + hex.EncodeToString(sum[:])[:10]
 }
 

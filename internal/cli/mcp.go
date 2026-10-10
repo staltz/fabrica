@@ -29,18 +29,18 @@ func newMCP(g *globals) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Serve a factory over MCP, locally (stdio) or remotely (--http)",
+		Short: "Serve a blueprint over MCP, locally (stdio) or remotely (--http)",
 		Long: `Without --http, mcp serves one session over stdio. Local tools run it as
 their user-level fabrica MCP server (` + "`fabrica apply`" + ` sets that up). Each
 time a session starts, it reads your personal home repo's local
-deployments, matches the workspace's git remote, checks the workspace,
-and serves that factory. Runs are recorded in runs.db in your home repo.
+factories, matches the workspace's git remote, checks the workspace,
+and serves that blueprint. Runs are recorded in runs.db in your home repo.
 
 With --http, it's the remote server for cloud runtimes. Point --home at
 a home repo (a git URL or a path to a git repo) and it serves one
-endpoint per cloud deployment, at <server>/<deployment>. It needs
-FABRICA_SERVER_SECRET (each deployment's token is HMAC(secret,
-deployment name)), read access to the home repo and the factories, and a
+endpoint per cloud factory, at <server>/<factory>. It needs
+FABRICA_SERVER_SECRET (each factory's token is HMAC(secret,
+factory name)), read access to the home repo and the blueprints, and a
 persistent folder for its run-history database (--db). It re-fetches
 the home repo regularly, so merges show up shortly after they land.`,
 		Args: cobra.NoArgs,
@@ -106,8 +106,8 @@ the home repo regularly, so merges show up shortly after they land.`,
 	f.StringVar(&listen, "listen", ":8080", "--http: the address to listen on")
 	f.StringVar(&dbPath, "db", "fabrica-runs.db", "--http: the run-history database (keep it on a persistent volume)")
 	f.StringVar(&ref, "ref", "", "--http: the home repo branch to serve (default: its default branch)")
-	f.StringVar(&publicURL, "url", "", "--http: only serve deployments whose server: is this URL")
-	f.DurationVar(&refresh, "refresh", time.Minute, "--http: how often to re-fetch the home repo and factories")
+	f.StringVar(&publicURL, "url", "", "--http: only serve factories whose server: is this URL")
+	f.DurationVar(&refresh, "refresh", time.Minute, "--http: how often to re-fetch the home repo and blueprints")
 	return cmd
 }
 
@@ -136,11 +136,17 @@ func newHook(g *globals) *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.Runtime, "runtime", "", "the local runtime")
-	f.StringVar(&o.Deployment, "deployment", "", "the local deployment")
+	f.StringVar(&o.Factory, "factory", "", "the local factory")
 	f.StringVar(&o.Routine, "routine", "", "the routine")
 	f.StringVar(&o.Fingerprint, "stub", "", "the stub fingerprint")
 	f.StringVar(&o.Event, "event", "", "the trigger")
-	for _, name := range []string{"runtime", "deployment", "routine", "stub", "event"} {
+	// Hooks installed before deployments were renamed to factories still
+	// pass --deployment.
+	f.StringVar(&o.Factory, "deployment", "", "the local factory (old name of --factory)")
+	_ = f.MarkHidden("deployment")
+	cmd.MarkFlagsOneRequired("factory", "deployment")
+	cmd.MarkFlagsMutuallyExclusive("factory", "deployment")
+	for _, name := range []string{"runtime", "routine", "stub", "event"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd

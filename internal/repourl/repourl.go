@@ -1,7 +1,7 @@
 // Package repourl turns the many ways of writing a git repo's address into
 // one canonical form: `host/owner/repo`.
 //
-// Deployments name product repos as `github.com/acme/app`, but your laptop's
+// Factories name product repos as `github.com/acme/app`, but your laptop's
 // git remote might say `git@github.com:acme/app.git` or
 // `https://github.com/Acme/App`. To match them up, everything gets
 // normalized to the same lowercase `host/owner/repo` form first.
@@ -29,7 +29,7 @@ var scpLike = regexp.MustCompile(`^(?:[^@/]+@)?([^:/]+):(.+)$`)
 //	git@github.com:acme/app.git
 //
 // The result is all lowercase, because the big git hosts treat repo names
-// case-insensitively and a case mismatch shouldn't stop a deployment from
+// case-insensitively and a case mismatch shouldn't stop a factory from
 // matching. Nested groups (like GitLab's `gitlab.com/group/sub/repo`) are
 // kept as they are.
 func Normalize(raw string) (string, error) {
@@ -69,7 +69,7 @@ func Normalize(raw string) (string, error) {
 }
 
 // MustNormalize is Normalize for values that are already known to be valid,
-// like the ones in a validated deployment. It panics on bad input.
+// like the ones in a validated factory. It panics on bad input.
 func MustNormalize(raw string) string {
 	n, err := Normalize(raw)
 	if err != nil {
@@ -85,7 +85,7 @@ func CloneURL(canonical string) string {
 	return "https://" + canonical + ".git"
 }
 
-// GitURL is like CloneURL but for the `git:` field of factories and imports,
+// GitURL is like CloneURL but for the `git:` field of blueprints and imports,
 // which may also hold a full URL or a local path. Full URLs and paths are
 // used exactly as written; only the short `host/owner/repo` form is turned
 // into an HTTPS URL.

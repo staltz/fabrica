@@ -120,6 +120,14 @@ Serves a factory over MCP.
 
 Prints the version.
 
+## `fabrica -u`, `fabrica --update`
+
+Updates Fabrica itself to the latest release on GitHub. It downloads the same files [install.sh](../install.sh) does: the static binary for your OS and CPU, which it checks against the release's `checksums.txt` before putting it in place of the running `fabrica`. When `fabrica` is a symlink, the file it points at gets replaced and the symlink stays.
+
+If you're already on the latest release, it says so and downloads nothing. If the download or the checksum check fails, your current binary is left as it was. When `fabrica` lives in a folder you can't write to, like `/usr/local/bin`, run the update as a user who can (`sudo fabrica -u`).
+
+Not to be confused with [`fabrica upgrade`](#fabrica-upgrade-import-alias), which moves a factory's imports.
+
 ## `fabrica hook` (plumbing)
 
 Local tools run this for local routines; you won't need to run it yourself. `fabrica apply` installs hooks like `fabrica hook --runtime claude-code --deployment oss-work --routine review-before-push --stub 7f3a9c7f3a9c --event git.pre_push`. The command doubles as Fabrica's identifying mark, which is how Fabrica finds its own hooks again.

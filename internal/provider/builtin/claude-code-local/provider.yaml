@@ -1,8 +1,10 @@
 # Claude Code on your machine.
 #
 # `fabrica apply` adds a user-level `fabrica` MCP server to ~/.claude.json
-# and installs local routines as hooks in ~/.claude/settings.json. It never
-# writes into a product repo. Local runtimes count as api mode, because
+# and installs local routines as hooks in ~/.claude/settings.json, or, for a
+# schedule trigger, as desktop app scheduled tasks in
+# ~/.claude/scheduled-tasks/<id>/SKILL.md. It never writes into a product
+# repo. Local runtimes count as api mode, because
 # Fabrica edits their config files directly, and Fabrica finds its own
 # installs by their names (`fabrica`, `fabrica-…`) and hook commands.
 kind: local
@@ -16,6 +18,11 @@ triggers:
   session.stop: native     # Stop hook
   git.pre_commit: native   # PreToolUse hook on Bash, for `git commit`
   git.pre_push: native     # PreToolUse hook on Bash, for `git push`
+  # A desktop app scheduled task, one per repo. The app keeps the schedule
+  # and folder outside SKILL.md and only runs tasks it created, so `fabrica
+  # apply` says how to register a new one there. Tasks only run while the
+  # app is open and the computer is awake.
+  schedule: native
 connectors:
   mcp.http: native
   mcp.sse: native

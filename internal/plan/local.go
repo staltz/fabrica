@@ -40,9 +40,9 @@ type LocalRuntime struct {
 
 // planLocalDeployment checks one local deployment. Choosing a factory
 // needs no apply (`fabrica mcp` matches the workspace each time a session
-// starts), so the only installs are the shared MCP entry and hooks for
-// local routines; those are worked out across deployments in
-// planLocalTools.
+// starts), so the only installs are the shared MCP entry plus hooks and
+// scheduled tasks for local routines; those are worked out across
+// deployments in planLocalTools.
 func (e *Env) planLocalDeployment(ctx context.Context, d *home.Deployment) *Deployment {
 	dp := &Deployment{Name: d.Name, Spec: d}
 	e.loadFactory(ctx, dp, d.Factory)
@@ -63,6 +63,14 @@ func (e *Env) planLocalDeployment(ctx context.Context, d *home.Deployment) *Depl
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: "api", Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	if d.IsWildcard() {
+		for _, r := range routines {
+			if r.Trigger.On == "schedule" {
+				dp.Diags.Errorf("deployment.schedule-wildcard", d.File, "routine %s runs on a schedule, so it needs a repo to run in, but this deployment has repos: [\"*\"]", r.Ref.Name).
+					Hintf("list the repos it should run in, or move the routine to a deployment that does")
+			}
+		}
+	}
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
 			ev := stub.Evaluate(f, r, stub.Target{Deployment: d.Name, Runtime: rt.Provider})
@@ -149,10 +157,19 @@ func (e *Env) desiredLocal(rt string, deployments []*Deployment, current localto
 			if ev == nil || !ev.OK() {
 				continue
 			}
-			cfg.Hooks = append(cfg.Hooks, localtools.Hook{
-				Binary: e.Binary, Runtime: rt, Event: ev.Routine.Trigger.On,
-				Deployment: dp.Name, Routine: routine, Fingerprint: ev.Shape.Fingerprint(),
-			})
+			if tr := ev.Routine.Trigger; tr.On == "schedule" {
+				for _, repo := range dp.Spec.SpecificRepos() {
+					cfg.Tasks = append(cfg.Tasks, localtools.Task{
+						Deployment: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(),
+						Prompt: stub.LocalPrompt(routine, dp.Name, rt, repo, ev.Shape.Fingerprint()),
+					})
+				}
+			} else {
+				cfg.Hooks = append(cfg.Hooks, localtools.Hook{
+					Binary: e.Binary, Runtime: rt, Event: tr.On,
+					Deployment: dp.Name, Routine: routine, Fingerprint: ev.Shape.Fingerprint(),
+				})
+			}
 			for _, c := range ev.Shape.Connectors {
 				if c.Server == nil {
 					continue
@@ -175,6 +192,11 @@ func (e *Env) desiredLocal(rt string, deployments []*Deployment, current localto
 		for _, h := range current.Hooks {
 			if h.Deployment == dp.Name && h.Runtime == rt {
 				cfg.Hooks = append(cfg.Hooks, h)
+			}
+		}
+		for _, t := range current.Tasks {
+			if t.Deployment == dp.Name {
+				cfg.Tasks = append(cfg.Tasks, t)
 			}
 		}
 		for _, m := range current.MCP {
@@ -247,6 +269,27 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 	for _, h := range cur.Hooks {
 		if !wantHooks[hookID{h.Deployment, h.Routine}] {
 			out = append(out, fmt.Sprintf("- remove hook for routine %s/%s", h.Deployment, h.Routine))
+		}
+	}
+	curTasks := map[string]localtools.Task{}
+	for _, t := range cur.Tasks {
+		curTasks[localtools.TaskID(t)] = t
+	}
+	wantTasks := map[string]bool{}
+	for _, t := range want.Tasks {
+		id := localtools.TaskID(t)
+		wantTasks[id] = true
+		old, ok := curTasks[id]
+		switch {
+		case !ok:
+			out = append(out, fmt.Sprintf("+ add scheduled task %s for routine %s/%s on %s (cron `%s` UTC)", id, t.Deployment, t.Routine, t.Repo, t.Cron))
+		case old != t:
+			out = append(out, fmt.Sprintf("~ update scheduled task %s for routine %s/%s (cron `%s` UTC, stub %s)", id, t.Deployment, t.Routine, t.Cron, t.Fingerprint))
+		}
+	}
+	for _, t := range cur.Tasks {
+		if id := localtools.TaskID(t); !wantTasks[id] {
+			out = append(out, fmt.Sprintf("- remove scheduled task %s for routine %s/%s", id, t.Deployment, t.Routine))
 		}
 	}
 	return out

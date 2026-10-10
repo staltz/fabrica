@@ -1,17 +1,20 @@
 // Package localtools installs Fabrica into the AI coding tools on your
 // machine: Claude Code, Cursor IDE and Codex CLI.
 //
-// `fabrica apply` writes two kinds of things, both at user level and never
+// `fabrica apply` writes three kinds of things, all at user level and never
 // into a product repo:
 //
 //   - MCP servers: the `fabrica` server itself (which picks the right
 //     factory each time a session starts), plus a `fabrica-<connector>`
 //     server for each connector a local routine needs.
 //   - Hooks: one per local routine, running `fabrica hook …`.
+//   - Scheduled tasks: one per repo for each local routine with a
+//     schedule trigger (Claude Code only).
 //
 // Everything Fabrica installs carries an identifying mark (the `fabrica`
 // name prefix, or the `fabrica hook` command), so Fabrica finds its own
-// installs just by reading the tool's config. It leaves everything else in
+// installs just by reading the tool's config (or, for scheduled tasks,
+// the task's folder name and description). It leaves everything else in
 // those files exactly as it was.
 package localtools
 
@@ -61,7 +64,7 @@ func Runtimes() []string { return []string{"claude-code-local", "codex-cli", "cu
 const hookTimeoutSeconds = 30
 
 // Claude Code: MCP servers in ~/.claude.json, hooks in
-// ~/.claude/settings.json.
+// ~/.claude/settings.json, scheduled tasks in ~/.claude/scheduled-tasks.
 
 type claudeCode struct{ home string }
 
@@ -70,7 +73,7 @@ func (c *claudeCode) Runtime() string { return "claude-code-local" }
 func (c *claudeCode) mcpFile() string   { return filepath.Join(c.home, ".claude.json") }
 func (c *claudeCode) hooksFile() string { return filepath.Join(c.home, ".claude", "settings.json") }
 
-func (c *claudeCode) Files() []string { return []string{c.mcpFile(), c.hooksFile()} }
+func (c *claudeCode) Files() []string { return []string{c.mcpFile(), c.hooksFile(), c.tasksDir()} }
 
 func (c *claudeCode) Read() (Config, error) {
 	var cfg Config
@@ -78,7 +81,10 @@ func (c *claudeCode) Read() (Config, error) {
 	if cfg.MCP, err = readMCPServers(c.mcpFile(), claudeEntryFromJSON); err != nil {
 		return cfg, err
 	}
-	cfg.Hooks, err = readClaudeHooks(c.hooksFile())
+	if cfg.Hooks, err = readClaudeHooks(c.hooksFile()); err != nil {
+		return cfg, err
+	}
+	cfg.Tasks, err = readClaudeTasks(c.tasksDir())
 	return cfg, err
 }
 
@@ -86,7 +92,10 @@ func (c *claudeCode) Write(cfg Config) error {
 	if err := writeMCPServers(c.mcpFile(), cfg.MCP, claudeEntryToJSON); err != nil {
 		return err
 	}
-	return writeClaudeHooks(c.hooksFile(), cfg.Hooks)
+	if err := writeClaudeHooks(c.hooksFile(), cfg.Hooks); err != nil {
+		return err
+	}
+	return writeClaudeTasks(c.tasksDir(), cfg.Tasks)
 }
 
 func claudeEntryToJSON(e MCPEntry) (*object, error) {

@@ -232,7 +232,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 | Trigger | Where |
 |---|---|
 | `github.pull_request.opened`, `.synchronize`, `.reopened`, … | Cloud runtimes (see [providers](providers.md) for each one's list) |
-| `schedule` (with `cron:`) | Cloud runtimes |
+| `schedule` (with `cron:`) | Cloud runtimes and Claude Code (desktop app scheduled tasks) |
 | `session.start` | Claude Code and Codex CLI |
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI and Cursor IDE |

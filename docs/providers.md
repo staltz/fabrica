@@ -56,6 +56,7 @@ None of these three has a public API for creating and listing triggered automati
 | `prompt.submit` | native (UserPromptSubmit) | — | native (UserPromptSubmit) |
 | `session.stop` | native (Stop) | native (stop) | native (Stop) |
 | `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) |
+| `schedule` | native (desktop app scheduled task) | — | — |
 | Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks |
 
 A few things worth knowing about local hooks:
@@ -64,6 +65,8 @@ A few things worth knowing about local hooks:
 - Cursor also runs the hooks in `~/.claude/settings.json`. Fabrica's Claude Code hooks stay quiet when they notice they're running inside Cursor, so nothing runs twice.
 - Codex skips new or changed hooks until you trust them in its `/hooks` screen. After an apply that changes a hook, open Codex and approve it.
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
+
+A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its deployment has to list its repos (`repos: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: in a desktop session on that repo, ask Claude to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
 
 ## Apply modes
 

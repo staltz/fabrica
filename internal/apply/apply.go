@@ -15,6 +15,7 @@ import (
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/home"
+	"github.com/staltz/fabrica/internal/localtools"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
@@ -455,6 +456,13 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 		}
 		if rt.Name == "codex-cli" && hasHookChanges(rt.Changes) {
 			fmt.Fprintln(out, "  Codex skips new or changed hooks until you trust them: open Codex and approve them in /hooks.")
+		}
+		if setup := localtools.TaskSetup(rt.Current.Tasks, rt.Desired.Tasks, time.Now()); len(setup) > 0 {
+			fmt.Fprintln(out, "  The Claude desktop app keeps a scheduled task's schedule and folder itself, so finish in the app (Code tab → Routines):")
+			for _, s := range setup {
+				fmt.Fprintf(out, "    • %s\n", s)
+			}
+			fmt.Fprintln(out, "  Scheduled tasks only run while the app is open and the computer is awake.")
 		}
 	}
 	return nil

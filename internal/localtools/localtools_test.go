@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sampleConfig(runtime string) Config {
@@ -17,7 +18,15 @@ func sampleConfig(runtime string) Config {
 	if runtime == "claude-code-local" || runtime == "codex-cli" {
 		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Deployment: "d", Routine: "hello", Fingerprint: "111111111111"})
 	}
+	var tasks []Task
+	if runtime == "claude-code-local" {
+		tasks = []Task{
+			{Deployment: "oss-work", Routine: "update-dep", Repo: "github.com/acme/app", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run `update-dep`: it's Monday.\n\nSecond paragraph."},
+			{Deployment: "oss-work", Routine: "update-dep", Repo: "github.com/acme/lib", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run it on lib."},
+		}
+	}
 	return Config{
+		Tasks: tasks,
 		MCP: []MCPEntry{
 			{Name: "fabrica", Transport: "stdio", Command: "/opt/fab rica/bin/fabrica", Args: []string{"mcp", "--runtime", runtime, "--home", "/home/me/.fabrica"}},
 			{Name: "fabrica-linear", Transport: "http", URL: "https://mcp.linear.app/mcp", BearerEnv: "LINEAR_API_KEY"},
@@ -36,6 +45,10 @@ var userFiles = map[string]string{
 	".cursor/hooks.json":    `{"version": 1, "hooks": {"afterFileEdit": [{"command": "./format.sh"}]}}`,
 	".codex/config.toml":    "# my codex config\nmodel = \"o5\"\n\n[mcp_servers.mine]\ncommand = \"mine\" # keep me\n",
 	".codex/hooks.json":     `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}]}}`,
+	// The user's own scheduled tasks, including one whose name happens to
+	// start with fabrica- but that Fabrica didn't write.
+	".claude/scheduled-tasks/morning/SKILL.md":       "---\nname: morning\ndescription: my morning brief\n---\n\nBrief me.\n",
+	".claude/scheduled-tasks/fabrica-notes/SKILL.md": "---\nname: fabrica-notes\ndescription: notes about Fabrica\n---\n\nSummarize.\n",
 }
 
 func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
@@ -72,7 +85,7 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 						t.Errorf("%s lost the user's %q:\n%s", rel, keep, data)
 					}
 				}
-				if info, err := os.Stat(f); err == nil && info.Mode().Perm() != 0o600 {
+				if info, err := os.Stat(f); err == nil && !info.IsDir() && info.Mode().Perm() != 0o600 {
 					t.Errorf("%s permissions changed to %v", f, info.Mode().Perm())
 				}
 			}
@@ -90,8 +103,15 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 			if err := tool.Write(Config{}); err != nil {
 				t.Fatal(err)
 			}
-			if got, _ := tool.Read(); len(got.MCP) != 0 || len(got.Hooks) != 0 {
+			if got, _ := tool.Read(); len(got.MCP) != 0 || len(got.Hooks) != 0 || len(got.Tasks) != 0 {
 				t.Errorf("after removing, still found %+v", got)
+			}
+			for name, content := range userFiles {
+				if strings.HasPrefix(name, ".claude/scheduled-tasks/") && rt == "claude-code-local" {
+					if data, _ := os.ReadFile(filepath.Join(home, name)); string(data) != content {
+						t.Errorf("%s changed:\n%s", name, data)
+					}
+				}
 			}
 			for _, f := range tool.Files() {
 				data, _ := os.ReadFile(f)
@@ -106,8 +126,14 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 func snapshot(t *testing.T, tool Tool) map[string]string {
 	out := map[string]string{}
 	for _, f := range tool.Files() {
-		data, _ := os.ReadFile(f)
-		out[f] = string(data)
+		filepath.WalkDir(f, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				data, _ := os.ReadFile(p)
+				info, _ := d.Info()
+				out[p] = string(data) + info.ModTime().String()
+			}
+			return nil
+		})
 	}
 	return out
 }
@@ -166,5 +192,97 @@ func TestInvalidJSONIsReported(t *testing.T) {
 	tool, _ := For("claude-code-local", home)
 	if err := tool.Write(Config{}); err == nil || !strings.Contains(err.Error(), "isn't valid JSON") {
 		t.Errorf("want a clear error, got %v", err)
+	}
+}
+
+func TestClaudeTaskShape(t *testing.T) {
+	home := t.TempDir()
+	tool, _ := For("claude-code-local", home)
+	task := Task{Deployment: "dogfood", Routine: "update-dep", Repo: "github.com/staltz/fabrica", Cron: "0 9 * * 1", Fingerprint: "abc123abc123", Prompt: "Do it."}
+	if err := tool.Write(Config{Tasks: []Task{task}}); err != nil {
+		t.Fatal(err)
+	}
+	id := TaskID(task)
+	if !strings.HasPrefix(id, "fabrica-update-dep-") {
+		t.Errorf("task ID %q should start with the routine's name", id)
+	}
+	file := filepath.Join(home, ".claude", "scheduled-tasks", id, "SKILL.md")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(data), "---\nname: \""+id+"\"\ndescription: \"Fabrica routine `update-dep`") || !strings.HasSuffix(string(data), "---\n\nDo it.\n") {
+		t.Errorf("unexpected SKILL.md:\n%s", data)
+	}
+	if _, err := os.Stat(file + ".fabrica.bak"); !os.IsNotExist(err) {
+		t.Error("there should be no backup inside the task's folder")
+	}
+
+	// If the app rewrites the frontmatter without quotes, Fabrica still
+	// recognizes its task.
+	rewritten := "---\nname: " + id + "\ndescription: " + taskDescription(task) + "\n---\n\nDo it.\n"
+	os.WriteFile(file, []byte(rewritten), 0o644)
+	got, err := tool.Read()
+	if err != nil || len(got.Tasks) != 1 || got.Tasks[0] != task {
+		t.Errorf("read back %+v (%v), want %+v", got.Tasks, err, task)
+	}
+}
+
+func TestLocalCron(t *testing.T) {
+	helsinki := time.FixedZone("EEST", 3*3600)
+	kolkata := time.FixedZone("IST", 5*3600+1800)
+	newYork := time.FixedZone("EDT", -4*3600)
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		cron string
+		loc  *time.Location
+		want string // "" means it can't be converted
+	}{
+		{"0 9 * * 1", helsinki, "0 12 * * 1"},
+		{"0 22 * * 1-5", helsinki, "0 1 * * 2,3,4,5,6"},
+		{"0 22 * * 5", helsinki, "0 1 * * 6"},
+		{"0 2 * * 1", newYork, "0 22 * * 0"},
+		{"30 9 * * *", kolkata, "0 15 * * *"},
+		{"0,30 9 * * *", kolkata, ""}, // 14:30 and 15:00 aren't a minute × hour grid
+		{"15 * * * *", kolkata, "45 * * * *"},
+		{"15 * * * 1", helsinki, ""},
+		{"0 1,23 * * 1", helsinki, ""}, // lands on two different local days
+		{"0 1,23 * * *", helsinki, "0 2,4 * * *"},
+		{"0 9 1 * *", helsinki, ""},
+		{"*/15 9 * * *", helsinki, ""},
+		{"0 9 * * 0,7", helsinki, "0 12 * * 0"},
+		{"0 9 * * 1", time.UTC, "0 9 * * 1"},
+	}
+	for _, c := range cases {
+		got, ok := LocalCron(c.cron, now.In(c.loc))
+		if (c.want == "") == ok || got != c.want {
+			t.Errorf("LocalCron(%q, %s) = %q, %v; want %q", c.cron, c.loc, got, ok, c.want)
+		}
+	}
+}
+
+func TestTaskSetup(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.FixedZone("EEST", 3*3600))
+	a := Task{Deployment: "d", Routine: "a", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "A"}
+	b := Task{Deployment: "d", Routine: "b", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "B"}
+	c := Task{Deployment: "d", Routine: "c", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "C"}
+	b2, c2 := b, c
+	b2.Prompt = "B, reworded"
+	c2.Cron, c2.Fingerprint = "0 10 * * 1", "2"
+	got := strings.Join(TaskSetup([]Task{b, c, a}, []Task{b2, c2}, now), "\n")
+	for _, want := range []string{
+		"Change the schedule of " + TaskID(c) + " to cron `0 13 * * 1` (`0 10 * * 1` in UTC, at today's offset of UTC+03:00).",
+		"Delete " + TaskID(a) + " from the app's list",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("setup is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, TaskID(b)) {
+		t.Errorf("a prompt change needs nothing in the app:\n%s", got)
+	}
+	got = strings.Join(TaskSetup(nil, []Task{a}, now), "\n")
+	if !strings.Contains(got, "Register "+TaskID(a)+": in a desktop session on your checkout of github.com/x/y") || !strings.Contains(got, "on cron `0 12 * * 1`") {
+		t.Errorf("unexpected setup for a new task:\n%s", got)
 	}
 }

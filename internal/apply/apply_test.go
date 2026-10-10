@@ -461,3 +461,64 @@ func TestLocalDeploymentInTeamHomeIsAnError(t *testing.T) {
 		t.Fatalf("want an error:\n%s", render(p))
 	}
 }
+
+func TestLocalScheduleRoutineBecomesClaudeScheduledTask(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.UpdateFactory(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
+	h.w.Home.Write(map[string]string{
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/acme/app]\nroutines: [update-dep]\n",
+	})
+	p := h.plan()
+	if p.ExitCode() != 2 || !strings.Contains(render(p), "+ add scheduled task fabrica-update-dep-") {
+		t.Fatalf("want a scheduled task:\n%s", render(p))
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	if !strings.Contains(h.out.String(), "in a desktop session on your checkout of github.com/acme/app") {
+		t.Errorf("apply should say what to set up in the app:\n%s", h.out.String())
+	}
+	tasks, _ := filepath.Glob(filepath.Join(h.env.UserHome, ".claude", "scheduled-tasks", "fabrica-update-dep-*", "SKILL.md"))
+	if len(tasks) != 1 {
+		t.Fatalf("want one SKILL.md, got %v", tasks)
+	}
+	data, _ := os.ReadFile(tasks[0])
+	if !strings.Contains(string(data), "Call `run_begin` with routine `update-dep`, runtime `claude-code-local`, repo `github.com/acme/app`") {
+		t.Errorf("the task's prompt should be the local stub:\n%s", data)
+	}
+	settings, _ := os.ReadFile(filepath.Join(h.env.UserHome, ".claude", "settings.json"))
+	if strings.Contains(string(settings), "update-dep") {
+		t.Errorf("a schedule routine shouldn't get a hook:\n%s", settings)
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, local tools should be in sync:\n%s", render(p))
+	}
+
+	// Dropping the routine removes the task, and apply says to delete it in
+	// the app too.
+	h.w.Home.Write(map[string]string{
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/acme/app]\n",
+	})
+	h.out.Reset()
+	h.apply()
+	if _, err := os.Stat(tasks[0]); !os.IsNotExist(err) {
+		t.Errorf("the task's file should be gone (%v)", err)
+	}
+	if !strings.Contains(h.out.String(), "from the app's list of routines") {
+		t.Errorf("apply should say to delete the task in the app:\n%s", h.out.String())
+	}
+}
+
+func TestLocalScheduleRoutineNeedsSpecificRepos(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.UpdateFactory(map[string]string{"routines/update-dep.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\n---\nUpdate a dependency.\n"})
+	h.w.Home.Write(map[string]string{
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\nroutines: [update-dep]\n",
+	})
+	p := h.plan()
+	if !p.Deployment("mine").Diags.HasCode("deployment.schedule-wildcard") {
+		t.Fatalf("want a wildcard error:\n%s", render(p))
+	}
+}

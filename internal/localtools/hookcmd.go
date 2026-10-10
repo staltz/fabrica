@@ -44,10 +44,26 @@ type Hook struct {
 	Fingerprint string
 }
 
+// Task is a local routine with a schedule trigger, installed as a Claude
+// Code desktop scheduled task (one per repo, since a task runs in one
+// folder).
+type Task struct {
+	Deployment string
+	Routine    string
+	Repo       string
+	// Cron is the routine's schedule, in UTC like everywhere in Fabrica.
+	Cron        string
+	Fingerprint string
+	// Prompt is what the task tells the agent each time it runs.
+	Prompt string
+}
+
 // Config is everything Fabrica installs in one local tool.
 type Config struct {
 	MCP   []MCPEntry
 	Hooks []Hook
+	// Tasks are scheduled tasks. Only Claude Code has them.
+	Tasks []Task
 }
 
 // Normalize sorts a config so two configs with the same content compare
@@ -65,7 +81,9 @@ func (c Config) Normalize() Config {
 	}
 	hooks := append([]Hook(nil), c.Hooks...)
 	sort.Slice(hooks, func(i, j int) bool { return hookKey(hooks[i]) < hookKey(hooks[j]) })
-	return Config{MCP: mcp, Hooks: hooks}
+	tasks := append([]Task(nil), c.Tasks...)
+	sort.Slice(tasks, func(i, j int) bool { return TaskID(tasks[i]) < TaskID(tasks[j]) })
+	return Config{MCP: mcp, Hooks: hooks, Tasks: tasks}
 }
 
 func hookKey(h Hook) string {

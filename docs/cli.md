@@ -1,6 +1,6 @@
 # CLI reference
 
-Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: factory and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo. (`fabrica new` runs `git init` for a new factory, but leaves the first commit to you.)
+Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: factory and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo. (`fabrica new` runs `git init` for a new factory, but leaves the first commit to you. Likewise, every command first creates your personal home repo if it's missing, without committing; see [Home repos](home-repos.md#personal-and-team-home-repos).)
 
 Every command has `--help`.
 
@@ -16,7 +16,7 @@ Every command has `--help`.
 
 | Variable | What it's for |
 |---|---|
-| `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. |
+| `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud deployments. `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |

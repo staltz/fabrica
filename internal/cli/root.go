@@ -43,6 +43,7 @@ func (e *ExitError) Error() string {
 
 // Main runs the CLI and returns the process exit code.
 func Main(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	ensurePersonalHome(ctx, stderr)
 	mcpserver.Version, _ = readVersion()
 	root := newRoot()
 	root.SetArgs(args)
@@ -62,6 +63,20 @@ func Main(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io
 	}
 	fmt.Fprintf(stderr, "fabrica: %v\n", err)
 	return 1
+}
+
+// ensurePersonalHome creates your personal home repo before any command
+// runs, unless it's there already. Failing to is only a warning: most
+// commands don't need it, and the ones that do say so themselves. That's
+// also why it says nothing when there's no home folder to put it in.
+func ensurePersonalHome(ctx context.Context, stderr io.Writer) {
+	dir, created, err := home.EnsurePersonal(ctx)
+	switch {
+	case created:
+		fmt.Fprintf(stderr, "Created your personal home repo at %s.\n", dir)
+	case err != nil && dir != "":
+		fmt.Fprintf(stderr, "fabrica: couldn't create your personal home repo at %s: %v\n", dir, err)
+	}
 }
 
 // globals are the flags every command shares.

@@ -9,7 +9,9 @@ state/<name>.yaml                 # what's installed, one per cloud deployment (
 
 ## Personal and team home repos
 
-- Your **personal** home repo is the folder `FABRICA_HOME` points to, or `~/.fabrica` by default. It can hold both local and cloud deployments. Your local run history (`runs.db`) lives in it too, so add `runs.db*` to its `.gitignore`.
+- Your **personal** home repo is the folder `FABRICA_HOME` points to, or `~/.fabrica` by default. It can hold both local and cloud deployments. Your local run history (`runs.db`) lives in it too, so `runs.db*` belongs in its `.gitignore`.
+
+  You never need to make it yourself. Every `fabrica` command, before doing anything else, creates it if it isn't there yet: it runs `git init`, adds an empty `deployments/` folder and a `.gitignore` with `runs.db*`, and says so. It never commits. If the folder is a git repo already, say because you cloned your home repo there, Fabrica leaves it exactly as it is, so add `runs.db*` to its `.gitignore` yourself.
 - A **team** home repo is any other home repo, owned by a team. In v0.1 it only holds cloud deployments: a local deployment in one is an error.
 
 Most commands work on one home repo. They pick it like this: the `--home` flag if you give one, otherwise the current folder if it looks like a home repo (it has `deployments/` or `state/`), otherwise your personal home repo.
@@ -85,7 +87,7 @@ What happens:
 
 - **`fabrica apply` on your laptop** installs one user-level `fabrica` MCP server in each local tool, plus a hook for each local routine. It never writes into a product repo. If a local routine needs an MCP connector, that gets registered too, as `fabrica-<connector>`.
 - **Choosing a factory needs no apply.** Each time a session starts, `fabrica mcp` reads your local deployments, matches the workspace's git remote, and serves that factory. Change a local deployment, and the next session picks it up.
-- **New machine?** Clone your home repo to `~/.fabrica` and run `fabrica apply` once.
+- **New machine?** Clone your home repo to `~/.fabrica` and run `fabrica apply` once. If you've already run `fabrica` there (the installer does), there's an empty home repo in the way, so remove it first with `rm -rf ~/.fabrica`.
 - **The wildcard** `repos: ["*"]` (quoted, because a bare `*` means something else in YAML) is only allowed for local runtimes, and must be the only entry. A specific repo always beats the wildcard. There can be at most one wildcard deployment per runtime.
 - **Two specific local deployments for the same repo and runtime is an error.** A session must get exactly one factory.
 - **If no local deployment matches,** `fabrica mcp` serves nothing and says why.

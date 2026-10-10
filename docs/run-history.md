@@ -5,7 +5,7 @@ Every run, whether it's a routine firing in the cloud or you working in your edi
 ## Where it's stored
 
 - **Remote:** a SQLite database on the server's persistent volume (`fabrica mcp --http --db …`).
-- **Local:** `runs.db` in your personal home repo (`~/.fabrica/runs.db` by default), with the same schema. It never leaves your machine. Add `runs.db*` to your home repo's `.gitignore`.
+- **Local:** `runs.db` in your personal home repo (`~/.fabrica/runs.db` by default), with the same schema. It never leaves your machine. A home repo that Fabrica created already has `runs.db*` in its `.gitignore`; if you cloned yours, add it.
 
 v0.1 has **no built-in way to read run history**. Open the file with any SQLite tool, like the `sqlite3` command line. That makes the schema below a public interface: later versions will migrate it carefully, and keep the `run_overview` view working.
 

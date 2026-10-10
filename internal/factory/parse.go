@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -321,7 +322,8 @@ func parseRuleFrontmatter(front []byte) (description string, globs []string, alw
 		globs, err := globsFromNode(&f.Globs)
 		return strings.TrimSpace(f.Description), globs, f.AlwaysApply, err
 	} else if strings.Contains(yamlErr.Error(), "unknown key") {
-		return "", nil, false, fmt.Errorf("%v (rules only have description, globs and alwaysApply)", yamlErr)
+		msg := strings.Replace(yamlErr.Error(), "check the spelling; Fabrica doesn't allow keys it doesn't know", "rules only have description, globs and alwaysApply", 1)
+		return "", nil, false, errors.New(msg)
 	}
 	return parseCursorLines(string(front))
 }

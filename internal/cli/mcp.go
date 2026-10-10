@@ -101,7 +101,7 @@ the home repo regularly, so merges show up shortly after they land.`,
 	}
 	f := cmd.Flags()
 	f.BoolVar(&httpMode, "http", false, "serve cloud runtimes over HTTP instead of one local session over stdio")
-	f.StringVar(&runtime, "runtime", "", "local mode: the tool this server runs in (claude-code, cursor-ide or codex-cli)")
+	f.StringVar(&runtime, "runtime", "", "local mode: the tool this server runs in (claude-code-local, cursor-ide or codex-cli)")
 	f.StringVar(&workspace, "workspace", "", "local mode: serve this folder instead of asking the tool for its workspace")
 	f.StringVar(&listen, "listen", ":8080", "--http: the address to listen on")
 	f.StringVar(&dbPath, "db", "fabrica-runs.db", "--http: the run-history database (keep it on a persistent volume)")

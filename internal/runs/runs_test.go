@@ -19,7 +19,7 @@ func TestRecordAndRead(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	id := NewID(now)
-	if err := db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review the new PR", Routine: "pr-review", Runtime: "claude",
+	if err := db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review the new PR", Routine: "pr-review", Runtime: "claude-code-cloud",
 		Repo: "github.com/acme/app", Deployment: "pr-review", FactorySHA: strings.Repeat("a", 40), Stub: "7f3a9c7f3a9c", ServedBy: ServedRemote}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestDocQueries(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	id := NewID(now)
-	db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review", Routine: "pr-review", Runtime: "claude", Repo: "github.com/a/b", ServedBy: ServedRemote})
+	db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review", Routine: "pr-review", Runtime: "claude-code-cloud", Repo: "github.com/a/b", ServedBy: ServedRemote})
 	db.SkillLoaded(ctx, id, "pr-review", now)
 	db.AddCheckpoint(ctx, id, Checkpoint{At: now, Author: ByAgent, Status: Failed, Summary: "tests are red", Links: []string{"https://github.com/a/b/pull/3"}})
 	db.Close()

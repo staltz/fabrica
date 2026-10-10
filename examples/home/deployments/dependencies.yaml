@@ -2,6 +2,6 @@
 # someone edits this file.
 factory: { git: github.com/acme/factory, ref: v1.0.0 }
 server: https://fabrica.acme.dev
-runtimes: [claude]
+runtimes: [claude-code-cloud]
 routines: [weekly-dependency-check]
 repos: [github.com/acme/app, github.com/acme/api]

@@ -298,6 +298,10 @@ func (e *Env) diff(dp *Deployment, current map[home.Key]home.Resource, providers
 		}
 		if hasCur {
 			reasons := shapeReasons(cur.Shape, want)
+			if cur.RenamedFrom != "" {
+				// Its fingerprint was dropped, so say why instead.
+				reasons = []string{fmt.Sprintf("its prompt still names runtime %s, which is now called %s", cur.RenamedFrom, cur.Runtime)}
+			}
 			if !tokenMatches(cur.TokenHash, want.TokenHash) {
 				reasons = append(reasons, "the deployment's token changed (the server secret was rotated)")
 			}

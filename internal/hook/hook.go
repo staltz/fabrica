@@ -73,7 +73,7 @@ func Run(ctx context.Context, o Options) error {
 	// Cursor also runs the hooks in ~/.claude/settings.json. Fabrica gives
 	// Cursor its own hooks, so the Claude Code ones stay quiet there and
 	// nothing runs twice.
-	if o.Runtime == "claude-code" && getenv("CURSOR_VERSION") != "" {
+	if o.Runtime == "claude-code-local" && getenv("CURSOR_VERSION") != "" {
 		return nil
 	}
 	var in input

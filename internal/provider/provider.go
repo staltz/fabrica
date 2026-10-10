@@ -29,7 +29,7 @@ type Provider struct {
 	handoff *template.Template
 }
 
-// Name is the runtime's name, like "claude" or "cursor-ide".
+// Name is the runtime's name, like "claude-code-cloud" or "cursor-ide".
 func (p *Provider) Name() string { return p.Matrix.Name }
 
 // IsLocal reports whether this runtime runs on your machine.
@@ -90,6 +90,21 @@ func IsBuiltin(name string) bool {
 	return ok
 }
 
+// renamed maps built-in runtimes' names in Fabrica v0.1 to their current
+// names. The old names don't work anymore: Fabrica only recognizes them to
+// say what to use instead, and to move v0.1 state over.
+var renamed = map[string]string{
+	"claude":      "claude-code-cloud",
+	"claude-code": "claude-code-local",
+}
+
+// Renamed returns the current name of the built-in runtime that Fabrica
+// v0.1 called name.
+func Renamed(name string) (string, bool) {
+	current, ok := renamed[name]
+	return current, ok
+}
+
 // LoadFolder loads a folder provider from providers/<name>/ in a factory.
 //
 // A folder provider must have a provider.yaml. If its apply modes include
@@ -99,6 +114,9 @@ func IsBuiltin(name string) bool {
 func LoadFolder(name, dir string) (*Provider, error) {
 	if IsBuiltin(name) {
 		return nil, fmt.Errorf("%q is a built-in provider, and in v0.1 a folder provider can't replace a built-in one; pick another name", name)
+	}
+	if current, ok := Renamed(name); ok {
+		return nil, fmt.Errorf("%q is what built-in provider %s used to be called, so it's reserved; pick another name", name, current)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "provider.yaml"))
 	if err != nil {

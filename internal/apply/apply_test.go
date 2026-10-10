@@ -91,7 +91,7 @@ func TestFullCloudLifecycle(t *testing.T) {
 		t.Fatalf("changes = %d, want 4\n%s", got, render(p))
 	}
 	text := render(p)
-	for _, want := range []string{"follows the branch", "toy: api mode", "claude: handoff mode", "token in the url", "slack [native]"} {
+	for _, want := range []string{"follows the branch", "toy: api mode", "claude-code-cloud: handoff mode", "token in the url", "slack [native]"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("plan output is missing %q:\n%s", want, text)
 		}
@@ -119,7 +119,7 @@ func TestFullCloudLifecycle(t *testing.T) {
 	}
 	handoff, _ := os.ReadFile(res.Handoffs[0])
 	if !strings.Contains(string(handoff), "/t/"+wantToken) || !strings.Contains(string(handoff), "fabrica confirm h_") {
-		t.Errorf("claude handoff should put the token in the URL and end with confirm:\n%s", handoff)
+		t.Errorf("claude-code-cloud handoff should put the token in the URL and end with confirm:\n%s", handoff)
 	}
 	if info, _ := os.Stat(res.Handoffs[0]); info.Mode().Perm() != 0o600 {
 		t.Errorf("handoff files hold a token and must be private, got %v", info.Mode().Perm())
@@ -334,7 +334,7 @@ func TestDeletedDeploymentIsCleanedUp(t *testing.T) {
 	if got := h.w.Toy.Resources(); len(got) != 0 {
 		t.Errorf("toy resources left behind: %+v", got)
 	}
-	// The claude stubs need delete handoffs; once confirmed, the state
+	// The claude-code-cloud stubs need delete handoffs; once confirmed, the state
 	// file goes away entirely.
 	s := h.state()
 	if len(s.Pending) != 2 {
@@ -351,6 +351,36 @@ func TestDeletedDeploymentIsCleanedUp(t *testing.T) {
 	}
 }
 
+func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add")
+	h.apply()
+	for _, pend := range h.state().Pending {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "trig_"+pend.ID, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Make the state look like Fabrica v0.1 wrote it, when
+	// claude-code-cloud was called claude.
+	h.w.Home.Pull()
+	data, _ := os.ReadFile(filepath.Join(h.w.Home.Dir, "state", "pr-review.yaml"))
+	h.w.Home.Write(map[string]string{"state/pr-review.yaml": strings.ReplaceAll(string(data), "runtime: claude-code-cloud", "runtime: claude")}).CommitPush("v0.1 state")
+
+	// The stubs on claude.ai still name runtime claude in their prompts.
+	p := h.plan()
+	if d := p.Deployment("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 2 || !strings.Contains(render(p), "its prompt still names runtime claude, which is now called claude-code-cloud") {
+		t.Fatalf("want 2 updates on claude-code-cloud:\n%s", render(p))
+	}
+
+	// Once the deployment is gone, they can still be cleaned up.
+	testkit.Git(t, h.w.Home.Dir, "rm", "--quiet", "deployments/pr-review.yaml")
+	h.w.Home.CommitPush("delete deployment")
+	p = h.plan()
+	if d := p.Deployment("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 4 {
+		t.Fatalf("want 4 deletes:\n%s", render(p))
+	}
+}
+
 func TestApplyRefusesUnpushedHomeChanges(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment})
@@ -364,8 +394,8 @@ func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	// Local deployments are read from the working tree; no commit or remote
 	// is needed.
@@ -412,7 +442,7 @@ func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
 	h.w.MakePersonal(t)
 	h.w.UpdateFactory(map[string]string{"routines/hello.md": "---\ntrigger: { on: session.start }\n---\nSay hi.\n"})
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\nroutines: [hello]\n",
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\nroutines: [hello]\n",
 	})
 	p := h.plan()
 	d := p.Deployment("mine")
@@ -424,7 +454,7 @@ func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
 func TestLocalDeploymentInTeamHomeIsAnError(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
 	}).CommitPush("oops")
 	p := h.plan()
 	if p.ExitCode() != 1 || !strings.Contains(render(p), "personal home repo") {

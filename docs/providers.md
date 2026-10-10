@@ -24,7 +24,7 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 **Cloud runtimes**
 
-| | `claude` (Claude routines) | `cursor` (Cursor automations) | `codex` (Codex cloud) |
+| | `claude-code-cloud` (Claude routines) | `cursor` (Cursor automations) | `codex` (Codex cloud) |
 |---|---|---|---|
 | Apply mode | handoff | handoff | handoff |
 | Skills | text-only | text-only | text-only |
@@ -46,7 +46,7 @@ None of these three has a public API for creating and listing triggered automati
 
 **Local runtimes**
 
-| | `claude-code` | `cursor-ide` | `codex-cli` |
+| | `claude-code-local` | `cursor-ide` | `codex-cli` |
 |---|---|---|---|
 | Apply mode | api (writes config files) | api | api |
 | Skills | unpacked on disk | unpacked on disk | unpacked on disk |
@@ -84,7 +84,7 @@ providers/<name>/
   handoff.md       # template for handoff instructions
 ```
 
-In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude` is an error). Deployments use them by name, like any runtime: `runtimes: [acme-runner]`.
+In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Deployments use them by name, like any runtime: `runtimes: [acme-runner]`.
 
 Folder providers can run code (`api`) with your runtime credentials during `apply`. Imports are pinned by commit and `fabrica upgrade` shows diffs (calling out provider changes in particular), so new provider code never arrives unseen.
 

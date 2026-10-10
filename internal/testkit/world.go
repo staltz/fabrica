@@ -84,10 +84,10 @@ func (w *World) MakePersonal(t *testing.T) {
 }
 
 // PRReviewDeployment is the cloud deployment from the design doc, on the
-// claude and toy runtimes.
+// claude-code-cloud and toy runtimes.
 const PRReviewDeployment = `factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude, toy]
+runtimes: [claude-code-cloud, toy]
 routines: [pr-review]
 repos:
   - github.com/acme/app

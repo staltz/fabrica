@@ -22,7 +22,7 @@ import (
 // LocalOptions configure `fabrica mcp`.
 type LocalOptions struct {
 	// Runtime is the local tool this server is registered in, like
-	// claude-code. Deployments are matched per runtime.
+	// claude-code-local. Deployments are matched per runtime.
 	Runtime string
 	// HomeDir is your personal home repo.
 	HomeDir string

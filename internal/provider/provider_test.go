@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuiltinsLoad(t *testing.T) {
-	want := []string{"claude", "claude-code", "codex", "codex-cli", "cursor", "cursor-ide"}
+	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "cursor", "cursor-ide"}
 	got := BuiltinNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("BuiltinNames = %v, want %v", got, want)
@@ -115,8 +115,11 @@ func TestLoadFolderNeedsExecutableAPI(t *testing.T) {
 	if _, err := LoadFolder("acme-runner", dir); err == nil || !strings.Contains(err.Error(), "executable") {
 		t.Fatalf("want a not-executable error, got %v", err)
 	}
-	if _, err := LoadFolder("claude", dir); err == nil || !strings.Contains(err.Error(), "built-in") {
+	if _, err := LoadFolder("claude-code-cloud", dir); err == nil || !strings.Contains(err.Error(), "built-in") {
 		t.Fatalf("want a can't-replace-built-in error, got %v", err)
+	}
+	if _, err := LoadFolder("claude", dir); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("want a reserved-name error, got %v", err)
 	}
 }
 
@@ -165,7 +168,7 @@ esac
 }
 
 func TestRenderBuiltinHandoffs(t *testing.T) {
-	for _, name := range []string{"claude", "cursor", "codex"} {
+	for _, name := range []string{"claude-code-cloud", "cursor", "codex"} {
 		p, _ := Builtin(name)
 		for _, action := range []string{"create", "update", "delete"} {
 			out, err := p.RenderHandoff(HandoffData{

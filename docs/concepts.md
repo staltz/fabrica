@@ -68,7 +68,7 @@ Each MCP session is served from **one factory commit**, fixed when the session s
 
 Fabrica never installs a routine's real content into a runtime. It installs a **stub**: the trigger, the connectors, and a short prompt like this one:
 
-> You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
+> You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude-code-cloud`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
 
 Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 

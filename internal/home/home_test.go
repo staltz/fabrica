@@ -27,7 +27,7 @@ func openHome(t *testing.T, personal bool, files map[string]string) *Home {
 
 const cloudDeployment = `factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude, cursor]
+runtimes: [claude-code-cloud, cursor]
 routines: [pr-review]
 repos:
   - github.com/acme/app
@@ -56,15 +56,15 @@ func TestCloudDeployment(t *testing.T) {
 
 func TestDeploymentErrors(t *testing.T) {
 	cases := map[string]string{
-		"mixed runtimes":     "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude, claude-code]\nroutines: [r]\nrepos: [github.com/a/b]\n",
-		"no server":          "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude]\nroutines: [r]\nrepos: [github.com/a/b]\n",
-		"cloud wildcard":     "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude]\nroutines: [r]\nrepos: [\"*\"]\n",
-		"http server":        "factory: { git: g.com/a/f, ref: main }\nserver: http://x.dev\nruntimes: [claude]\nroutines: [r]\nrepos: [github.com/a/b]\n",
-		"no routines":        "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude]\nrepos: [github.com/a/b]\n",
-		"wildcard not alone": "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\", github.com/a/b]\n",
-		"unknown key":        "factory: { git: g.com/a/f, ref: main }\nruntime: [claude-code]\nrepos: [\"*\"]\n",
-		"bad repo":           "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code]\nrepos: [app]\n",
-		"no ref":             "factory: { git: g.com/a/f }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+		"mixed runtimes":     "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud, claude-code-local]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+		"no server":          "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-cloud]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+		"cloud wildcard":     "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud]\nroutines: [r]\nrepos: [\"*\"]\n",
+		"http server":        "factory: { git: g.com/a/f, ref: main }\nserver: http://x.dev\nruntimes: [claude-code-cloud]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+		"no routines":        "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud]\nrepos: [github.com/a/b]\n",
+		"wildcard not alone": "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\", github.com/a/b]\n",
+		"unknown key":        "factory: { git: g.com/a/f, ref: main }\nruntime: [claude-code-local]\nrepos: [\"*\"]\n",
+		"bad repo":           "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\nrepos: [app]\n",
+		"no ref":             "factory: { git: g.com/a/f }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -76,8 +76,21 @@ func TestDeploymentErrors(t *testing.T) {
 	}
 }
 
+func TestDeploymentWithOldRuntimeName(t *testing.T) {
+	cases := map[string]string{
+		"runtimes: claude-code was renamed to claude-code-local": "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+		"runtimes: claude was renamed to claude-code-cloud":      "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude, cursor]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+	}
+	for want, yaml := range cases {
+		h := openHome(t, true, map[string]string{"deployments/x.yaml": yaml})
+		if got := h.Diags.String(); len(h.Diags) != 1 || !strings.Contains(got, want) {
+			t.Errorf("want only %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestLocalDeploymentsOnlyInPersonalHome(t *testing.T) {
-	local := "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\n"
+	local := "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n"
 	if h := openHome(t, true, map[string]string{"deployments/my-default.yaml": local}); h.Diags.HasErrors() {
 		t.Errorf("a local deployment is fine in the personal home:\n%s", h.Diags)
 	}
@@ -89,13 +102,13 @@ func TestLocalDeploymentsOnlyInPersonalHome(t *testing.T) {
 
 func TestMatchLocal(t *testing.T) {
 	h := openHome(t, true, map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/me/oss-factory, ref: main }\nruntimes: [claude-code]\nrepos: [github.com/oss/project]\nroutines: [review-before-push]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/me/oss-factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/oss/project]\nroutines: [review-before-push]\n",
 	})
 	if h.Diags.HasErrors() {
 		t.Fatal(h.Diags)
 	}
-	if d, _ := h.MatchLocal("github.com/oss/project", "claude-code"); d == nil || d.Name != "oss-work" {
+	if d, _ := h.MatchLocal("github.com/oss/project", "claude-code-local"); d == nil || d.Name != "oss-work" {
 		t.Errorf("a specific repo should beat the wildcard, got %v", d)
 	}
 	if d, _ := h.MatchLocal("github.com/oss/project", "cursor-ide"); d == nil || d.Name != "my-default" {
@@ -108,25 +121,25 @@ func TestMatchLocal(t *testing.T) {
 
 func TestLocalOverlapIsAnError(t *testing.T) {
 	h := openHome(t, true, map[string]string{
-		"deployments/a.yaml": "factory: { git: github.com/me/a, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
-		"deployments/b.yaml": "factory: { git: github.com/me/b, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
-		"deployments/c.yaml": "factory: { git: github.com/me/c, ref: main }\nruntimes: [claude-code]\nrepos: [github.com/x/y]\n",
-		"deployments/d.yaml": "factory: { git: github.com/me/d, ref: main }\nruntimes: [claude-code]\nrepos: [github.com/x/y]\n",
+		"deployments/a.yaml": "factory: { git: github.com/me/a, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
+		"deployments/b.yaml": "factory: { git: github.com/me/b, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
+		"deployments/c.yaml": "factory: { git: github.com/me/c, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/x/y]\n",
+		"deployments/d.yaml": "factory: { git: github.com/me/d, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/x/y]\n",
 	})
 	if !h.Diags.HasCode("home.wildcard-overlap") || !h.Diags.HasCode("home.local-overlap") {
 		t.Errorf("want both overlap errors, got:\n%s", h.Diags)
 	}
-	if d, reason := h.MatchLocal("github.com/x/y", "claude-code"); d != nil || !strings.Contains(reason, "exactly one factory") {
+	if d, reason := h.MatchLocal("github.com/x/y", "claude-code-local"); d != nil || !strings.Contains(reason, "exactly one factory") {
 		t.Errorf("an ambiguous match must not pick one, got %v %q", d, reason)
 	}
 }
 
 func TestBrokenFileBlocksLocalMatching(t *testing.T) {
 	h := openHome(t, true, map[string]string{
-		"deployments/a.yaml": "factory: { git: github.com/me/a, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+		"deployments/a.yaml": "factory: { git: github.com/me/a, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
 		"deployments/b.yaml": "this is: [not valid\n",
 	})
-	if d, reason := h.MatchLocal("github.com/x/y", "claude-code"); d != nil || !strings.Contains(reason, "deployments/b.yaml") {
+	if d, reason := h.MatchLocal("github.com/x/y", "claude-code-local"); d != nil || !strings.Contains(reason, "deployments/b.yaml") {
 		t.Errorf("a broken deployment file might cover the repo, so matching must refuse, got %v %q", d, reason)
 	}
 }
@@ -136,7 +149,7 @@ func TestStateRoundTrip(t *testing.T) {
 	s := &State{
 		Lock: &Lock{Holder: "ci github.com/acme/home/actions/runs/1", Since: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)},
 		Resources: []Resource{{
-			ID: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app", Runtime: "claude", Routine: "pr-review",
+			ID: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app", Runtime: "claude-code-cloud", Routine: "pr-review",
 			Repo: "github.com/acme/app", RemoteID: "trig_1", Mode: "handoff", FactoryCommit: strings.Repeat("a", 40),
 			Shape: Shape{Trigger: "github.pull_request.opened", Connectors: []string{"github"}, Fingerprint: "7f3a9c7f3a9c"},
 		}},
@@ -153,5 +166,27 @@ func TestStateRoundTrip(t *testing.T) {
 	}
 	if empty, err := ReadState(dir, "missing"); err != nil || !empty.Empty() {
 		t.Errorf("a missing state file should read as empty, got %+v, %v", empty, err)
+	}
+}
+
+func TestStateMovesRenamedRuntimes(t *testing.T) {
+	dir := t.TempDir()
+	// What Fabrica v0.1 wrote, when claude-code-cloud was called claude.
+	shape := Shape{Trigger: "github.pull_request.opened", Connectors: []string{"github"}, Fingerprint: "7f3a9c7f3a9c"}
+	pendingShape := shape
+	s := &State{
+		Resources: []Resource{{ID: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app", Runtime: "claude", Routine: "pr-review", Repo: "github.com/acme/app", Mode: "handoff", Shape: shape}},
+		Pending:   []Pending{{ID: "h_0123456789", Action: "create", Resource: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/api", Runtime: "claude", Routine: "pr-review", Repo: "github.com/acme/api", Shape: &pendingShape}},
+	}
+	if err := WriteState(dir, "pr-review", s); err != nil {
+		t.Fatal(err)
+	}
+	back, err := ReadState(dir, "pr-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, p := back.Resources[0], back.Pending[0]
+	if r.Runtime != "claude-code-cloud" || r.RenamedFrom != "claude" || r.Shape.Fingerprint != "" || p.Runtime != "claude-code-cloud" || p.Shape.Fingerprint != "" {
+		t.Errorf("v0.1 state should move to the new name and forget its stubs' fingerprints: %+v, %+v", r, p)
 	}
 }

@@ -22,7 +22,7 @@ A deployment says: *this factory, these routines, these repos, these runtimes, t
 # deployments/pr-review.yaml
 factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude, cursor]
+runtimes: [claude-code-cloud, cursor]
 routines: [pr-review]
 repos:
   - github.com/acme/app
@@ -69,14 +69,14 @@ A local deployment is the same kind of file, with local runtimes, in your person
 ```yaml
 # deployments/my-default.yaml
 factory: { git: github.com/me/factory, ref: main }
-runtimes: [claude-code, cursor-ide]
+runtimes: [claude-code-local, cursor-ide]
 repos: ["*"]                     # every repo not matched by another local deployment
 ```
 
 ```yaml
 # deployments/oss-work.yaml
 factory: { git: github.com/me/oss-factory, ref: main }
-runtimes: [claude-code, cursor-ide]
+runtimes: [claude-code-local, cursor-ide]
 repos: [github.com/oss/project]
 routines: [review-before-push]   # optional local routines
 ```
@@ -108,7 +108,7 @@ factory:                                 # the factory the last apply used
   commit: 9c1e4b2a…
 resources:
   - id: fabrica.acme.dev/pr-review#pr-review@github.com/acme/app
-    runtime: claude
+    runtime: claude-code-cloud
     routine: pr-review
     repo: github.com/acme/app
     remote_id: trig_01Hx…                # empty means unverifiable

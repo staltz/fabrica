@@ -116,7 +116,7 @@ Serves a factory over MCP.
 
 | Flag | What it does |
 |---|---|
-| `--runtime <name>` | Required. The tool this server runs in: `claude-code`, `cursor-ide` or `codex-cli`. |
+| `--runtime <name>` | Required. The tool this server runs in: `claude-code-local`, `cursor-ide` or `codex-cli`. |
 | `--workspace <folder>` | Serve this folder, instead of asking the tool for its workspace. |
 | `--home <folder>` | Your personal home repo. |
 
@@ -152,4 +152,4 @@ Not to be confused with [`fabrica upgrade`](#fabrica-upgrade-import-alias), whic
 
 ## `fabrica hook` (plumbing)
 
-Local tools run this for local routines; you won't need to run it yourself. `fabrica apply` installs hooks like `fabrica hook --runtime claude-code --deployment oss-work --routine review-before-push --stub 7f3a9c7f3a9c --event git.pre_push`. The command doubles as Fabrica's identifying mark, which is how Fabrica finds its own hooks again.
+Local tools run this for local routines; you won't need to run it yourself. `fabrica apply` installs hooks like `fabrica hook --runtime claude-code-local --deployment oss-work --routine review-before-push --stub 7f3a9c7f3a9c --event git.pre_push`. The command doubles as Fabrica's identifying mark, which is how Fabrica finds its own hooks again.

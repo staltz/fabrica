@@ -52,7 +52,7 @@ const routine = "---\ntrigger: { on: github.pull_request.opened }\nskills: [pr-r
 
 func TestEvaluateOnClaude(t *testing.T) {
 	f := load(t, map[string]string{"routines/pr-review.md": routine})
-	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude"))
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-cloud"))
 	if !e.OK() {
 		t.Fatalf("unexpected problems:\n%s", e.Diags)
 	}
@@ -60,7 +60,7 @@ func TestEvaluateOnClaude(t *testing.T) {
 		t.Errorf("connectors = %s", got)
 	}
 	if e.Shape.TokenPlacement != provider.TokenInURL || e.Shape.Endpoint == "" {
-		t.Errorf("claude should get the token in the URL: %+v", e.Shape)
+		t.Errorf("claude-code-cloud should get the token in the URL: %+v", e.Shape)
 	}
 	if fp := e.Shape.Fingerprint(); len(fp) != 12 || fp != e.Shape.Fingerprint() {
 		t.Errorf("fingerprint %q isn't stable", fp)
@@ -69,18 +69,18 @@ func TestEvaluateOnClaude(t *testing.T) {
 
 func TestFingerprintChangesWithShapeOnly(t *testing.T) {
 	f1 := load(t, map[string]string{"routines/pr-review.md": routine})
-	e1 := stub.Evaluate(f1, f1.Routines["pr-review"], target(t, "claude"))
+	e1 := stub.Evaluate(f1, f1.Routines["pr-review"], target(t, "claude-code-cloud"))
 
 	// A new prompt doesn't change the shape: prompts are served live.
 	f2 := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "Review.", "Review carefully.", 1)})
-	e2 := stub.Evaluate(f2, f2.Routines["pr-review"], target(t, "claude"))
+	e2 := stub.Evaluate(f2, f2.Routines["pr-review"], target(t, "claude-code-cloud"))
 	if e1.Shape.Fingerprint() != e2.Shape.Fingerprint() {
 		t.Error("changing the prompt should not change the fingerprint")
 	}
 
 	// A new trigger does.
 	f3 := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "opened", "synchronize", 1)})
-	e3 := stub.Evaluate(f3, f3.Routines["pr-review"], target(t, "claude"))
+	e3 := stub.Evaluate(f3, f3.Routines["pr-review"], target(t, "claude-code-cloud"))
 	if e1.Shape.Fingerprint() == e3.Shape.Fingerprint() {
 		t.Error("changing the trigger should change the fingerprint")
 	}
@@ -90,7 +90,7 @@ func TestFingerprintChangesWithShapeOnly(t *testing.T) {
 		"routines/pr-review.md":  routine,
 		"connectors/linear.yaml": "kind: mcp\nurl: https://mcp.linear.app/v2\nauth: oauth\n",
 	})
-	e4 := stub.Evaluate(f4, f4.Routines["pr-review"], target(t, "claude"))
+	e4 := stub.Evaluate(f4, f4.Routines["pr-review"], target(t, "claude-code-cloud"))
 	if e1.Shape.Fingerprint() == e4.Shape.Fingerprint() {
 		t.Error("changing a connector's URL should change the fingerprint")
 	}
@@ -116,24 +116,24 @@ func TestUnsupportedThingsAreErrors(t *testing.T) {
 		"routines/push.md": "---\ntrigger: { on: github.push }\nconnectors: [local]\n---\nHi\n",
 		"routines/pdf.md":  "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\nskills: [pdf]\n---\nHi\n",
 	})
-	e := stub.Evaluate(f, f.Routines["push"], target(t, "claude"))
+	e := stub.Evaluate(f, f.Routines["push"], target(t, "claude-code-cloud"))
 	if !e.Diags.HasCode("capability.trigger") || !e.Diags.HasCode("capability.connector") {
 		t.Errorf("want trigger and connector errors, got:\n%s", e.Diags)
 	}
-	e = stub.Evaluate(f, f.Routines["pdf"], target(t, "claude"))
+	e = stub.Evaluate(f, f.Routines["pdf"], target(t, "claude-code-cloud"))
 	if !e.Diags.HasCode("capability.skill") {
 		t.Errorf("a skill with scripts should be refused on a cloud runtime, got:\n%s", e.Diags)
 	}
 	// Locally, the same skill is fine, because its folder is unpacked on disk.
 	f2 := load(t, map[string]string{"routines/pdf.md": "---\ntrigger: { on: session.start }\nskills: [pdf]\n---\nHi\n"})
-	if e := stub.Evaluate(f2, f2.Routines["pdf"], target(t, "claude-code")); !e.OK() {
+	if e := stub.Evaluate(f2, f2.Routines["pdf"], target(t, "claude-code-local")); !e.OK() {
 		t.Errorf("locally the pdf skill should work:\n%s", e.Diags)
 	}
 }
 
 func TestEmulatedConnectorUsesFallback(t *testing.T) {
 	f := load(t, map[string]string{"routines/r.md": "---\ntrigger: { on: session.start }\nconnectors: [github]\n---\nHi\n"})
-	e := stub.Evaluate(f, f.Routines["r"], target(t, "claude-code"))
+	e := stub.Evaluate(f, f.Routines["r"], target(t, "claude-code-local"))
 	if !e.OK() {
 		t.Fatal(e.Diags)
 	}
@@ -142,7 +142,7 @@ func TestEmulatedConnectorUsesFallback(t *testing.T) {
 	}
 	// Slack has no fallback, so it can't be emulated.
 	f2 := load(t, map[string]string{"routines/r.md": "---\ntrigger: { on: session.start }\nconnectors: [slack]\n---\nHi\n"})
-	e2 := stub.Evaluate(f2, f2.Routines["r"], target(t, "claude-code"))
+	e2 := stub.Evaluate(f2, f2.Routines["r"], target(t, "claude-code-local"))
 	if !e2.Diags.HasCode("capability.connector") || !strings.Contains(e2.Diags.String(), "fallback") {
 		t.Errorf("want a hint about adding a fallback, got:\n%s", e2.Diags)
 	}
@@ -153,8 +153,8 @@ func TestIdentityAndPrompt(t *testing.T) {
 	if id != "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app" {
 		t.Errorf("Identity = %q", id)
 	}
-	p := stub.Prompt(id, "pr-review", "claude", "github.com/acme/app", "7f3a9c")
-	for _, want := range []string{"`run_begin`", "routine `pr-review`", "runtime `claude`", "repo `github.com/acme/app`", "stub `7f3a9c`", "`routine_get`", id} {
+	p := stub.Prompt(id, "pr-review", "claude-code-cloud", "github.com/acme/app", "7f3a9c")
+	for _, want := range []string{"`run_begin`", "routine `pr-review`", "runtime `claude-code-cloud`", "repo `github.com/acme/app`", "stub `7f3a9c`", "`routine_get`", id} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt is missing %q:\n%s", want, p)
 		}

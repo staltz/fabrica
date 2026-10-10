@@ -79,7 +79,7 @@ func TestExampleHomeReposParse(t *testing.T) {
 	if personal.Diags.HasErrors() || len(personal.Deployments) != 2 {
 		t.Errorf("examples/personal-home: %d deployments\n%s", len(personal.Deployments), personal.Diags)
 	}
-	if d, _ := personal.MatchLocal("github.com/oss/project", "claude-code"); d == nil || d.Name != "oss-work" {
+	if d, _ := personal.MatchLocal("github.com/oss/project", "claude-code-local"); d == nil || d.Name != "oss-work" {
 		t.Errorf("oss-work should win for its repo, got %v", d)
 	}
 }

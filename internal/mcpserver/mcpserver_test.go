@@ -104,7 +104,7 @@ func newLocalWorld(t *testing.T) *localWorld {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\nroutines: [review-before-push]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\nroutines: [review-before-push]\n",
 	})
 	ws := filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
@@ -116,7 +116,7 @@ func newLocalWorld(t *testing.T) *localWorld {
 	}
 	t.Cleanup(func() { db.Close() })
 	return &localWorld{w: w, db: db, ws: ws, dbPath: dbPath, opts: LocalOptions{
-		Runtime: "claude-code", HomeDir: w.Home.Dir, Workspace: ws,
+		Runtime: "claude-code-local", HomeDir: w.Home.Dir, Workspace: ws,
 		Git: cache, Loader: factory.NewLoader(cache), Runs: db, SkillCache: t.TempDir(),
 	}}
 }
@@ -196,7 +196,7 @@ func TestLocalSession(t *testing.T) {
 
 	// Run history knows what happened.
 	run, err := lw.db.Get(context.Background(), runID)
-	if err != nil || run.Repo != "github.com/acme/app" || run.Runtime != "claude-code" || run.Deployment != "my-default" || len(run.FactorySHA) != 40 {
+	if err != nil || run.Repo != "github.com/acme/app" || run.Runtime != "claude-code-local" || run.Deployment != "my-default" || len(run.FactorySHA) != 40 {
 		t.Errorf("run = %+v, %v", run, err)
 	}
 	skills, _ := lw.db.SkillsLoaded(context.Background(), runID)
@@ -257,7 +257,7 @@ func TestLocalStubNoLongerDeployed(t *testing.T) {
 	fp := localStub(t, lw.opts, "review-before-push")
 	// The routine is removed from the deployment after the hook was
 	// installed.
-	lw.w.Home.Write(map[string]string{"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n"})
+	lw.w.Home.Write(map[string]string{"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n"})
 	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in deployment my-default")
 }
 
@@ -304,12 +304,12 @@ func (rw *remoteWorld) connect(t *testing.T, path string) *client {
 	return &client{t: t, cs: cs}
 }
 
-// remoteStub computes the fingerprint of the claude stub, the way apply does.
+// remoteStub computes the fingerprint of the claude-code-cloud stub, the way apply does.
 func (rw *remoteWorld) remoteStub(t *testing.T) string {
 	t.Helper()
 	resolved, _ := rw.cache.Remote("https://github.com/acme/factory.git", gitx.Full).Resolve(context.Background(), "stable")
 	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/factory", resolved.Commit, "")
-	p, _ := provider.Builtin("claude")
+	p, _ := provider.Builtin("claude-code-cloud")
 	return stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Shape.Fingerprint()
 }
 
@@ -367,7 +367,7 @@ func TestRemoteRoutineRun(t *testing.T) {
 	c.fails("routine_get", map[string]any{"name": "pr-review"}, "only run from stubs")
 	c.fails("run_begin", map[string]any{"intent": "review PR 7", "routine": "pr-review"}, "needs routine, runtime, repo and stub")
 
-	args := map[string]any{"intent": "review PR 7 on the app", "routine": "pr-review", "runtime": "claude", "repo": "github.com/acme/api", "stub": fp}
+	args := map[string]any{"intent": "review PR 7 on the app", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/api", "stub": fp}
 	runID := c.runID(c.ok("run_begin", args))
 	routine := c.ok("routine_get", map[string]any{"name": "pr-review"})
 	for _, want := range []string{"for repo github.com/acme/api", "slack_channel = #api", "slack.notify (channel: #api): do it with the tools of the slack connector", "then tell #api"} {

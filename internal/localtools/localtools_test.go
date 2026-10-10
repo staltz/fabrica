@@ -14,7 +14,7 @@ func sampleConfig(runtime string) Config {
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: GitPrePush, Deployment: "oss-work", Routine: "review-before-push", Fingerprint: "7f3a9c7f3a9c"},
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: SessionStop, Deployment: "oss-work", Routine: "tidy", Fingerprint: "abcdefabcdef"},
 	}
-	if runtime == "claude-code" || runtime == "codex-cli" {
+	if runtime == "claude-code-local" || runtime == "codex-cli" {
 		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Deployment: "d", Routine: "hello", Fingerprint: "111111111111"})
 	}
 	return Config{
@@ -114,8 +114,8 @@ func snapshot(t *testing.T, tool Tool) map[string]string {
 
 func TestClaudeHookShape(t *testing.T) {
 	home := t.TempDir()
-	tool, _ := For("claude-code", home)
-	if err := tool.Write(Config{Hooks: []Hook{{Binary: "/usr/bin/fabrica", Runtime: "claude-code", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}}}); err != nil {
+	tool, _ := For("claude-code-local", home)
+	if err := tool.Write(Config{Hooks: []Hook{{Binary: "/usr/bin/fabrica", Runtime: "claude-code-local", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}}}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
@@ -134,7 +134,7 @@ func TestClaudeHookShape(t *testing.T) {
 	}
 	g := v.Hooks["PreToolUse"]
 	if len(g) != 1 || g[0].Matcher != "Bash" || g[0].Hooks[0].Type != "command" || g[0].Hooks[0].Timeout != 30 ||
-		g[0].Hooks[0].Command != "/usr/bin/fabrica hook --runtime claude-code --deployment d --routine r --stub f --event git.pre_push" {
+		g[0].Hooks[0].Command != "/usr/bin/fabrica hook --runtime claude-code-local --deployment d --routine r --stub f --event git.pre_push" {
 		t.Errorf("unexpected hooks:\n%s", data)
 	}
 }
@@ -163,7 +163,7 @@ func TestHookCommandRoundTrip(t *testing.T) {
 func TestInvalidJSONIsReported(t *testing.T) {
 	home := t.TempDir()
 	os.WriteFile(filepath.Join(home, ".claude.json"), []byte("{not json"), 0o644)
-	tool, _ := For("claude-code", home)
+	tool, _ := For("claude-code-local", home)
 	if err := tool.Write(Config{}); err == nil || !strings.Contains(err.Error(), "isn't valid JSON") {
 		t.Errorf("want a clear error, got %v", err)
 	}

@@ -75,7 +75,7 @@ mkdir -p ~/.fabrica/deployments && cd ~/.fabrica && git init
 echo "runs.db*" > .gitignore
 cat > deployments/my-default.yaml <<'EOF'
 factory: { git: github.com/you/my-factory, ref: main }
-runtimes: [claude-code, cursor-ide]
+runtimes: [claude-code-local, cursor-ide]
 repos: ["*"]                 # every repo not matched by another local deployment
 EOF
 ```

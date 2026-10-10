@@ -134,7 +134,7 @@ func TestSuccessTest(t *testing.T) {
 	w.Home.Write(map[string]string{
 		"deployments/pr-review.yaml": `factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude, cursor]
+runtimes: [claude-code-cloud, cursor]
 routines: [pr-review]
 repos: [github.com/acme/app]
 params: { slack_channel: "#eng" }
@@ -144,7 +144,7 @@ params: { slack_channel: "#eng" }
 	home := w.Home.Dir
 	mustFab(t, 0, home, "check")
 	out := mustFab(t, 2, home, "plan")
-	if !strings.Contains(out, "+ create pr-review @ github.com/acme/app on claude (handoff)") || !strings.Contains(out, "on cursor (handoff)") {
+	if !strings.Contains(out, "+ create pr-review @ github.com/acme/app on claude-code-cloud (handoff)") || !strings.Contains(out, "on cursor (handoff)") {
 		t.Fatalf("plan:\n%s", out)
 	}
 
@@ -234,7 +234,7 @@ params: { slack_channel: "#eng" }
 		rows.Scan(&rt, &status, &skills)
 		got = append(got, rt+":"+status+":"+skills)
 	}
-	if strings.Join(got, " ") != "claude:succeeded:pr-review cursor:succeeded:pr-review" {
+	if strings.Join(got, " ") != "claude-code-cloud:succeeded:pr-review cursor:succeeded:pr-review" {
 		t.Errorf("run history = %v", got)
 	}
 
@@ -268,7 +268,7 @@ func TestLocalMCPOverStdio(t *testing.T) {
 	w := setupCLI(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
 	})
 	userHome := os.Getenv("HOME")
 	bin, _ := os.Executable()
@@ -288,7 +288,7 @@ func TestLocalMCPOverStdio(t *testing.T) {
 	}
 	json.Unmarshal(data, &cfg)
 	entry := cfg.MCPServers["fabrica"]
-	if entry.Command != bin || strings.Join(entry.Args, " ") != "mcp --runtime claude-code --home "+w.Home.Dir {
+	if entry.Command != bin || strings.Join(entry.Args, " ") != "mcp --runtime claude-code-local --home "+w.Home.Dir {
 		t.Fatalf("unexpected MCP entry: %+v", entry)
 	}
 

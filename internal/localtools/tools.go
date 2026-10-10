@@ -29,7 +29,7 @@ import (
 
 // Tool is one local AI tool's configuration.
 type Tool interface {
-	// Runtime is the runtime name, like "claude-code".
+	// Runtime is the runtime name, like "claude-code-local".
 	Runtime() string
 	// Files lists the config files the tool reads and writes.
 	Files() []string
@@ -44,7 +44,7 @@ type Tool interface {
 // (where ~/.claude.json and friends live).
 func For(runtime, homeDir string) (Tool, error) {
 	switch runtime {
-	case "claude-code":
+	case "claude-code-local":
 		return &claudeCode{home: homeDir}, nil
 	case "cursor-ide":
 		return &cursorIDE{home: homeDir}, nil
@@ -55,7 +55,7 @@ func For(runtime, homeDir string) (Tool, error) {
 }
 
 // Runtimes lists the local runtimes this package can configure.
-func Runtimes() []string { return []string{"claude-code", "codex-cli", "cursor-ide"} }
+func Runtimes() []string { return []string{"claude-code-local", "codex-cli", "cursor-ide"} }
 
 // hookTimeoutSeconds is how long a tool should wait for `fabrica hook`.
 const hookTimeoutSeconds = 30
@@ -65,7 +65,7 @@ const hookTimeoutSeconds = 30
 
 type claudeCode struct{ home string }
 
-func (c *claudeCode) Runtime() string { return "claude-code" }
+func (c *claudeCode) Runtime() string { return "claude-code-local" }
 
 func (c *claudeCode) mcpFile() string   { return filepath.Join(c.home, ".claude.json") }
 func (c *claudeCode) hooksFile() string { return filepath.Join(c.home, ".claude", "settings.json") }

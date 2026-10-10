@@ -36,12 +36,12 @@ func setup(t *testing.T) (ws string, opts Options) {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/oss-work.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"deployments/oss-work.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	ws = filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
 	return ws, Options{
-		Runtime: "claude-code", Deployment: "oss-work", Routine: "review-before-push",
+		Runtime: "claude-code-local", Deployment: "oss-work", Routine: "review-before-push",
 		Fingerprint: "abc123abc123", Event: "git.pre_push", HomeDir: w.Home.Dir,
 		MarkerDir: t.TempDir(), Getenv: func(string) string { return "" },
 	}

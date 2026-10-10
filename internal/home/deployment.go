@@ -168,13 +168,16 @@ func ParseDeployment(name, file string, data []byte, personal bool) (*Deployment
 	d.Factory = FactoryRef{Git: strings.TrimSpace(f.Factory.Git), Ref: strings.TrimSpace(f.Factory.Ref), Path: strings.Trim(strings.TrimSpace(f.Factory.Path), "/")}
 
 	if len(f.Runtimes) == 0 {
-		return fail("runtimes: is empty; list where the factory should run, like [claude, cursor] or [claude-code, cursor-ide]")
+		return fail("runtimes: is empty; list where the factory should run, like [claude-code-cloud, cursor] or [claude-code-local, cursor-ide]")
 	}
 	seen := map[string]bool{}
 	scopes := map[provider.Scope][]string{}
 	for _, rt := range f.Runtimes {
 		if err := names.Validate(rt); err != nil {
 			return fail("runtimes: %q isn't a valid runtime name", rt)
+		}
+		if current, ok := provider.Renamed(rt); ok {
+			return fail("runtimes: %s was renamed to %s; use the new name", rt, current)
 		}
 		if seen[rt] {
 			return fail("runtimes: lists %q twice", rt)

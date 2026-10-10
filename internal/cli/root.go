@@ -86,6 +86,7 @@ Agents load the factory live from the Fabrica MCP server, so improving
 your process is just a git merge. Every agent run is recorded.
 
 Typical workflow:
+  fabrica new        start a new factory repo
   fabrica check      lint a factory, a home repo or a product repo
   fabrica lock       pin a factory's imports in fabrica.lock
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
@@ -96,6 +97,7 @@ Typical workflow:
 	}
 	root.PersistentFlags().StringVar(&g.home, "home", "", "the home repo to use (default: the current folder if it's a home repo, otherwise $FABRICA_HOME or ~/.fabrica)")
 	root.AddCommand(
+		newNew(),
 		newCheck(g),
 		newLock(),
 		newUpgrade(),

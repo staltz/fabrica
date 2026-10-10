@@ -92,13 +92,15 @@ There are two ways. Copy it if you want to change a lot. Import it if you want t
 
 ### Option 1: copy it
 
-Copy this folder into your own repo, at the root or in a subfolder:
+This factory is built into `fabrica`, so one command writes a copy of it into a new repo:
 
 ```bash
-cp -r examples/starter-factory ~/code/my-factory
+fabrica new ~/code/my-factory
 cd ~/code/my-factory
-git init -b main && git add . && git commit -m "feat: start from the Fabrica starter factory"
+git add . && git commit -m "feat: start from the Fabrica starter factory"
 ```
+
+`fabrica new` runs `git init` for you, unless the folder is already inside a git repo (a factory can live in a subfolder too). The copy is the version that came with your `fabrica` binary.
 
 Now it's yours. Edit anything you like, then run `fabrica check .` to catch mistakes. You won't get upstream improvements, but you won't get surprises either.
 

@@ -639,6 +639,7 @@ Fabrica **sits beside git and never wraps it.** Factory and home repos are plain
 
 | Command | What it does |
 |---|---|
+| `fabrica new` | Starts a new factory repo, from the starter factory or from scratch |
 | `fabrica check` | Lints a factory, validates deployments against capability matrices, checks product repos (Fabrica line, skill clashes, unmet `expects:`) |
 | `fabrica lock` | Resolves imports into `fabrica.lock` |
 | `fabrica upgrade` | Moves imports to newer versions and shows a diff, including changes to items you've overridden |

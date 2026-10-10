@@ -1,0 +1,20 @@
+# The manifest of this Fabrica factory. Every key is optional, and an empty
+# file is a valid factory. The full format is described at
+# https://github.com/staltz/fabrica/blob/main/docs/factories.md
+
+# What this factory is for, in a sentence or two.
+# description: How we build software at Acme.
+
+# Other factories, or plain repos of skills and rules, to bring items in
+# from. Run `fabrica lock` after changing these, to pin each one to an exact
+# commit in fabrica.lock.
+# imports:
+#   starter:
+#     git: github.com/staltz/fabrica
+#     ref: main
+#     path: examples/starter-factory
+#     only: [skills/test-first, rules/tests-first]
+
+# Skills each product repo provides for itself, because only the repo knows
+# the answer, like how to run its tests. A trailing ? means optional.
+# expects: [test, deploy?]

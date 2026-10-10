@@ -16,13 +16,15 @@ Let's say you want your favorite skills and rules in every repo you open, in bot
 
 ### 1. Write a factory
 
-The quickest way is to start from the starter factory that comes with Fabrica:
+The quickest way is to start from the [starter factory](../examples/starter-factory/) that comes built into Fabrica:
 
 ```sh
-cp -r examples/starter-factory ~/code/my-factory
+fabrica new ~/code/my-factory
 cd ~/code/my-factory
-git init && git add -A && git commit -m "My factory"
+git add . && git commit -m "My factory"
 ```
+
+`fabrica new` writes the factory and runs `git init`, but leaves the commit to you. (To write your own factory from scratch instead, run `fabrica new --empty ~/code/my-factory`.)
 
 Now check it:
 

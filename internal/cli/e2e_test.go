@@ -328,8 +328,14 @@ func TestLocalMCPOverStdio(t *testing.T) {
 
 func TestVersionAndUsageErrors(t *testing.T) {
 	setupCLI(t)
-	if out := mustFab(t, 0, "", "version"); !strings.HasPrefix(out, "fabrica ") {
+	out := mustFab(t, 0, "", "version")
+	if !regexp.MustCompile(`^fabrica \S+( \(.+\))?\n$`).MatchString(out) {
 		t.Errorf("version = %q", out)
+	}
+	for _, flag := range []string{"-v", "--version"} {
+		if got := mustFab(t, 0, "", flag); got != out {
+			t.Errorf("fabrica %s = %q, want %q like `fabrica version`", flag, got, out)
+		}
 	}
 	if out, code := fab(t, t.TempDir(), "lock"); code != 1 || !strings.Contains(out, "isn't a factory") {
 		t.Errorf("lock outside a factory: %d %s", code, out)

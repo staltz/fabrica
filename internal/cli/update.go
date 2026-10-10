@@ -17,9 +17,10 @@ var updater = func(cmd *cobra.Command) (*selfupdate.Updater, error) {
 	if err != nil {
 		return nil, fmt.Errorf("couldn't find the fabrica binary: %w", err)
 	}
+	current, _ := readVersion()
 	return &selfupdate.Updater{
 		RepoURL:  selfupdate.RepoURL,
-		Current:  version,
+		Current:  current,
 		Exe:      exe,
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,

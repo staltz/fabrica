@@ -149,7 +149,7 @@ func TestUpdateInstallsTheLatestRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Result{From: "v0.1.0", To: "v0.2.0", Path: exe, Updated: true}
+	want := Result{From: "0.1.0", To: "0.2.0", Path: exe, Updated: true}
 	if res != want {
 		t.Errorf("result = %+v, want %+v", res, want)
 	}
@@ -163,7 +163,7 @@ func TestUpdateInstallsTheLatestRelease(t *testing.T) {
 	if info.Mode().Perm() != 0o700 {
 		t.Errorf("mode = %v, want the old binary's 0700", info.Mode().Perm())
 	}
-	if got := progress.String(); got != "Downloading fabrica-linux-arm64 (v0.2.0)...\n" {
+	if got := progress.String(); got != "Downloading fabrica 0.2.0 for linux/arm64...\n" {
 		t.Errorf("progress = %q", got)
 	}
 	if extra := leftovers(t, filepath.Dir(exe)); len(extra) > 0 {
@@ -175,12 +175,15 @@ func TestUpdateDoesNothingWhenAlreadyLatest(t *testing.T) {
 	gh := newFakeGitHub(t, "v0.2.0", release("v0.2.0", map[string]string{"fabrica-linux-arm64": "new binary"}))
 	exe := installed(t)
 
-	res, err := updater(gh, exe, "v0.2.0").Update(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Updated || res.To != "v0.2.0" {
-		t.Errorf("result = %+v, want nothing updated", res)
+	// `fabrica version` says 0.2.0 for the v0.2.0 tag; either way matches.
+	for _, current := range []string{"0.2.0", "v0.2.0"} {
+		res, err := updater(gh, exe, current).Update(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Updated || res.From != "0.2.0" || res.To != "0.2.0" {
+			t.Errorf("current %s: result = %+v, want nothing updated", current, res)
+		}
 	}
 	if readFile(t, exe) != "old binary" {
 		t.Error("the binary was replaced")

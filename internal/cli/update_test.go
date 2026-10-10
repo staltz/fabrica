@@ -45,7 +45,7 @@ func TestUpdateFlag(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("the old binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	current := version
+	current := "" // what the test binary reports, which is dev
 	orig := updater
 	t.Cleanup(func() { updater = orig })
 	updater = func(cmd *cobra.Command) (*selfupdate.Updater, error) {
@@ -53,20 +53,23 @@ func TestUpdateFlag(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		u.RepoURL, u.Exe, u.Current = srv.URL, exe, current
+		u.RepoURL, u.Exe = srv.URL, exe
+		if current != "" {
+			u.Current = current
+		}
 		return u, nil
 	}
 
 	out := mustFab(t, 0, "", "-u")
-	if !strings.Contains(out, "Downloading "+asset+" (v0.2.0)...") || !strings.Contains(out, "Updated fabrica from dev to v0.2.0, in "+exe) {
+	if !strings.Contains(out, "Downloading fabrica 0.2.0 for "+runtime.GOOS+"/"+runtime.GOARCH+"...") || !strings.Contains(out, "Updated fabrica from dev to 0.2.0, in "+exe) {
 		t.Errorf("fabrica -u:\n%s", out)
 	}
 	if b, _ := os.ReadFile(exe); string(b) != newBinary {
 		t.Errorf("binary = %q, want the new one", b)
 	}
 
-	current = "v0.2.0"
-	if out := mustFab(t, 0, "", "--update"); out != "fabrica v0.2.0 is already the latest version.\n" {
+	current = "0.2.0"
+	if out := mustFab(t, 0, "", "--update"); out != "fabrica 0.2.0 is already the latest version.\n" {
 		t.Errorf("fabrica --update when up to date:\n%s", out)
 	}
 

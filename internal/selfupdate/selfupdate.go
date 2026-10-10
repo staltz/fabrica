@@ -31,7 +31,8 @@ const RepoURL = "https://github.com/staltz/fabrica"
 type Updater struct {
 	// RepoURL is the GitHub repo whose latest release to install.
 	RepoURL string
-	// Current is the version that's running now.
+	// Current is the version that's running now, like 0.1.0 or dev. A
+	// leading v is fine too.
 	Current string
 	// Exe is the binary to replace. Symlinks are followed, so the file
 	// they point at gets replaced and the symlink stays.
@@ -46,8 +47,9 @@ type Updater struct {
 
 // Result says what Update did.
 type Result struct {
-	// From and To are the old and new versions. They're equal when there
-	// was nothing to update.
+	// From and To are the old and new versions, without a leading v, the
+	// way `fabrica version` prints them. They're equal when there was
+	// nothing to update.
 	From, To string
 	// Path is the file that was (or would have been) replaced.
 	Path string
@@ -57,7 +59,7 @@ type Result struct {
 
 // Update installs the latest release, unless it's already running.
 func (u *Updater) Update(ctx context.Context) (Result, error) {
-	res := Result{From: u.Current}
+	res := Result{From: strings.TrimPrefix(u.Current, "v")}
 	exe, err := filepath.EvalSymlinks(u.Exe)
 	if err != nil {
 		return res, fmt.Errorf("couldn't find the fabrica binary: %w", err)
@@ -68,8 +70,8 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	res.To = tag
-	if tag == u.Current {
+	res.To = strings.TrimPrefix(tag, "v")
+	if res.To == res.From {
 		return res, nil
 	}
 
@@ -84,7 +86,7 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("release %s has no build for %s/%s; build from source with: go install github.com/staltz/fabrica/cmd/fabrica@latest", tag, u.OS, u.Arch)
 	}
 
-	u.say("Downloading %s (%s)...", asset, tag)
+	u.say("Downloading fabrica %s for %s/%s...", res.To, u.OS, u.Arch)
 	if err := u.replace(ctx, exe, base+"/"+asset, want); err != nil {
 		return res, err
 	}

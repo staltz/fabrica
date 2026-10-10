@@ -4,7 +4,7 @@ This page is for people working on Fabrica itself. It explains how the code is o
 
 ## The packages
 
-Everything lives under `internal/`, so nothing outside this module depends on it, and we're free to change it. Roughly from the bottom up:
+Everything lives under `internal/`, so nothing outside this module depends on it, and we're free to change it. The one exception is `examples`, whose only Go file builds the starter factory into the binary for `fabrica new` (Go can only embed files at or below a package's folder). Roughly from the bottom up:
 
 | Package | What it does |
 |---|---|
@@ -23,6 +23,7 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `token` | Deployment tokens: `HMAC(secret, deployment name)`. |
 | `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries. |
 | `plan` | Compares what's wanted with what's installed, and sorts it into changes and errors. |
+| `scaffold` | Writes new factories for `fabrica new`: the starter factory (from `examples`) or an empty one, never overwriting a file. |
 | `apply` | Carries out plans: the git lock, API calls, handoffs, `confirm` and `unlock`. |
 | `runs` | The run-history database. |
 | `mcpserver` | The MCP server: the eight tools, the local (stdio) and remote (HTTP) modes, stale-stub checks and skill unpacking. |

@@ -1,6 +1,6 @@
 # CLI reference
 
-Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: factory and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo.
+Fabrica is one binary, `fabrica`. It sits beside git and never wraps it: factory and home repos are plain git repos that you edit and review with your usual tools. The CLI only ever writes to git in one place, which is committing and pushing state in a home repo. (`fabrica new` runs `git init` for a new factory, but leaves the first commit to you.)
 
 Every command has `--help`.
 
@@ -23,6 +23,21 @@ Every command has `--help`.
 | `CI` | When set, `plan` and `apply` skip local deployments, since CI has nothing local to set up. |
 
 Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead.
+
+## `fabrica new <folder>`
+
+Starts a new factory repo. It writes a factory into the folder (creating it if needed), and runs `git init` there.
+
+The factory is a copy of the [starter factory](../examples/starter-factory/), built into the binary, so you don't need a copy of Fabrica's repo: five skills, three routines, four rules and two connectors, ready to use and yours to change. With `--empty`, you get a factory with no items yet: a `fabrica.yaml` with every key commented out, and a README that explains the layout.
+
+| Flag | What it does |
+|---|---|
+| `--empty` | Start from an empty factory instead of the starter factory. |
+| `--no-git` | Don't run `git init`. |
+
+New never overwrites a file. If the folder already has any file the factory would write, it writes nothing and exits `1`. The one exception is a `README.md`, which it keeps, since a repo made on a git host often starts with one. So `git clone` an empty repo from your git host, then run `fabrica new` on the clone.
+
+When the folder is inside a git repo already, like a subfolder of a monorepo, `new` doesn't run `git init`, and suggests a deployment with the matching `path:`. It never commits: look the files over, run `fabrica check`, and commit them yourself.
 
 ## `fabrica check [folder]`
 
@@ -118,7 +133,14 @@ Serves a factory over MCP.
 
 ## `fabrica version`
 
-Prints the version.
+Prints the version, and the commit it was built from when known. `fabrica --version` and `fabrica -v` do the same.
+
+```
+$ fabrica version
+fabrica 0.1.0 (b79bb17 2026-10-10)
+```
+
+Builds between releases say `dev` instead of a version number.
 
 ## `fabrica -u`, `fabrica --update`
 

@@ -92,9 +92,7 @@ func checkFactory(ctx context.Context, out io.Writer, t *tools, dir string) erro
 	fmt.Fprintf(out, "Factory %s\n", dir)
 	if f != nil {
 		diags = append(diags, f.Lint()...)
-		fmt.Fprintf(out, "  %s, %s, %s, %s, %s\n",
-			plural(len(f.Skills), "skill"), plural(len(f.Routines), "routine"), plural(len(f.Rules), "rule"),
-			plural(len(f.Connectors), "connector"), plural(len(f.Providers), "provider"))
+		fmt.Fprintf(out, "  %s\n", itemCounts(f))
 		for _, imp := range f.Imports {
 			kind := "factory"
 			if !imp.IsFactory {

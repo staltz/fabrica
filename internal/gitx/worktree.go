@@ -35,6 +35,25 @@ func OpenWorktree(ctx context.Context, dir string) (Worktree, error) {
 	return Worktree{Dir: top}, nil
 }
 
+// Init makes dir a new, empty git repo. `fabrica new` uses it for a new
+// factory, and leaves the first commit to you.
+func Init(ctx context.Context, dir string) (Worktree, error) {
+	if _, err := run(ctx, dir, "init", "--quiet"); err != nil {
+		return Worktree{}, err
+	}
+	return OpenWorktree(ctx, dir)
+}
+
+// Branch returns the name of the branch HEAD is on, even before its first
+// commit.
+func (w Worktree) Branch(ctx context.Context) (string, error) {
+	out, err := run(ctx, w.Dir, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("the repo at %s isn't on a branch (detached HEAD)", w.Dir)
+	}
+	return trimOut(out), nil
+}
+
 // Head returns the commit HEAD points at.
 func (w Worktree) Head(ctx context.Context) (string, error) {
 	out, err := run(ctx, w.Dir, "rev-parse", "HEAD")
@@ -69,11 +88,10 @@ func (w Worktree) Remotes(ctx context.Context) []string {
 // ("origin", "main"). Cloud applies need one: the apply lock only works if
 // there's a shared remote to push to.
 func (w Worktree) Upstream(ctx context.Context) (remote, branch string, err error) {
-	cur, err := run(ctx, w.Dir, "symbolic-ref", "--quiet", "--short", "HEAD")
+	local, err := w.Branch(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("the home repo at %s isn't on a branch (detached HEAD); check out a branch first", w.Dir)
 	}
-	local := trimOut(cur)
 	remoteOut, err1 := run(ctx, w.Dir, "config", "branch."+local+".remote")
 	mergeOut, err2 := run(ctx, w.Dir, "config", "branch."+local+".merge")
 	if err1 != nil || err2 != nil {

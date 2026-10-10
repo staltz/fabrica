@@ -24,7 +24,7 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 **Cloud runtimes**
 
-| | `claude-code-cloud` (Claude routines) | `cursor` (Cursor automations) | `codex` (Codex cloud) |
+| | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) |
 |---|---|---|---|
 | Apply mode | handoff | handoff | handoff |
 | Skills | text-only | text-only | text-only |
@@ -46,7 +46,7 @@ None of these three has a public API for creating and listing triggered automati
 
 **Local runtimes**
 
-| | `claude-code-local` | `cursor-ide` | `codex-cli` |
+| | `claude-code-local` | `cursor-local` | `codex-cli` |
 |---|---|---|---|
 | Apply mode | api (writes config files) | api | api |
 | Skills | unpacked on disk | unpacked on disk | unpacked on disk |

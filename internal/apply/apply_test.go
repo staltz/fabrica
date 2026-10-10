@@ -503,8 +503,8 @@ func TestLocalDeploymentsInstallIntoTools(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)
 	h.w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n",
-		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\n",
+		"deployments/oss-work.yaml":   "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	// Local deployments are read from the working tree; no commit or remote
 	// is needed.
@@ -608,11 +608,11 @@ func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
 	h.w.MakePersonal(t)
 	h.w.UpdateFactory(map[string]string{"routines/hello.md": "---\ntrigger: { on: session.start }\n---\nSay hi.\n"})
 	h.w.Home.Write(map[string]string{
-		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\nroutines: [hello]\n",
+		"deployments/mine.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\nroutines: [hello]\n",
 	})
 	p := h.plan()
 	d := p.Deployment("mine")
-	if !d.Diags.HasCode("capability.trigger") || !strings.Contains(render(p), "cursor-ide doesn't support trigger session.start") {
+	if !d.Diags.HasCode("capability.trigger") || !strings.Contains(render(p), "cursor-local doesn't support trigger session.start") {
 		t.Fatalf("Cursor has no session.start hook, so this should be an error:\n%s", render(p))
 	}
 }

@@ -111,7 +111,7 @@ func Run(ctx context.Context, o Options) error {
 	case localtools.PromptSubmit:
 		return respond(o.Stdout, claudeContext("UserPromptSubmit", prompt))
 	case localtools.SessionStop:
-		if o.Runtime == "cursor-ide" {
+		if o.Runtime == "cursor-local" {
 			if in.LoopCount > 0 || in.Status != "" && in.Status != "completed" {
 				return nil // already followed up once, or the agent didn't finish normally
 			}
@@ -145,7 +145,7 @@ func Run(ctx context.Context, o Options) error {
 			_ = os.WriteFile(marker, nil, 0o644)
 		}
 		reason := prompt + " When the routine is done, run the same git command again."
-		if o.Runtime == "cursor-ide" {
+		if o.Runtime == "cursor-local" {
 			return respond(o.Stdout, map[string]any{
 				"permission":    "deny",
 				"user_message":  "Fabrica is running routine " + o.Routine + " first.",

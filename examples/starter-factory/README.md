@@ -166,7 +166,7 @@ factory:
   git: github.com/staltz/fabrica
   ref: main
   path: examples/starter-factory
-runtimes: [claude-code-local, cursor-ide]
+runtimes: [claude-code-local, cursor-local]
 repos: [github.com/you/your-app]
 routines: [review-before-push]
 ```
@@ -218,7 +218,7 @@ factory:
   ref: main
   path: examples/starter-factory
 server: https://fabrica.example.com
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review, weekly-dependency-check]
 repos:
   - github.com/you/your-app

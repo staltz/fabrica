@@ -27,7 +27,7 @@ func openHome(t *testing.T, personal bool, files map[string]string) *Home {
 
 const cloudDeployment = `factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
 repos:
   - github.com/acme/app
@@ -79,7 +79,9 @@ func TestDeploymentErrors(t *testing.T) {
 func TestDeploymentWithOldRuntimeName(t *testing.T) {
 	cases := map[string]string{
 		"runtimes: claude-code was renamed to claude-code-local": "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code]\nrepos: [\"*\"]\n",
-		"runtimes: claude was renamed to claude-code-cloud":      "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude, cursor]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+		"runtimes: claude was renamed to claude-code-cloud":      "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude, cursor-cloud]\nroutines: [r]\nrepos: [github.com/a/b]\n",
+		"runtimes: cursor-ide was renamed to cursor-local":       "factory: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n",
+		"runtimes: cursor was renamed to cursor-cloud":           "factory: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud, cursor]\nroutines: [r]\nrepos: [github.com/a/b]\n",
 	}
 	for want, yaml := range cases {
 		h := openHome(t, true, map[string]string{"deployments/x.yaml": yaml})
@@ -90,7 +92,7 @@ func TestDeploymentWithOldRuntimeName(t *testing.T) {
 }
 
 func TestLocalDeploymentsOnlyInPersonalHome(t *testing.T) {
-	local := "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n"
+	local := "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\n"
 	if h := openHome(t, true, map[string]string{"deployments/my-default.yaml": local}); h.Diags.HasErrors() {
 		t.Errorf("a local deployment is fine in the personal home:\n%s", h.Diags)
 	}
@@ -102,7 +104,7 @@ func TestLocalDeploymentsOnlyInPersonalHome(t *testing.T) {
 
 func TestMatchLocal(t *testing.T) {
 	h := openHome(t, true, map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-ide]\nrepos: [\"*\"]\n",
+		"deployments/my-default.yaml": "factory: { git: github.com/me/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\n",
 		"deployments/oss-work.yaml":   "factory: { git: github.com/me/oss-factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [github.com/oss/project]\nroutines: [review-before-push]\n",
 	})
 	if h.Diags.HasErrors() {
@@ -111,8 +113,8 @@ func TestMatchLocal(t *testing.T) {
 	if d, _ := h.MatchLocal("github.com/oss/project", "claude-code-local"); d == nil || d.Name != "oss-work" {
 		t.Errorf("a specific repo should beat the wildcard, got %v", d)
 	}
-	if d, _ := h.MatchLocal("github.com/oss/project", "cursor-ide"); d == nil || d.Name != "my-default" {
-		t.Errorf("oss-work doesn't run on cursor-ide, so the wildcard should match, got %v", d)
+	if d, _ := h.MatchLocal("github.com/oss/project", "cursor-local"); d == nil || d.Name != "my-default" {
+		t.Errorf("oss-work doesn't run on cursor-local, so the wildcard should match, got %v", d)
 	}
 	if d, reason := h.MatchLocal("github.com/x/y", "codex-cli"); d != nil || !strings.Contains(reason, "no local deployment") {
 		t.Errorf("nothing covers codex-cli, got %v %q", d, reason)

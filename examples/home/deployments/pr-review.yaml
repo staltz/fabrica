@@ -5,7 +5,7 @@
 # 1 routine × 2 repos × 2 runtimes = 4 stubs.
 factory: { git: github.com/acme/factory, ref: stable }   # a branch: follows it
 server: https://fabrica.acme.dev
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
 repos:
   - github.com/acme/app

@@ -166,7 +166,7 @@ func TestClaudeHookShape(t *testing.T) {
 }
 
 func TestCursorRefusesUnsupportedTrigger(t *testing.T) {
-	tool, _ := For("cursor-ide", t.TempDir())
+	tool, _ := For("cursor-local", t.TempDir())
 	err := tool.Write(Config{Hooks: []Hook{{Binary: "fabrica", Event: SessionStart, Deployment: "d", Routine: "r", Fingerprint: "f"}}})
 	if err == nil {
 		t.Error("Cursor has no session.start hook, so writing one should fail")
@@ -174,7 +174,7 @@ func TestCursorRefusesUnsupportedTrigger(t *testing.T) {
 }
 
 func TestHookCommandRoundTrip(t *testing.T) {
-	h := Hook{Binary: "/Users/me/My Tools/fabrica", Runtime: "cursor-ide", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}
+	h := Hook{Binary: "/Users/me/My Tools/fabrica", Runtime: "cursor-local", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}
 	got, ok := ParseHookCommand(HookCommand(h))
 	if !ok || got != h {
 		t.Errorf("round trip = %+v, %v", got, ok)

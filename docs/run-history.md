@@ -33,7 +33,7 @@ One row per run.
 | `started_at` | server | RFC 3339, UTC. |
 | `intent` | agent | A summary of the original request, at most 20 words, in casual plain English. |
 | `routine` | stub | `NULL` for interactive sessions. |
-| `runtime` | stub (remote) or server (local) | Like `claude-code-cloud` or `cursor-ide`. |
+| `runtime` | stub (remote) or server (local) | Like `claude-code-cloud` or `cursor-local`. |
 | `repo` | stub (remote) or server (local) | Like `github.com/acme/app`. The local server works it out from the workspace. |
 | `deployment` | server | From the endpoint (remote) or the matched local deployment (local). |
 | `factory_sha` | server | The exact factory commit that was served. |

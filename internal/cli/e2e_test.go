@@ -149,7 +149,7 @@ func TestSuccessTest(t *testing.T) {
 	w.Home.Write(map[string]string{
 		"deployments/pr-review.yaml": `factory: { git: github.com/acme/factory, ref: stable }
 server: https://fabrica.acme.dev
-runtimes: [claude-code-cloud, cursor]
+runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
 repos: [github.com/acme/app]
 params: { slack_channel: "#eng" }
@@ -159,7 +159,7 @@ params: { slack_channel: "#eng" }
 	home := w.Home.Dir
 	mustFab(t, 0, home, "check")
 	out := mustFab(t, 2, home, "plan")
-	if !strings.Contains(out, "+ create pr-review @ github.com/acme/app on claude-code-cloud (handoff)") || !strings.Contains(out, "on cursor (handoff)") {
+	if !strings.Contains(out, "+ create pr-review @ github.com/acme/app on claude-code-cloud (handoff)") || !strings.Contains(out, "on cursor-cloud (handoff)") {
 		t.Fatalf("plan:\n%s", out)
 	}
 
@@ -249,7 +249,7 @@ params: { slack_channel: "#eng" }
 		rows.Scan(&rt, &status, &skills)
 		got = append(got, rt+":"+status+":"+skills)
 	}
-	if strings.Join(got, " ") != "claude-code-cloud:succeeded:pr-review cursor:succeeded:pr-review" {
+	if strings.Join(got, " ") != "claude-code-cloud:succeeded:pr-review cursor-cloud:succeeded:pr-review" {
 		t.Errorf("run history = %v", got)
 	}
 

@@ -1,7 +1,9 @@
 # Handy shortcuts. Everything here is plain `go` underneath.
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/staltz/fabrica/internal/cli.version=$(VERSION)
+# Go stamps the version from git: a tag like v0.1.0 on a tagged commit,
+# "dev" otherwise. VERSION=v0.1.0 overrides it.
+VERSION ?=
+LDFLAGS := -s -w $(if $(VERSION),-X github.com/staltz/fabrica/internal/cli.version=$(VERSION))
 
 .PHONY: build test race lint dist clean
 

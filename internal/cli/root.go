@@ -26,9 +26,6 @@ import (
 	"github.com/staltz/fabrica/internal/paths"
 )
 
-// version is set at build time with -ldflags "-X …/cli.version=v0.1.0".
-var version = "dev"
-
 // ExitError carries a specific exit code out of a command. `fabrica plan`
 // uses it to exit with 2 when there are changes.
 type ExitError struct {
@@ -46,7 +43,7 @@ func (e *ExitError) Error() string {
 
 // Main runs the CLI and returns the process exit code.
 func Main(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	mcpserver.Version = version
+	mcpserver.Version, _ = readVersion()
 	root := newRoot()
 	root.SetArgs(args)
 	root.SetIn(stdin)
@@ -90,10 +87,14 @@ Typical workflow:
   fabrica lock       pin a factory's imports in fabrica.lock
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
   fabrica apply      install stubs in runtimes, and Fabrica in your local tools`,
-		Version:       version,
+		Version:       versionLine(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Cobra's own -v says "version for fabrica" and prints "fabrica version
+	// …", unlike `fabrica version`. Make both match.
+	root.SetVersionTemplate("{{.Version}}\n")
+	root.Flags().BoolP("version", "v", false, "print Fabrica's version")
 	root.PersistentFlags().StringVar(&g.home, "home", "", "the home repo to use (default: the current folder if it's a home repo, otherwise $FABRICA_HOME or ~/.fabrica)")
 	root.AddCommand(
 		newCheck(g),
@@ -108,17 +109,6 @@ Typical workflow:
 		newVersion(),
 	)
 	return root
-}
-
-func newVersion() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print Fabrica's version",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), "fabrica", version)
-		},
-	}
 }
 
 // homeDir works out which home repo a command is about: --home, else the

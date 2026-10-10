@@ -118,7 +118,14 @@ Serves a factory over MCP.
 
 ## `fabrica version`
 
-Prints the version.
+Prints the version, and the commit it was built from when known. `fabrica --version` and `fabrica -v` do the same.
+
+```
+$ fabrica version
+fabrica 0.1.0 (b79bb17 2026-10-10)
+```
+
+Builds between releases say `dev` instead of a version number.
 
 ## `fabrica hook` (plumbing)
 

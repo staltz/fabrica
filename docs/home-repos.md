@@ -172,6 +172,14 @@ Some runtimes have no API Fabrica can use (as of v0.1, that's all three built-in
 
 For runtimes whose provider has an API (folder providers with an `api` program), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up by identity, so a retry never makes a duplicate. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
 
+## Destroy
+
+`fabrica destroy` is the opposite of `apply`. It removes everything your deployments (or the ones you name) installed, and leaves their files alone, so the next `apply` puts it all back.
+
+For a cloud deployment, it plans every resource in state as a delete, exactly as if the deployment file were gone, and then carries it out like an apply: it takes the lock, refreshes, deletes each resource through the runtime's API or with a delete handoff, and records the results and releases the lock in one commit. For your personal home repo, it also removes what Fabrica installed in your local tools. It shows the plan and asks first; `fabrica plan --destroy` shows the same plan without changing anything.
+
+To stop deploying something for good, delete its deployment file and apply instead. The server keeps serving a deployment for as long as its file exists, so a destroyed one's stubs still work until their delete handoffs are done.
+
 ## Who applies
 
 CI on the home repo is the recommended way: apply on every merge to the main branch, using the CI's own concurrency setting so applies wait in line instead of racing. Individuals can apply too, and the lock keeps that safe.

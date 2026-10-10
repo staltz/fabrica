@@ -9,6 +9,7 @@ import (
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
+	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
 )
 
@@ -120,6 +121,67 @@ func (e *Env) planLocalTools(locals []*Deployment, personalHome string) *LocalPl
 		return nil
 	}
 	return lp
+}
+
+// planLocalDestroy works out what `fabrica destroy` removes from the local
+// tools on this machine. A tool that no other local deployment uses loses
+// everything Fabrica installed in it. A tool that others still use only
+// loses the destroyed deployments' hooks and scheduled tasks: the fabrica
+// MCP server is shared, and so may be connector servers, so they stay.
+func (e *Env) planLocalDestroy(h *home.Home, destroyed map[string]bool) (*LocalPlan, []string) {
+	lp := &LocalPlan{}
+	kept := map[string]bool{} // runtimes that other local deployments still use
+	for _, name := range h.Names() {
+		if d := h.Deployments[name]; d.Scope == provider.Local && !destroyed[name] {
+			for _, rt := range d.Runtimes {
+				kept[rt] = true
+			}
+		}
+	}
+	var notes []string
+	for _, name := range sortedNames(destroyed) {
+		for _, rt := range h.Deployments[name].Runtimes {
+			if kept[rt] {
+				notes = append(notes, fmt.Sprintf("Other local deployments keep the fabrica MCP server installed, so it still serves %s's factory in its repos; delete %s/%s.yaml to stop that.", name, home.DeploymentsDir, name))
+				break
+			}
+		}
+	}
+	for _, rt := range localtools.Runtimes() {
+		tool, err := localtools.For(rt, e.UserHome)
+		if err != nil {
+			lp.Diags.Errorf("local.tool", rt, "%v", err)
+			continue
+		}
+		current, err := tool.Read()
+		if err != nil {
+			lp.Diags.Errorf("local.config", rt, "%v", err).Hintf("fix the file by hand, then plan again")
+			continue
+		}
+		var desired localtools.Config
+		if kept[rt] {
+			desired.MCP = current.MCP
+			for _, hk := range current.Hooks {
+				if !destroyed[hk.Deployment] {
+					desired.Hooks = append(desired.Hooks, hk)
+				}
+			}
+			for _, t := range current.Tasks {
+				if !destroyed[t.Deployment] {
+					desired.Tasks = append(desired.Tasks, t)
+				}
+			}
+		}
+		lr := &LocalRuntime{Name: rt, Tool: tool, Current: current.Normalize(), Desired: desired.Normalize()}
+		lr.Changes = describeLocalChanges(lr.Current, lr.Desired)
+		if len(lr.Changes) > 0 {
+			lp.Runtimes = append(lp.Runtimes, lr)
+		}
+	}
+	if len(lp.Runtimes) == 0 && len(lp.Diags) == 0 {
+		return nil, notes
+	}
+	return lp, notes
 }
 
 // desiredLocal is what one local tool should have installed.
@@ -292,6 +354,15 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 			out = append(out, fmt.Sprintf("- remove scheduled task %s for routine %s/%s", id, t.Deployment, t.Routine))
 		}
 	}
+	return out
+}
+
+func sortedNames(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
 	return out
 }
 

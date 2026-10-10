@@ -22,7 +22,8 @@ import (
 	"github.com/staltz/fabrica/internal/token"
 )
 
-// Options configure a run of `fabrica apply`.
+// Options configure a run of `fabrica apply`, or of `fabrica destroy` when
+// Plan.Destroy is set.
 type Options struct {
 	Plan *plan.Env
 	// Out is where progress goes.
@@ -32,6 +33,10 @@ type Options struct {
 	HandoffDir string
 	// Holder names whoever is applying, for the lock entry.
 	Holder string
+	// Approve, when set, sees the plan once it's built, and only when it
+	// has changes. If it returns an error, nothing is changed and Run
+	// returns that error.
+	Approve func(*plan.Plan) error
 }
 
 // Result is the outcome of an apply.
@@ -54,7 +59,8 @@ func (r *Result) ExitCode() int {
 }
 
 // Run applies a home repo: every cloud deployment that has changes and no
-// errors, then the local tools on this machine.
+// errors, then the local tools on this machine. With Plan.Destroy, those
+// changes remove everything the deployments installed.
 func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	out := opts.Out
 	if out == nil {
@@ -87,12 +93,17 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	p := plan.Build(ctx, &env, h)
 	res.Plan = p
 	if p.Diags.HasErrors() {
-		fmt.Fprintln(out, "The home repo has problems, so nothing was applied:")
+		fmt.Fprintf(out, "The home repo has problems, so nothing was %s:\n", pastTense(&env))
 		for _, d := range p.Diags.Only(diag.Error) {
 			fmt.Fprintf(out, "  %s\n", d)
 		}
 		res.Failed = append(res.Failed, "home repo")
 		return res, nil
+	}
+	if opts.Approve != nil && p.HasChanges() {
+		if err := opts.Approve(p); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, dp := range p.Deployments {
@@ -128,9 +139,28 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		}
 	}
 	if len(res.Failed) == 0 && !p.HasChanges() {
-		fmt.Fprintln(out, "Everything is already in sync. Nothing to do.")
+		if env.Destroy {
+			fmt.Fprintln(out, "Nothing to destroy.")
+		} else {
+			fmt.Fprintln(out, "Everything is already in sync. Nothing to do.")
+		}
 	}
 	return res, nil
+}
+
+// verb names what's running, for messages and commits.
+func verb(env *plan.Env) string {
+	if env.Destroy {
+		return "destroy"
+	}
+	return "apply"
+}
+
+func pastTense(env *plan.Env) string {
+	if env.Destroy {
+		return "destroyed"
+	}
+	return "applied"
 }
 
 func needsGit(h *home.Home) bool {
@@ -161,7 +191,8 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if out == nil {
 		out = io.Discard
 	}
-	if env.Secret == "" {
+	// Deleting a stub needs no token, so destroy works without the secret.
+	if env.Secret == "" && !env.Destroy {
 		return nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the deployment's token", token.EnvVar)
 	}
 	holder := opts.Holder
@@ -175,7 +206,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	now = now.Truncate(time.Second) // tidy timestamps keep state diffs readable
 
 	// 1. Take the lock.
-	if err := repo.TakeLock(ctx, name, holder, now); err != nil {
+	if err := repo.takeLock(ctx, name, holder, verb(env), now); err != nil {
 		var locked *ErrLocked
 		if errors.As(err, &locked) {
 			return nil, err
@@ -190,12 +221,12 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	locked.Refresh = true
 	h, err := home.Open(repo.Dir)
 	if err != nil {
-		return nil, releaseAfter(ctx, repo, name, err)
+		return nil, releaseAfter(ctx, repo, name, verb(env), err)
 	}
 	dp := locked.PlanCloud(ctx, h, name)
 	if dp.Diags.HasErrors() {
 		printErrors(out, dp.Diags)
-		return nil, releaseAfter(ctx, repo, name, errors.New("the re-plan inside the lock found errors, so nothing was touched"))
+		return nil, releaseAfter(ctx, repo, name, verb(env), errors.New("the re-plan inside the lock found errors, so nothing was touched"))
 	}
 
 	// 4. Apply each change, recording as we go.
@@ -223,7 +254,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	}
 
 	// 5. Record and release.
-	msg := fmt.Sprintf("fabrica: apply %s (%s)", name, plural(len(dp.Changes)-len(failures), "change"))
+	msg := fmt.Sprintf("fabrica: %s %s (%s)", verb(env), name, plural(len(dp.Changes)-len(failures), "change"))
 	if err := repo.Release(ctx, name, msg, state); err != nil {
 		return handoffs, err
 	}
@@ -236,8 +267,8 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 
 // releaseAfter releases the lock after a problem, keeping the original
 // error.
-func releaseAfter(ctx context.Context, repo *Repo, name string, cause error) error {
-	err := repo.Update(ctx, name, "fabrica: unlock "+name+" after a failed apply", func(s *home.State) error {
+func releaseAfter(ctx context.Context, repo *Repo, name, verb string, cause error) error {
+	err := repo.Update(ctx, name, "fabrica: unlock "+name+" after a failed "+verb, func(s *home.State) error {
 		s.Lock = nil
 		return nil
 	})

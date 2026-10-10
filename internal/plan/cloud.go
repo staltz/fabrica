@@ -20,11 +20,12 @@ import (
 func gitURL(spec string) string { return repourl.GitURL(spec) }
 
 // PlanCloud plans one cloud deployment, including one whose file was
-// deleted (all its resources become deletes). Apply calls it again once it
-// holds the deployment's lock.
+// deleted (all its resources become deletes), or one being destroyed (the
+// same, though its file is still there). Apply calls it again once it holds
+// the deployment's lock.
 func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deployment {
 	d := h.Deployments[name]
-	dp := &Deployment{Name: name, Spec: d}
+	dp := &Deployment{Name: name, Spec: d, Destroy: e.Destroy}
 	state, err := home.ReadState(h.Dir, name)
 	if err != nil {
 		dp.Diags.Errorf("state.invalid", home.StatePath(name), "%v", err)
@@ -44,7 +45,7 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deploym
 		seen[r.Key()] = true
 	}
 
-	if d != nil {
+	if d != nil && !e.Destroy {
 		e.planDesired(ctx, dp, d)
 	}
 	providers := e.providersForCleanup(ctx, dp)
@@ -346,13 +347,18 @@ func (e *Env) diff(dp *Deployment, current map[home.Key]home.Resource, providers
 
 	// A create handoff that's still pending for something no longer
 	// wanted: we can't know whether someone already did it, so ask them to
-	// delete it if they did.
+	// delete it if they did. The delete handoff that replaces it waits here
+	// too, since state never recorded the resource.
 	for _, key := range sortedPendingKeys(pending) {
 		pend := pending[key]
-		if wanted[key] || pend.Action != string(Create) {
+		if _, ok := current[key]; ok || wanted[key] {
 			continue
 		}
-		if _, ok := current[key]; ok {
+		if pend.Action == string(Delete) {
+			dp.Pending = append(dp.Pending, pend)
+			continue
+		}
+		if pend.Action != string(Create) {
 			continue
 		}
 		p := providers[key.Runtime]
@@ -419,6 +425,8 @@ func (e *Env) whyGone(dp *Deployment, r home.Resource) string {
 	switch {
 	case d == nil:
 		return "its deployment file was deleted"
+	case e.Destroy:
+		return "the deployment is being destroyed"
 	case !d.HasRuntime(r.Runtime):
 		return fmt.Sprintf("runtime %s was removed from the deployment", r.Runtime)
 	case !d.HasRoutine(r.Routine):

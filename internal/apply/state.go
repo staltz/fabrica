@@ -1,5 +1,5 @@
-// Package apply carries out plans: `fabrica apply`, `fabrica confirm` and
-// `fabrica unlock`.
+// Package apply carries out plans: `fabrica apply` and `fabrica destroy`,
+// `fabrica confirm` and `fabrica unlock`.
 //
 // Cloud deployments keep their state in the home repo, and every write to
 // a state file goes through git. Git only accepts a push on top of the
@@ -167,7 +167,13 @@ var errNoChange = errors.New("no change")
 // state file and pushing. Losing the race is always safe: nothing remote
 // has been touched yet.
 func (r *Repo) TakeLock(ctx context.Context, name, holder string, now time.Time) error {
-	return r.Update(ctx, name, "fabrica: lock "+name+" for apply", func(s *home.State) error {
+	return r.takeLock(ctx, name, holder, "apply", now)
+}
+
+// takeLock is TakeLock for apply or destroy, which only changes the commit
+// message.
+func (r *Repo) takeLock(ctx context.Context, name, holder, verb string, now time.Time) error {
+	return r.Update(ctx, name, "fabrica: lock "+name+" for "+verb, func(s *home.State) error {
 		if s.Lock != nil {
 			return &ErrLocked{Deployment: name, Lock: *s.Lock}
 		}

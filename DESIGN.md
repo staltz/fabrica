@@ -394,10 +394,39 @@ What happens:
 
 ### State
 
-- **Cloud deployments.** `apply` records every remote resource it created (and any pending handoffs) in `state/<deployment>.yaml` and commits it to the home repo. There's one file per deployment, so people applying *different* deployments never conflict.
-  - **Locking:** `apply` pulls, plans, applies, commits and pushes. If the push is rejected because someone else applied in the meantime, it pulls again and re-plans.
-  - **Who applies:** CI on the home repo is recommended, but individuals can apply too.
-- **Local deployments have no state file.** Everything Fabrica installs locally carries an identifying mark (the MCP entry is named `fabrica`, hooks call `fabrica …`), so Fabrica finds its own installs just by reading the tool's config.
+**Cloud deployments** each have one state file, `state/<deployment>.yaml`. Only Fabrica writes it, and it's committed to the home repo. It records every remote resource the deployment owns, what was installed in each one, any pending handoffs, and the deployment's lock. Each deployment has its own file, so people applying *different* deployments never conflict.
+
+```yaml
+# state/pr-review.yaml (written by Fabrica, don't edit by hand)
+lock:                                    # only present while an apply is running
+  holder: ci github.com/acme/home/actions/runs/4812
+  since: 2026-10-10T12:00:00Z
+resources:
+  - id: fabrica.acme.dev/pr-review#pr-review@github.com/acme/app
+    runtime: claude
+    remote_id: trig_01Hx…
+    factory_commit: 9c1e4b2…
+    shape: { trigger: github.pull_request.opened, connectors: [github, slack], fingerprint: 7f3a9c }
+pending: []                              # handoffs waiting for `fabrica confirm`
+```
+
+**Resource identity.** Every remote resource has a stable identity built from its endpoint, routine and repo, e.g. `fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`. Nothing random goes into it. An endpoint belongs to exactly one home repo and deployment (see [The remote server](#the-remote-server)), so two home repos never claim each other's resources. Providers write the identity into the resource. It goes in a name or metadata field when the runtime has one, and it's always in the stub prompt. It works like the identifying mark on local installs.
+
+**How `apply` changes a cloud deployment:**
+
+1. **Plan** against the latest home repo. If nothing needs to change, stop without committing.
+2. **Take the lock.** Commit a `lock:` entry to the state file and push. Git only accepts a push on top of the latest commit, so when two applies race, exactly one push gets through. The other pulls, sees the lock, and stops with a message naming who holds it. Nothing remote has been touched yet, so losing the race is always safe.
+3. **Refresh.** Look up all of this deployment's resources in each runtime **by identity**. Any resource that exists but is missing from state gets adopted, e.g. one created by an apply that crashed before recording it.
+4. **Re-plan and apply.** Every create first looks the resource up by identity and only creates it if it's missing, so a retry never makes a duplicate.
+5. **Record and release.** Write the results and remove the lock in one commit, then push. If the push is rejected because of unrelated commits (e.g. another deployment's state), rebase and push again. While the lock is held, nobody else writes this file.
+
+- **A crashed apply leaves its lock in place.** Fabrica can't tell a crashed apply from a slow one, so it doesn't guess. `plan` and `apply` show who holds the lock and since when, and `fabrica unlock <deployment>` removes it. The next apply's refresh adopts whatever the crashed one created.
+- **`fabrica confirm` takes the same lock,** since it also writes the state file.
+- **Providers must be able to find their resources.** `api` mode is only available for a runtime if its API can list resources and read their identity back. Otherwise the provider uses `handoff`. Pending handoffs are recorded in state, so a second apply never issues the same handoff twice.
+- **Duplicates are errors.** If the refresh finds two resources with the same identity (e.g. someone copied one by hand), `plan` fails and names both. Fabrica doesn't pick one to delete.
+- **Who applies:** CI on the home repo is recommended, with the CI's own concurrency setting making applies wait in line instead of racing. Individuals can apply too, and the lock keeps that safe.
+
+**Local deployments have no state file.** Everything Fabrica installs locally carries an identifying mark (the MCP entry is named `fabrica`, hooks call `fabrica …`), so Fabrica finds its own installs just by reading the tool's config.
 - **Secrets** never live in factory or home repos. They come from the OS keychain, CI secrets or each runtime's own auth.
 
 ---
@@ -408,13 +437,27 @@ What happens:
 
 Fabrica never installs a routine's real content into a runtime. It installs a tiny **stub**: the trigger, the connectors, and a short prompt along the lines of:
 
-> You are routine `pr-review`. Call `run_begin` with runtime `claude` and repo `github.com/acme/app`, then load the routine with `routine_get` from the Fabrica MCP server and follow it.
+> You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude`, repo `github.com/acme/app` and stub `7f3a9c`, then load the routine with `routine_get` from the Fabrica MCP server and follow it.
 
 Fabrica writes a stub for each routine × repo × runtime, so it can include exact context values like these.
 
 Why stubs:
 - Editing a routine's prompt, skills or rules takes effect on the next run, with no re-apply (for deployments that follow a branch).
-- Re-applying is only needed when triggers, connectors or pins change, which is rare. That makes tools with weak or missing APIs bearable.
+- Re-applying is only needed when a routine's **shape** changes, which is rare. That makes tools with weak or missing APIs bearable.
+
+### Stub shape
+
+A stub's **shape** is everything it bakes into the runtime: the trigger, plus the connectors and their definitions (including connectors that emulated side effects need). Prompts, skills, rules, params and side effects are served live, so they aren't part of the shape.
+
+- `apply` records each stub's shape in state and writes a short fingerprint of it into the stub (`stub 7f3a9c` above). Local routines carry the fingerprint the same way, e.g. in their hook command.
+- At `run_begin`, the server works out the routine's shape at the factory commit it's about to serve and compares the two fingerprints.
+- **If they differ, the server refuses.** `run_begin` returns an error saying the routine's trigger or connectors changed and the deployment needs `fabrica apply`. The run is recorded as `failed`, and `routine_get` won't serve that routine in that run. A stub never runs a routine that expects a different trigger or a connector the stub doesn't have.
+- This also covers deployment edits that were merged but not applied yet, such as a new `ref:`. The server serves the latest home repo, so the fingerprint check is what keeps it consistent with what's installed.
+- The server checks against the fingerprint inside the stub, not against state. A stub is always checked against exactly what was installed in it, so there's no window while an apply is in progress or after one crashes.
+- On the remote server, routines only run from stubs, so a `run_begin` that names a routine but has no fingerprint is refused too.
+- `plan` reports outdated stubs as errors, so the scheduled `plan` in the home repo's CI catches them.
+
+v0.1 refuses instead of serving the last compatible version. That's the stricter choice, and switching to holding back later wouldn't break anyone (see [Later](#later)).
 
 ### The Fabrica MCP server
 
@@ -427,20 +470,31 @@ MCP is the **only** way factory content reaches agents. There's no copying files
 | Picks the factory from | Your personal home repo's local deployments | One home repo's cloud deployments |
 | Run history in | `~/.fabrica/runs.db` | The server's own SQLite database |
 
+Each MCP session is served from **one factory commit**, fixed when the session starts. A merge that lands mid-run never changes what that run sees, and `factory_sha` in run history is exact.
+
 ### MCP tools
 
 | Tool | What it does |
 |---|---|
-| `skills_list()` | Names and descriptions of all skills |
-| `skill_load(name)` | A skill's `SKILL.md` and its file list |
-| `skill_file(name, path)` | One supporting file from a skill |
+| `skills_list()` | Names and descriptions of all skills. Remotely, skills this runtime can't use are marked as unavailable |
+| `skill_load(name)` | A skill's `SKILL.md` and its file list. Locally, also the folder on disk where the skill was unpacked |
+| `skill_file(name, path)` | One text file from a skill |
 | `rules_get()` | All always-on rules in full, plus an index of the other rules (name, description, globs) |
 | `rule_load(name)` | One rule |
 | `routine_get(name)` | A routine's full definition, with the rules included |
-| `run_begin(intent, routine?, runtime?, repo?)` | Starts a run and returns a `run_id` |
+| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. Refuses routine runs whose stub is outdated (see [Stub shape](#stub-shape)) |
 | `run_report(run_id, summary, status?, links?)` | Records a checkpoint for a run |
 
-Until runtimes support skills over MCP natively, skills are **emulated** with the plain tools above. The server's MCP `instructions`, the stub and the Fabrica line all tell the agent to list and load what's relevant. When native skills-over-MCP arrives, the emulation goes away.
+Until runtimes support skills over MCP natively, skills are **emulated** with the plain tools above. The server's MCP `instructions`, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how to resolve a skill's relative paths (below). When native skills-over-MCP arrives, the emulation goes away.
+
+### Skill files
+
+A skill is a whole folder, not just its `SKILL.md`. Skills refer to their own files by relative path ("run `scripts/extract.py`"), scripts import sibling modules, and some files are binary (templates, images, fonts). Fabrica's contract: **relative paths in a skill resolve against the skill's folder**, and a skill only works where that whole folder exists exactly as it is in git.
+
+- **Local: unpacked on disk.** On `skill_load`, the local server unpacks the skill's folder into a read-only cache outside the workspace, e.g. `~/.cache/fabrica/skills/<tree-hash>/<name>/`. Binary files and executable bits are kept, and the folder keeps the skill's name, as the spec requires. `skill_load` returns that path as the skill's folder. The agent runs scripts from there, just like a normally installed skill. Nothing is written into the product repo. Every local runtime can use every skill.
+- **Cloud: text-only skills in v0.1.** A remote server can't put files on a cloud runtime's disk. Remotely, the agent reads a skill's files one at a time with `skill_file`. This only works for **text-only** skills: every file is Markdown, plain text or data (`.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.csv`), and none is executable. Any other skill (scripts, binaries, templates in other formats) needs its folder on disk and can't be used remotely. `check`/`plan` fail when a cloud routine lists one in `skills:`. If the agent finds one some other way, `skills_list` marks it unavailable and `skill_load` refuses it with the reason.
+
+Each provider's capability matrix declares its **skill transport**: `directory` (unpacked on disk) or `text` (read file by file). Getting whole skill folders into cloud runtimes is planned (see [Later](#later)), and adding it won't break text-only skills.
 
 ### The remote server
 
@@ -460,6 +514,7 @@ You host it yourself: a container or a small VM. There's **no official hosted se
 - One user-level registration per local tool, installed by `fabrica apply`.
 - At each session start it reads your local deployments, matches the workspace, and serves that factory.
 - It also inspects the workspace (via MCP roots) to enforce the [safety checks](#part-6-safety-checks-fail-closed): the Fabrica line must be present, and no skill names may clash.
+- It unpacks skill folders into its cache when they're loaded (see [Skill files](#skill-files)).
 
 ---
 
@@ -513,6 +568,10 @@ Fabrica catches problems as early as it can, and refuses to continue when someth
 | Local deployment in a team home repo | ❌ error | — | — |
 | Cloud deployment without `server:` | ❌ error | — | — |
 | Trigger, connector or side effect unsupported by a runtime | ❌ error | — | — |
+| A routine's trigger or connectors changed since apply (stub outdated) | ❌ error in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses |
+| A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses |
+| Another apply holds the deployment's lock | ❌ `apply` stops, names the holder | — | — |
+| Two remote resources share one identity | ❌ error in `plan` | — | — |
 | Product repo doesn't provide something in `expects:` | ⚠️ reported | — | — |
 | Prose mentions a skill you forgot to import, or a routine uses a skill not in its `skills:` | ⚠️ warning | — | — |
 | Import expects something your `expects:` doesn't list | ⚠️ warning | — | — |
@@ -538,7 +597,7 @@ providers/<name>/
   handoff.md       # template for handoff instructions
 ```
 
-The **capability matrix** lists, for each trigger, connector, side effect, skill transport and MCP auth method (`mcp_auth`), whether the runtime supports it **natively**, through **emulation**, or **not at all**. It also lists the supported apply modes. Because it's plain data, `check` needs no code to run. Published together, the matrices form a public table of what each runtime supports, which also makes a case to runtime vendors for adding the missing APIs.
+The **capability matrix** lists, for each trigger, connector, side effect, skill transport and MCP auth method (`mcp_auth`), whether the runtime supports it **natively**, through **emulation**, or **not at all**. It also lists the supported apply modes, and whether the runtime's API can find resources by [identity](#state), which `api` mode requires. Because it's plain data, `check` needs no code to run. Published together, the matrices form a public table of what each runtime supports, which also makes a case to runtime vendors for adding the missing APIs.
 
 Folder providers can run code (`api`) with your runtime credentials during `apply`. Imports are pinned by commit and `upgrade` shows diffs, so new provider code never arrives unseen.
 
@@ -566,8 +625,9 @@ Fabrica **sits beside git and never wraps it.** Factory and home repos are plain
 | `fabrica lock` | Resolves imports into `fabrica.lock` |
 | `fabrica upgrade` | Moves imports to newer versions and shows a diff, including changes to items you've overridden |
 | `fabrica plan` | Shows what `apply` would do for each runtime: native / emulated / unsupported, apply mode, follow vs frozen, pending handoffs |
-| `fabrica apply` | Reconciles deployments with runtimes. Cloud: commits and pushes state. Local: installs MCP entries and local routines on this machine |
+| `fabrica apply` | Reconciles deployments with runtimes. Cloud: takes the deployment's lock, then commits and pushes state. Local: installs MCP entries and local routines on this machine |
 | `fabrica confirm` | Closes a pending handoff |
+| `fabrica unlock` | Removes a lock left behind by a crashed apply |
 | `fabrica mcp [--http]` | Serves a factory over MCP, locally or remotely |
 
 Exact flags and syntax are still to be decided. Integration with git workflows happens through hooks and CI (e.g. `fabrica check` as a pre-commit hook, `fabrica apply` in CI), not through wrapper commands.
@@ -594,10 +654,11 @@ A product repo adds its own `pr-review` skill, which clashes with the factory's.
 
 **In:**
 - Factory format: skills, routines, rules (Cursor-style), connectors, folder providers, imports (including plain skill and rule repos), `fabrica.lock`, `expects:`.
-- Home repo: cloud and local deployments, follow/frozen refs, per-deployment state, git-push locking.
-- Commands: `check`, `lock`, `upgrade`, `plan`, `apply`, `confirm`, `mcp` (stdio and `--http`).
+- Home repo: cloud and local deployments, follow/frozen refs, per-deployment state with a git-based apply lock, stable resource identities.
+- Commands: `check`, `lock`, `upgrade`, `plan`, `apply`, `confirm`, `unlock`, `mcp` (stdio and `--http`).
 - Built-in providers: Claude routines, Cursor automations and Codex (cloud), plus Claude Code, Cursor IDE and Codex CLI (local). Each uses `api` where available and `handoff` otherwise.
-- Remote server: home-repo-driven endpoints, HMAC tokens, run-history database.
+- Remote server: home-repo-driven endpoints, HMAC tokens, stub fingerprint checks, run-history database.
+- Skills: whole folders unpacked on disk locally, text-only skills in cloud runtimes.
 - Run recording (local and remote).
 - The Fabrica line and all the fail-closed checks above.
 - An example public starter factory with around five real skills, routines and rules.
@@ -608,7 +669,10 @@ A product repo adds its own `pr-review` skill, which clashes with the factory's.
 
 ## Risks and trade-offs we've accepted
 
-- **No grants.** A deployment that follows a branch picks up new side effects (e.g. a routine that starts merging PRs) without anyone reviewing them in the home repo. New *connectors* still need a re-apply, so those get reviewed. The planned fix is in [Later](#later).
+- **No grants.** A deployment that follows a branch picks up new side effects (e.g. a routine that starts merging PRs) without anyone reviewing them in the home repo. New *connectors* and trigger changes still need a re-apply, and the server refuses to run the routine until then, so those get reviewed. The planned fix is in [Later](#later).
+- **Changing a routine's trigger or connectors stops it wherever it's followed,** until each home repo re-applies. A refused run is a lost event (e.g. a PR that doesn't get reviewed). We chose that over running a routine with the wrong trigger or missing connectors.
+- **A crashed apply locks its deployment** until someone runs `fabrica unlock`. CI applies to that deployment fail loudly until then.
+- **Cloud routines can only use text-only skills.** Many published skills include scripts, so they work locally but not in cloud runtimes yet.
 - **The factory's branch protection is a security boundary.** Anyone who can push to a followed branch changes what every deployment following it does.
 - **Declared side effects are an honor system.** A factory author can write anything in prose. The real limit is what each connector's credentials allow.
 - **Remote runs can't inspect the workspace.** Clashes and a missing Fabrica line are only caught by `check`/`plan` on the default branch, not on the branch a run is working on.
@@ -625,16 +689,17 @@ A product repo adds its own `pr-review` skill, which clashes with the factory's.
 
 Deferred on purpose, roughly in priority order. Adding any of these later shouldn't break v0.1 setups.
 
-1. **Grants.** Planned approach: `apply` records each routine's declared connectors and side effects in state, and the server refuses to serve a routine that now asks for more, until someone re-applies.
+1. **Grants.** Planned approach: add each routine's declared side effects to its recorded [stub shape](#stub-shape), so the server refuses a routine that now asks for more, until someone re-applies.
 2. **Reading run history.** A `fabrica runs` command, MCP tools so agents can read history, and "feedback into the factory" (e.g. a routine that reads recent failures and proposes factory fixes).
-3. **OAuth** for remote endpoints.
-4. **Bots and bot-platform providers.** Persona + routines + skill allowlist, deployable on bot platforms.
-5. **`fabrica graph`** (v0.2). Visualizes routines → skills → expectations and connectors. Skill-to-skill edges will be *inferred* from prose, never declared.
-6. **Skill and routine evals,** using the reserved `evals/` folder, and probably real run history as input.
-7. **Plugins and `fabrica export`.** Requiring runtime plugins, or packaging a factory as a plugin.
-8. **Overriding built-in providers** with folder providers.
-9. **Serving a factory from a local working tree** (`path:` in local deployments) for a faster authoring loop.
-10. **Local deployments in team home repos** (team-wide editor defaults).
-11. **Loosening strict rules** where real use shows it's needed: the Fabrica line on third-party repos, multiple local deployments per repo, `only:` pulling in dependencies automatically, a home-wide default `server:`.
-12. **Run lifecycle:** detecting runs that ended, or that never reported.
-13. **Runtime clash detection for remote runs** (the server reading the product repo itself).
+3. **Whole skill folders in cloud runtimes.** For example, `skill_load` could return a short-lived download URL that the sandbox unpacks into a temporary folder, or a provider could use the runtime's environment setup. This depends on each runtime's sandbox network access, so it would be a new skill transport in the capability matrix.
+4. **OAuth** for remote endpoints.
+5. **Bots and bot-platform providers.** Persona + routines + skill allowlist, deployable on bot platforms.
+6. **`fabrica graph`** (v0.2). Visualizes routines → skills → expectations and connectors. Skill-to-skill edges will be *inferred* from prose, never declared.
+7. **Skill and routine evals,** using the reserved `evals/` folder, and probably real run history as input.
+8. **Plugins and `fabrica export`.** Requiring runtime plugins, or packaging a factory as a plugin.
+9. **Overriding built-in providers** with folder providers.
+10. **Serving a factory from a local working tree** (`path:` in local deployments) for a faster authoring loop.
+11. **Local deployments in team home repos** (team-wide editor defaults).
+12. **Loosening strict rules** where real use shows it's needed: the Fabrica line on third-party repos, multiple local deployments per repo, `only:` pulling in dependencies automatically, a home-wide default `server:`, holding back outdated stubs (serving the last commit whose shape still matches) instead of refusing them, applies waiting for a held lock instead of stopping, and more file types counting as text-only skills.
+13. **Run lifecycle:** detecting runs that ended, or that never reported.
+14. **Runtime clash detection for remote runs** (the server reading the product repo itself).

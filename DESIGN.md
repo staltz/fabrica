@@ -412,12 +412,19 @@ pending: []                              # handoffs waiting for `fabrica confirm
 
 **Resource identity.** Every remote resource has a stable identity built from its endpoint, routine and repo, e.g. `fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`. Nothing random goes into it. An endpoint belongs to exactly one home repo and deployment (see [The remote server](#the-remote-server)), so two home repos never claim each other's resources. Providers write the identity into the resource. It goes in a name or metadata field when the runtime has one, and it's always in the stub prompt. It works like the identifying mark on local installs.
 
+**Changes and errors.** `plan` compares what the home repo and its factories ask for with what's installed, and sorts everything it finds into two kinds:
+
+- **Changes** are work for `apply`: resources to create, update or delete, and handoffs to issue. This includes repairing stubs that went stale after a merge. When a routine's trigger or connectors change to ones the runtime supports, its installed stub is an **update**. A stub whose routine, repo or runtime is no longer in its deployment is a **delete** (see [Stale stubs](#stale-stubs)).
+- **Errors** are problems `apply` can't fix: anything marked ❌ for `plan` in [Part 6](#part-6-safety-checks-fail-closed), such as a trigger the runtime doesn't support, a problem in a product repo, duplicate identities or a held lock. `apply` won't start while the plan has any. An error in one repo blocks the whole deployment, so to unblock the others, fix that repo or remove it from the deployment.
+
+`plan` exits with `0` when there's nothing to do, `2` when there are only changes, and `1` when there are errors. A scheduled `plan` in the home repo's CI fails on both, so stale stubs get noticed as well as errors. It's deliberately `plan` and not `apply`: a new trigger or connector is exactly what someone should review before it's installed (see [Risks](#risks-and-trade-offs-weve-accepted)).
+
 **How `apply` changes a cloud deployment:**
 
-1. **Plan** against the latest home repo. If nothing needs to change, stop without committing.
+1. **Plan** against the latest home repo. If it finds errors, list them and stop. If nothing needs to change, stop without committing.
 2. **Take the lock.** Commit a `lock:` entry to the state file and push. Git only accepts a push on top of the latest commit, so when two applies race, exactly one push gets through. The other pulls, sees the lock, and stops with a message naming who holds it. Nothing remote has been touched yet, so losing the race is always safe.
 3. **Refresh.** Look up all of this deployment's resources in each runtime **by identity**. Any resource that exists but is missing from state gets adopted, e.g. one created by an apply that crashed before recording it.
-4. **Re-plan and apply.** Every create first looks the resource up by identity and only creates it if it's missing, so a retry never makes a duplicate.
+4. **Re-plan and apply.** If the re-plan finds errors (e.g. duplicates the refresh turned up), remove the lock and stop without touching any resource. Every create first looks the resource up by identity and only creates it if it's missing, so a retry never makes a duplicate.
 5. **Record and release.** Write the results and remove the lock in one commit, then push. If the push is rejected because of unrelated commits (e.g. another deployment's state), rebase and push again. While the lock is held, nobody else writes this file.
 
 - **A crashed apply leaves its lock in place.** Fabrica can't tell a crashed apply from a slow one, so it doesn't guess. `plan` and `apply` show who holds the lock and since when, and `fabrica unlock <deployment>` removes it. The next apply's refresh adopts whatever the crashed one created.
@@ -449,15 +456,22 @@ Why stubs:
 
 A stub's **shape** is everything it bakes into the runtime: the trigger, plus the connectors and their definitions (including connectors that emulated side effects need). Prompts, skills, rules, params and side effects are served live, so they aren't part of the shape.
 
-- `apply` records each stub's shape in state and writes a short fingerprint of it into the stub (`stub 7f3a9c` above). Local routines carry the fingerprint the same way, e.g. in their hook command.
-- At `run_begin`, the server works out the routine's shape at the factory commit it's about to serve and compares the two fingerprints.
-- **If they differ, the server refuses.** `run_begin` returns an error saying the routine's trigger or connectors changed and the deployment needs `fabrica apply`. The run is recorded as `failed`, and `routine_get` won't serve that routine in that run. A stub never runs a routine that expects a different trigger or a connector the stub doesn't have.
-- This also covers deployment edits that were merged but not applied yet, such as a new `ref:`. The server serves the latest home repo, so the fingerprint check is what keeps it consistent with what's installed.
-- The server checks against the fingerprint inside the stub, not against state. A stub is always checked against exactly what was installed in it, so there's no window while an apply is in progress or after one crashes.
-- On the remote server, routines only run from stubs, so a `run_begin` that names a routine but has no fingerprint is refused too.
-- `plan` reports outdated stubs as errors, so the scheduled `plan` in the home repo's CI catches them.
+`apply` records each stub's shape in state and writes a short fingerprint of it into the stub (`stub 7f3a9c` above). Local routines carry the fingerprint the same way, e.g. in their hook command.
 
-v0.1 refuses instead of serving the last compatible version. That's the stricter choice, and switching to holding back later wouldn't break anyone (see [Later](#later)).
+### Stale stubs
+
+A stub stays installed until `apply` changes or deletes it, but the home repo and the factory can change at any time. So before a routine run starts, `run_begin` checks that its stub is still current. Both servers check two things, in this order:
+
+1. **The stub is still deployed.** In the latest home repo, the deployment being served (remotely, the endpoint's; locally, the one matching the workspace) must still include the stub's routine, repo and runtime. Removing any of them from the deployment, or deleting the deployment file, stops the stub as soon as the server has fetched the change. That holds even while `apply` hasn't deleted the stub yet, or the deletion waits on a handoff. The fingerprint can't catch this: if a deployment covers `app` and `api` and you remove `app`, `app`'s stub still has the same trigger and connectors, and the deployment's token still works.
+2. **The stub's shape still matches.** The server works out the routine's shape at the factory commit it's about to serve, and compares its fingerprint with the stub's. This catches a changed trigger or connector in the factory, and deployment edits that were merged but not applied yet, such as a new `ref:`.
+
+**If either check fails, the server refuses.** `run_begin` returns an error saying which check failed and that the deployment needs `fabrica apply`. The run is recorded as `failed`, and `routine_get` won't serve that routine in that run. A stub never runs a routine that's no longer deployed for its repo, expects a different trigger, or needs a connector the stub doesn't have.
+
+- Both checks compare the latest home repo with the values inside the stub, never with state. So there's no window while an apply is in progress, after one crashes, or while a handoff is pending.
+- On the remote server, routines only run from stubs. A `run_begin` that names a routine but leaves out its runtime, repo or fingerprint is refused too.
+- Repairing a stale stub is `apply`'s job, so `plan` lists it as a change, never as an error: an outdated stub is an **update**, and one that's no longer deployed is a **delete** (see [State](#state)). The scheduled `plan` in the home repo's CI exits nonzero until they're applied.
+
+v0.1 refuses outdated stubs instead of serving the last compatible version. That's the stricter choice, and switching to holding back later wouldn't break anyone (see [Later](#later)).
 
 ### The Fabrica MCP server
 
@@ -482,7 +496,7 @@ Each MCP session is served from **one factory commit**, fixed when the session s
 | `rules_get()` | All always-on rules in full, plus an index of the other rules (name, description, globs) |
 | `rule_load(name)` | One rule |
 | `routine_get(name)` | A routine's full definition, with the rules included |
-| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. Refuses routine runs whose stub is outdated (see [Stub shape](#stub-shape)) |
+| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. Refuses routine runs whose stub is outdated or no longer deployed (see [Stale stubs](#stale-stubs)) |
 | `run_report(run_id, summary, status?, links?)` | Records a checkpoint for a run |
 
 Until runtimes support skills over MCP natively, skills are **emulated** with the plain tools above. The server's MCP `instructions`, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how to resolve a skill's relative paths (below). When native skills-over-MCP arrives, the emulation goes away.
@@ -556,6 +570,8 @@ v0.1 has **no built-in way to read run history**. You open the SQLite file with 
 
 Fabrica catches problems as early as it can, and refuses to continue when something is wrong.
 
+In the first column, ❌ is an error: `apply` won't start until it's fixed. 🔧 is a stale install that `apply` repairs, so `plan` lists it as a change, not an error (see [State](#state)). ⚠️ is a warning and never stops anything.
+
 | Problem | `lock` / `check` / `plan` | Local server, at runtime | Remote server, at runtime |
 |---|---|---|---|
 | Two imports bring the same item | ❌ error | — | — |
@@ -568,7 +584,8 @@ Fabrica catches problems as early as it can, and refuses to continue when someth
 | Local deployment in a team home repo | ❌ error | — | — |
 | Cloud deployment without `server:` | ❌ error | — | — |
 | Trigger, connector or side effect unsupported by a runtime | ❌ error | — | — |
-| A routine's trigger or connectors changed since apply (stub outdated) | ❌ error in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses |
+| A routine's trigger or connectors changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses |
+| A routine, repo or runtime was removed from a deployment, but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses |
 | Another apply holds the deployment's lock | ❌ `apply` stops, names the holder | — | — |
 | Two remote resources share one identity | ❌ error in `plan` | — | — |
@@ -609,6 +626,7 @@ Each provider supports one or more of these, tried in order:
 2. **`handoff`**: Fabrica writes step-by-step instructions that a human, or an AI with computer use, can follow. **Fabrica never does computer use itself.**
    - The handoff ends with `fabrica confirm <id> [--remote-id …]`, and until then the change is **pending** in state.
    - Without a remote ID, the resource is tracked as **unverifiable**: no drift detection and no automatic deletion. `plan` says so.
+   - Until an update or delete handoff is done, the old stub can still fire, but the server refuses its runs (see [Stale stubs](#stale-stubs)).
 3. **`unsupported`**: `apply` fails loudly and gives the reason.
 
 ---
@@ -624,7 +642,7 @@ Fabrica **sits beside git and never wraps it.** Factory and home repos are plain
 | `fabrica check` | Lints a factory, validates deployments against capability matrices, checks product repos (Fabrica line, skill clashes, unmet `expects:`) |
 | `fabrica lock` | Resolves imports into `fabrica.lock` |
 | `fabrica upgrade` | Moves imports to newer versions and shows a diff, including changes to items you've overridden |
-| `fabrica plan` | Shows what `apply` would do for each runtime: native / emulated / unsupported, apply mode, follow vs frozen, pending handoffs |
+| `fabrica plan` | Shows what `apply` would do for each runtime: creates, updates and deletes, native / emulated / unsupported, apply mode, follow vs frozen, pending handoffs, and any errors that block `apply`. Exits `0` when in sync, `2` with changes, `1` with errors |
 | `fabrica apply` | Reconciles deployments with runtimes. Cloud: takes the deployment's lock, then commits and pushes state. Local: installs MCP entries and local routines on this machine |
 | `fabrica confirm` | Closes a pending handoff |
 | `fabrica unlock` | Removes a lock left behind by a crashed apply |
@@ -657,7 +675,7 @@ A product repo adds its own `pr-review` skill, which clashes with the factory's.
 - Home repo: cloud and local deployments, follow/frozen refs, per-deployment state with a git-based apply lock, stable resource identities.
 - Commands: `check`, `lock`, `upgrade`, `plan`, `apply`, `confirm`, `unlock`, `mcp` (stdio and `--http`).
 - Built-in providers: Claude routines, Cursor automations and Codex (cloud), plus Claude Code, Cursor IDE and Codex CLI (local). Each uses `api` where available and `handoff` otherwise.
-- Remote server: home-repo-driven endpoints, HMAC tokens, stub fingerprint checks, run-history database.
+- Remote server: home-repo-driven endpoints, HMAC tokens, stale-stub checks (still deployed, shape fingerprint), run-history database.
 - Skills: whole folders unpacked on disk locally, text-only skills in cloud runtimes.
 - Run recording (local and remote).
 - The Fabrica line and all the fail-closed checks above.

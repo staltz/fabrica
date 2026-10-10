@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
 	"github.com/staltz/fabrica/internal/runs"
 	"github.com/staltz/fabrica/internal/stub"
@@ -41,6 +42,17 @@ type runReportArgs struct {
 	Summary string   `json:"summary" jsonschema:"what happened, in at most 20 words of casual plain English"`
 	Status  string   `json:"status,omitempty" jsonschema:"progress (the default), succeeded or failed"`
 	Links   []string `json:"links,omitempty" jsonschema:"URLs of PRs, issues or commits this checkpoint is about"`
+}
+
+type memorySaveArgs struct {
+	RunID   string `json:"run_id" jsonschema:"the run_id run_begin gave you for this routine run"`
+	Content string `json:"content" jsonschema:"the routine's whole memory, as Markdown notes for its future runs; it replaces what was there, and empty forgets everything"`
+}
+
+type memorySaveOut struct {
+	Saved bool   `json:"saved"`
+	Bytes int    `json:"bytes"`
+	Note  string `json:"note"`
 }
 
 type skillInfo struct {
@@ -226,7 +238,66 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 	if run != nil {
 		repo, runtime = run.Repo, run.Runtime
 	}
-	return textResult(routineText(snap, r, run, repo, runtime)), nil, nil
+	var mem *runs.Memory
+	if r.Memory && run != nil && memorySupport(snap.Factory, runtime) == provider.Emulated {
+		m, err := s.core.Runs.Memory(ctx, run.Deployment, r.Ref.Name, run.Repo)
+		if err != nil {
+			return nil, nil, fmt.Errorf("couldn't read routine %s's memory: %v", r.Ref.Name, err)
+		}
+		mem = &m
+	}
+	return textResult(routineText(snap, r, run, repo, runtime, mem)), nil, nil
+}
+
+// memorySupport says how a runtime gives routines their memory.
+func memorySupport(f *factory.Factory, runtime string) provider.Support {
+	if p, ok := runtimeProvider(f, runtime); ok {
+		return p.Matrix.Memory
+	}
+	return provider.Unsupported
+}
+
+func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in memorySaveArgs) (*mcp.CallToolResult, memorySaveOut, error) {
+	snap := s.snapshot(ctx, req.Session)
+	if err := refusal(snap); err != nil {
+		return nil, memorySaveOut{}, err
+	}
+	// Only a routine run begun in this session can write its routine's
+	// memory, so one run can't overwrite another routine's notes.
+	var run *runs.Run
+	s.mu.Lock()
+	for _, r := range s.began {
+		if r.ID == in.RunID {
+			run = r
+		}
+	}
+	s.mu.Unlock()
+	if run == nil {
+		return nil, memorySaveOut{}, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
+	}
+	r := snap.Factory.Routines[run.Routine]
+	if r == nil || !r.Memory {
+		return nil, memorySaveOut{}, fmt.Errorf("routine %s doesn't use memory (its routine file has no `memory: true`), so it shouldn't keep notes between runs", run.Routine)
+	}
+	switch memorySupport(snap.Factory, run.Runtime) {
+	case provider.Emulated:
+	case provider.Native:
+		return nil, memorySaveOut{}, fmt.Errorf("runtime %s has its own memory feature, and routine %s keeps its notes there; use that instead of memory_save", run.Runtime, run.Routine)
+	default:
+		return nil, memorySaveOut{}, fmt.Errorf("runtime %s can't keep memory for routines", run.Runtime)
+	}
+	content := strings.TrimSpace(in.Content)
+	if !utf8.ValidString(content) {
+		return nil, memorySaveOut{}, errors.New("the memory must be UTF-8 text")
+	}
+	if err := s.core.Runs.SaveMemory(ctx, run.Deployment, run.Routine, run.Repo, content, run.ID, s.core.now()); err != nil {
+		return nil, memorySaveOut{}, fmt.Errorf("couldn't save the memory: %v", err)
+	}
+	note := "Saved. The next run of " + run.Routine + " on " + run.Repo + " gets it with routine_get."
+	if content == "" {
+		note = "Forgotten. The next run of " + run.Routine + " on " + run.Repo + " starts with an empty memory."
+	}
+	return nil, memorySaveOut{Saved: true, Bytes: len(content), Note: note}, nil
 }
 
 func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in runBeginArgs) (*mcp.CallToolResult, runBeginOut, error) {
@@ -331,7 +402,7 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *factory.Rout
 	}
 	ev := stub.Evaluate(snap.Factory, r, stub.Target{Deployment: d.Name, Runtime: p, Endpoint: endpoint})
 	if fp := ev.Shape.Fingerprint(); fp != run.Stub || !ev.OK() {
-		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger or connectors) changed, so the stub (%s) doesn't match the factory (%s) anymore. The deployment needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
+		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger, connectors or memory setting) changed, so the stub (%s) doesn't match the factory (%s) anymore. The deployment needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
 	}
 	return nil
 }

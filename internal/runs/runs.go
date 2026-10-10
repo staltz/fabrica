@@ -1,6 +1,10 @@
 // Package runs records run history: every routine firing in the cloud and
 // every interactive session in your editor.
 //
+// It also keeps routine memories: the notes a routine with `memory: true`
+// leaves for its own next runs, on runtimes without a memory feature of
+// their own.
+//
 // History can't be filled in after the fact, so Fabrica records from day
 // one. v0.1 has no built-in way to read it: you open the SQLite file with
 // any SQLite tool. That makes the schema below a public interface, so later
@@ -28,11 +32,17 @@ import (
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
-// Schema is the run-history schema, version 1. It's public: see
-// docs/run-history.md.
-const Schema = `
+// Schema is the whole run-history schema, at SchemaVersion. It's public:
+// see docs/run-history.md.
+const Schema = schemaV1 + schemaV2
+
+// migrations[i] takes a database from schema version i to i+1.
+var migrations = []string{schemaV1, schemaV2}
+
+// schemaV1 is the first schema: runs, their checkpoints and skill loads.
+const schemaV1 = `
 CREATE TABLE runs (
   run_id      TEXT PRIMARY KEY,
   started_at  TEXT NOT NULL,             -- RFC 3339, UTC
@@ -77,6 +87,22 @@ SELECT
 FROM runs r;
 `
 
+// schemaV2 adds routine memories.
+const schemaV2 = `
+-- The notes a routine keeps between runs, one per deployment, routine and
+-- repo. Only routines with memory: true have one, and only on runtimes
+-- whose own memory Fabrica stands in for.
+CREATE TABLE memories (
+  deployment TEXT NOT NULL,
+  routine    TEXT NOT NULL,
+  repo       TEXT NOT NULL,
+  content    TEXT NOT NULL,              -- Markdown, written by the agent
+  updated_at TEXT NOT NULL,              -- RFC 3339, UTC
+  updated_by TEXT NOT NULL REFERENCES runs(run_id),
+  PRIMARY KEY (deployment, routine, repo)
+);
+`
+
 // DB is a run-history database.
 type DB struct {
 	db *sql.DB
@@ -118,8 +144,10 @@ func (d *DB) migrate() error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(Schema); err != nil {
-		return err
+	for _, step := range migrations[version:] {
+		if _, err := tx.Exec(step); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
 		return err
@@ -260,6 +288,53 @@ func (d *DB) SkillsLoaded(ctx context.Context, runID string) ([]string, error) {
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// Memory is a routine's notes for its own next runs.
+type Memory struct {
+	Content   string
+	UpdatedAt time.Time
+	// UpdatedBy is the run that saved it.
+	UpdatedBy string
+}
+
+// MaxMemoryBytes is the largest memory Fabrica keeps for one routine. It
+// keeps memories to notes, which every run reads in full, rather than logs.
+const MaxMemoryBytes = 16 * 1024
+
+// Memory reads a routine's memory for one deployment and repo. A routine
+// that never saved anything has an empty one.
+func (d *DB) Memory(ctx context.Context, deployment, routine, repo string) (Memory, error) {
+	var m Memory
+	var at string
+	err := d.db.QueryRowContext(ctx,
+		`SELECT content, updated_at, updated_by FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`,
+		deployment, routine, repo).Scan(&m.Content, &at, &m.UpdatedBy)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Memory{}, nil
+	}
+	if err != nil {
+		return Memory{}, err
+	}
+	m.UpdatedAt, _ = time.Parse(time.RFC3339Nano, at)
+	return m, nil
+}
+
+// SaveMemory replaces a routine's memory for one deployment and repo, on
+// behalf of a run. Empty content forgets everything.
+func (d *DB) SaveMemory(ctx context.Context, deployment, routine, repo, content, runID string, at time.Time) error {
+	if len(content) > MaxMemoryBytes {
+		return fmt.Errorf("the memory is %d bytes, but the limit is %d; keep only what future runs need, and save it again", len(content), MaxMemoryBytes)
+	}
+	if strings.TrimSpace(content) == "" {
+		_, err := d.db.ExecContext(ctx, `DELETE FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`, deployment, routine, repo)
+		return err
+	}
+	_, err := d.db.ExecContext(ctx,
+		`INSERT INTO memories (deployment, routine, repo, content, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (deployment, routine, repo) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+		deployment, routine, repo, content, stamp(at), runID)
+	return err
 }
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

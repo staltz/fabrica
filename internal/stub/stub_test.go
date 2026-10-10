@@ -160,3 +160,39 @@ func TestIdentityAndPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryOnlyShapesRuntimesWithTheirOwn(t *testing.T) {
+	plain := load(t, map[string]string{"routines/pr-review.md": routine})
+	withMemory := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nmemory: true\n", 1)})
+
+	// Cursor automations have their own memory, on by default, so the stub
+	// turns it on or off to match the routine.
+	off := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "cursor-cloud"))
+	on := stub.Evaluate(withMemory, withMemory.Routines["pr-review"], target(t, "cursor-cloud"))
+	if off.Shape.Memory != stub.MemoryOff || on.Shape.Memory != stub.MemoryOn || on.Memory.Support != provider.Native {
+		t.Errorf("cursor-cloud memory: off=%q on=%q (%s)", off.Shape.Memory, on.Shape.Memory, on.Memory.Support)
+	}
+	if off.Shape.Fingerprint() == on.Shape.Fingerprint() {
+		t.Error("turning memory on should change a cursor-cloud stub's fingerprint")
+	}
+
+	// Claude routines have none, so Fabrica keeps the memory and nothing
+	// changes in the stub.
+	c1 := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "claude-code-cloud"))
+	c2 := stub.Evaluate(withMemory, withMemory.Routines["pr-review"], target(t, "claude-code-cloud"))
+	if !c2.OK() || c2.Memory.Support != provider.Emulated || c2.Shape.Memory != "" || c1.Shape.Fingerprint() != c2.Shape.Fingerprint() {
+		t.Errorf("claude-code-cloud memory should be emulated without touching the stub: %+v %+v", c2.Memory, c2.Shape)
+	}
+}
+
+func TestMemoryOnRuntimeWithoutIt(t *testing.T) {
+	f := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nmemory: true\n", 1)})
+	m, err := provider.ParseMatrix("forgetful", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {github.pull_request.opened: native}\nconnectors: {github: native, slack: native, mcp.http: native}\nside_effects: {\"*\": emulated}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: &provider.Provider{Matrix: m}, Endpoint: "https://fabrica.acme.dev/pr-review"})
+	if e.OK() || !strings.Contains(e.Diags.String(), "can't give routine pr-review the memory it asks for") {
+		t.Errorf("want a memory error, got:\n%s", e.Diags)
+	}
+}

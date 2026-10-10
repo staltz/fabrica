@@ -151,6 +151,11 @@ type Routine struct {
 	Connectors  []names.MaybeName
 	SideEffects []SideEffect
 	Params      []Param
+	// Memory says the routine keeps notes between runs. It's the source of
+	// truth for memory on every runtime: the runtime's own memory feature is
+	// turned on where the routine needs it and off where it doesn't, and
+	// Fabrica keeps the memory itself where the runtime has none.
+	Memory bool
 	// Prompt is the routine's instructions (the Markdown body).
 	Prompt string
 }

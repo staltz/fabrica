@@ -142,6 +142,9 @@ func TestFullCloudLifecycle(t *testing.T) {
 	if !strings.Contains(string(handoff), "/t/"+wantToken) || !strings.Contains(string(handoff), "fabrica confirm h_") {
 		t.Errorf("claude-code-cloud handoff should put the token in the URL and end with confirm:\n%s", handoff)
 	}
+	if !strings.Contains(string(handoff), "6. Memory: this routine doesn't use memory. If the routine has a memory setting of its own, leave it **off**.") {
+		t.Errorf("claude-code-cloud handoff should mirror the routine's (absent) memory:\n%s", handoff)
+	}
 	if info, _ := os.Stat(res.Handoffs[0]); info.Mode().Perm() != 0o600 {
 		t.Errorf("handoff files hold a token and must be private, got %v", info.Mode().Perm())
 	}

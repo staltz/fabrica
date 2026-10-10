@@ -356,7 +356,7 @@ func recordFor(r *plan.Resource, remoteID string, dp *plan.Deployment, now time.
 }
 
 func stateShape(s stub.Shape) home.Shape {
-	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Fingerprint: s.Fingerprint()}
+	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Fingerprint: s.Fingerprint()}
 }
 
 func factoryCommit(dp *plan.Deployment) string {
@@ -394,6 +394,9 @@ func writeHandoff(opts Options, dp *plan.Deployment, state *home.State, c *plan.
 		for _, conn := range shape.Connectors {
 			data.Connectors = append(data.Connectors, provider.HandoffConnector{Name: conn.Name, Setup: stub.DescribeConnector(conn)})
 		}
+		needed := r.Eval.Routine != nil && r.Eval.Routine.Memory
+		support := c.Provider.Matrix.Memory
+		data.Memory = provider.HandoffMemory{Needed: needed, Support: string(support), Setup: stub.DescribeMemory(needed, support)}
 		data.Fabrica = provider.HandoffFabrica{URL: fabricaURL(r.Endpoint, c.Provider, tok)}
 		if c.Provider.Matrix.TokenPlacement() == provider.TokenInHeader {
 			data.Fabrica.Header = "Bearer " + tok

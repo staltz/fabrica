@@ -181,6 +181,11 @@ func (s *session) register(srv *mcp.Server) {
 		Annotations: readOnly(),
 	}, s.routineGet)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "memory_save",
+		Description: "Replace a routine's memory: the notes it keeps for its own next runs on this repo, which routine_get shows. Only for routines whose routine_get says Fabrica keeps their memory.",
+		Annotations: writes(),
+	}, s.memorySave)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_begin",
 		Description: "Start a run and get its run_id. Call it first, in every session. For a routine run, pass routine, runtime, repo and stub exactly as your stub says.",
 		Annotations: writes(),

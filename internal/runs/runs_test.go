@@ -66,6 +66,63 @@ func TestRecordAndRead(t *testing.T) {
 	db2.Close()
 }
 
+func TestMemories(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "runs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	id := NewID(now)
+	db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "check deps", Routine: "deps", ServedBy: ServedRemote})
+
+	if m, err := db.Memory(ctx, "d", "deps", "github.com/acme/app"); err != nil || m.Content != "" {
+		t.Fatalf("a routine that saved nothing has an empty memory: %+v, %v", m, err)
+	}
+	if err := db.SaveMemory(ctx, "d", "deps", "github.com/acme/app", "- reported lodash", id, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveMemory(ctx, "d", "deps", "github.com/acme/app", "- reported lodash and left", id, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := db.Memory(ctx, "d", "deps", "github.com/acme/app")
+	if m.Content != "- reported lodash and left" || m.UpdatedBy != id || !m.UpdatedAt.Equal(now.Add(time.Minute)) {
+		t.Errorf("memory = %+v", m)
+	}
+	if other, _ := db.Memory(ctx, "d", "deps", "github.com/acme/api"); other.Content != "" {
+		t.Errorf("memories are per repo: %+v", other)
+	}
+	if err := db.SaveMemory(ctx, "d", "deps", "github.com/acme/app", strings.Repeat("x", MaxMemoryBytes+1), id, now); err == nil {
+		t.Error("an oversized memory should be refused")
+	}
+	db.SaveMemory(ctx, "d", "deps", "github.com/acme/app", "  ", id, now)
+	if m, _ := db.Memory(ctx, "d", "deps", "github.com/acme/app"); m.Content != "" {
+		t.Errorf("saving nothing should forget: %+v", m)
+	}
+}
+
+func TestMigratesFromV1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.db")
+	raw, _ := sql.Open("sqlite", path)
+	if _, err := raw.Exec(schemaV1 + "PRAGMA user_version = 1;"); err != nil {
+		t.Fatal(err)
+	}
+	raw.Exec(`INSERT INTO runs (run_id, started_at, intent, served_by) VALUES ('run_old', '2026-10-01T00:00:00Z', 'old run', 'local')`)
+	raw.Close()
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if r, err := db.Get(context.Background(), "run_old"); err != nil || r.Intent != "old run" {
+		t.Errorf("old runs survive the migration: %+v, %v", r, err)
+	}
+	if err := db.SaveMemory(context.Background(), "d", "r", "github.com/acme/app", "note", "run_old", time.Now()); err != nil {
+		t.Errorf("the migration adds memories: %v", err)
+	}
+}
+
 func TestNewerSchemaIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.db")
 	raw, _ := sql.Open("sqlite", path)

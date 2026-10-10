@@ -24,6 +24,7 @@ Fabrica sits beside git. It never wraps it. Factories and home repos are plain g
 | **Routine** | Something an agent does automatically when a trigger fires, like "review every new PR". |
 | **Rule** | An instruction that's always on (or on for certain files), in Cursor's rule format. |
 | **Connector** | An integration the agent needs: a runtime's built-in one, like GitHub, or an MCP server. |
+| **Memory** | Notes a routine keeps for its own next runs, when its routine file says `memory: true`. Kept by the runtime where it has a memory feature, and by Fabrica everywhere else. |
 | **Provider** | The piece that translates Fabrica's ideas for one specific runtime. |
 | **Deployment** | A file in the home repo: "run *this* factory's routines on *these* repos in *these* runtimes". |
 | **Stub** | The tiny placeholder Fabrica installs in a runtime instead of the real routine. It just says "load your instructions from Fabrica". |
@@ -72,14 +73,14 @@ Fabrica never installs a routine's real content into a runtime. It installs a **
 
 Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
-What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
+What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
 
 ### Stale stubs
 
 The home repo and the factory can change at any time, but a stub stays installed until `apply` changes it. So before a routine run starts, `run_begin` checks two things, in this order:
 
 1. **The stub is still deployed.** In the latest home repo, the deployment must still include the stub's routine, repo and runtime. Remove any of them (or delete the deployment) and the stub stops as soon as the server sees the change, even before `apply` gets around to deleting it.
-2. **The stub's shape still matches.** The server works out the routine's shape at the factory commit it's about to serve, and compares fingerprints. This catches a changed trigger or connector.
+2. **The stub's shape still matches.** The server works out the routine's shape at the factory commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector or memory setting.
 
 If either check fails, the server refuses the run, records it as `failed`, and tells the agent the deployment needs `fabrica apply`. A stub never runs a routine that's no longer deployed for its repo, expects a different trigger, or needs a connector the stub doesn't have.
 

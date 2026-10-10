@@ -7,7 +7,7 @@ MCP is the **only** way factory content reaches agents. There's no copying files
 | Used by | Claude Code, Cursor IDE and Codex CLI on your machine | Cloud runtimes: Claude routines, Cursor automations, Codex |
 | Transport | stdio | Streamable HTTP |
 | Picks the factory from | Your personal home repo's local deployments | One home repo's cloud deployments |
-| Run history in | `runs.db` in your personal home repo (`~/.fabrica/runs.db`) | Its own SQLite database (`--db`) |
+| Run history and memories in | `runs.db` in your personal home repo (`~/.fabrica/runs.db`) | Its own SQLite database (`--db`) |
 
 Each MCP session is served from **one factory commit**, fixed when the session starts. A merge that lands mid-run never changes what that run sees, and `factory_sha` in run history is exact.
 
@@ -22,7 +22,8 @@ Each MCP session is served from **one factory commit**, fixed when the session s
 | `skills_list()` | Names and descriptions of all skills. Remotely, skills that need their folder on disk are marked unavailable, with the reason. Also lists the skills the factory expects the repo to provide. |
 | `skill_load(name)` | A skill's `SKILL.md` and its file list. Locally, also the folder where the skill was unpacked. |
 | `skill_file(name, path)` | One text file from a skill. |
-| `routine_get(name)` | A routine's full definition: its prompt with params filled in, its skills and connectors, its allowed side effects (and how to do each on this runtime), and the rules. |
+| `routine_get(name)` | A routine's full definition: its prompt with params filled in, its skills and connectors, its allowed side effects (and how to do each on this runtime), its memory, and the rules. |
+| `memory_save(run_id, content)` | Replaces the memory of the run's routine, for its next runs on the same repo (at most 16 KiB of Markdown; empty forgets everything). Only for routines with `memory: true`, on runtimes where Fabrica keeps the memory, and only from the session that began the run. |
 
 Skills over MCP aren't a standard yet, so Fabrica emulates them with these plain tools. The server's MCP instructions, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how relative paths in a skill work. When native skills over MCP arrive, the emulation can go away.
 
@@ -74,7 +75,7 @@ It needs:
 
 - the server secret, in `FABRICA_SERVER_SECRET` (at least 32 characters; `openssl rand -hex 32` makes a good one),
 - read access to the home repo and the factories (Fabrica runs `git`, so give it a credential helper, a deploy key, or a token in the URL),
-- a **persistent volume** for its run-history database.
+- a **persistent volume** for its run-history database, which also holds routine memories.
 
 ```sh
 fabrica mcp --http \

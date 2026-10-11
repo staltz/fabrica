@@ -1,8 +1,6 @@
 package home
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -195,57 +193,6 @@ func TestStateMovesRenamedRuntimes(t *testing.T) {
 	}
 }
 
-func TestStateMovesLegacyKeys(t *testing.T) {
-	dir := t.TempDir()
-	// What Fabrica wrote before factories were renamed to blueprints.
-	old := `factory:
-  git: github.com/acme/blueprint
-  commit: abc
-resources:
-  - id: fabrica.acme.dev/pr-review#pr-review@github.com/acme/app
-    runtime: claude-code-cloud
-    routine: pr-review
-    repo: github.com/acme/app
-    remote_id: trig_1
-    mode: handoff
-    factory_commit: def
-    shape:
-      trigger: github.pull_request.opened
-      connectors: [github]
-      fingerprint: 7f3a9c7f3a9c
-    applied_at: 2026-10-01T00:00:00Z
-pending:
-  - id: h_0123456789
-    action: create
-    resource: fabrica.acme.dev/pr-review#pr-review@github.com/acme/api
-    runtime: claude-code-cloud
-    routine: pr-review
-    repo: github.com/acme/api
-    factory_commit: ghi
-    issued_at: 2026-10-01T00:00:00Z
-`
-	if err := os.MkdirAll(filepath.Join(dir, StateDir), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, StatePath("pr-review")), []byte(old), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s, err := ReadState(dir, "pr-review")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.Blueprint == nil || s.Blueprint.Commit != "abc" || s.Resources[0].BlueprintCommit != "def" || s.Pending[0].BlueprintCommit != "ghi" {
-		t.Fatalf("legacy keys should move to the new ones: %+v", s)
-	}
-	if err := WriteState(dir, "pr-review", s); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(dir, StatePath("pr-review")))
-	if strings.Contains(string(data), "factory:") || strings.Contains(string(data), "factory_commit") || !strings.Contains(string(data), "blueprint_commit: def") {
-		t.Errorf("saving should write only the new keys:\n%s", data)
-	}
-}
-
 func TestMissingServerSaysWhatToDo(t *testing.T) {
 	yaml := "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-cloud]\nroutines: [r]\ntargets: [github.com/a/b]\n"
 	for _, personal := range []bool{false, true} {
@@ -259,32 +206,5 @@ func TestMissingServerSaysWhatToDo(t *testing.T) {
 		if strings.Contains(got, "claude-code-local") != personal {
 			t.Errorf("personal=%v: local runtimes should only be suggested in the personal home repo:\n%s", personal, got)
 		}
-	}
-}
-
-func TestHomeReposFromBeforeTheRenameFailClosed(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("FABRICA_HOME", t.TempDir())
-	testkit.WriteFiles(t, dir, map[string]string{
-		"deployments/pr-review.yaml": "factory: { git: github.com/acme/factory, ref: main }\n",
-		"state/pr-review.yaml":       "resources: []\npending: []\n",
-	})
-	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "git mv deployments factories") {
-		t.Errorf("a deployments/ folder should stop everything, so apply doesn't delete its resources: %v", err)
-	}
-
-	empty := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(empty, "deployments"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Open(empty); err != nil {
-		t.Errorf("an empty deployments/ folder is harmless: %v", err)
-	}
-
-	h := openHome(t, true, map[string]string{
-		"factories/old.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
-	})
-	if got := h.Diags.String(); !strings.Contains(got, "factory: is from before") || !strings.Contains(got, "targets:") {
-		t.Errorf("old keys should say how to rename them:\n%s", got)
 	}
 }

@@ -23,9 +23,6 @@ type State struct {
 	// up after a deleted factory whose runtime came from a folder
 	// provider in that blueprint.
 	Blueprint *StateBlueprint `yaml:"blueprint,omitempty"`
-	// LegacyBlueprint is Blueprint as releases before the rename of
-	// factories to blueprints saved it. It's only read.
-	LegacyBlueprint *StateBlueprint `yaml:"factory,omitempty"`
 	// Resources are the stubs installed in runtimes.
 	Resources []Resource `yaml:"resources"`
 	// Pending are handoffs waiting for `fabrica confirm`.
@@ -67,9 +64,6 @@ type Resource struct {
 	RemoteID        string `yaml:"remote_id,omitempty"`
 	Mode            string `yaml:"mode"`
 	BlueprintCommit string `yaml:"blueprint_commit"`
-	// LegacyBlueprintCommit is BlueprintCommit as releases before the
-	// rename saved it. It's only read.
-	LegacyBlueprintCommit string `yaml:"factory_commit,omitempty"`
 	// TokenHash fingerprints the token baked into the resource, so `plan`
 	// notices a rotated server secret.
 	TokenHash string    `yaml:"token_hash,omitempty"`
@@ -94,13 +88,10 @@ type Pending struct {
 	// RemoteID is the resource's ID for updates and deletes, when known.
 	RemoteID string `yaml:"remote_id,omitempty"`
 	// Shape is what the handoff installs (creates and updates).
-	Shape           *Shape `yaml:"shape,omitempty"`
-	TokenHash       string `yaml:"token_hash,omitempty"`
-	BlueprintCommit string `yaml:"blueprint_commit,omitempty"`
-	// LegacyBlueprintCommit is BlueprintCommit as releases before the
-	// rename saved it. It's only read.
-	LegacyBlueprintCommit string    `yaml:"factory_commit,omitempty"`
-	IssuedAt              time.Time `yaml:"issued_at"`
+	Shape           *Shape    `yaml:"shape,omitempty"`
+	TokenHash       string    `yaml:"token_hash,omitempty"`
+	BlueprintCommit string    `yaml:"blueprint_commit,omitempty"`
+	IssuedAt        time.Time `yaml:"issued_at"`
 }
 
 // Key identifies a resource within a factory: the same identity can
@@ -135,32 +126,7 @@ func ReadState(homeDir, name string) (*State, error) {
 		return nil, fmt.Errorf("%s: %v (only Fabrica should write this file; if someone edited it by hand, restore it from git)", StatePath(name), err)
 	}
 	moveRenamedRuntimes(&s)
-	moveLegacyKeys(&s)
 	return &s, nil
-}
-
-// moveLegacyKeys moves what releases before the rename of factories to
-// blueprints saved under factory: and factory_commit: over to blueprint:
-// and blueprint_commit:, so the next save writes the new keys.
-func moveLegacyKeys(s *State) {
-	if s.Blueprint == nil {
-		s.Blueprint = s.LegacyBlueprint
-	}
-	s.LegacyBlueprint = nil
-	for i := range s.Resources {
-		r := &s.Resources[i]
-		if r.BlueprintCommit == "" {
-			r.BlueprintCommit = r.LegacyBlueprintCommit
-		}
-		r.LegacyBlueprintCommit = ""
-	}
-	for i := range s.Pending {
-		p := &s.Pending[i]
-		if p.BlueprintCommit == "" {
-			p.BlueprintCommit = p.LegacyBlueprintCommit
-		}
-		p.LegacyBlueprintCommit = ""
-	}
 }
 
 // moveRenamedRuntimes moves what earlier Fabrica releases recorded under

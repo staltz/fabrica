@@ -15,7 +15,7 @@ import (
 // ProtocolVersion is the version of the JSON protocol Fabrica speaks with a
 // folder provider's `api` program. It goes into every request so programs
 // can refuse versions they don't understand.
-const ProtocolVersion = 2
+const ProtocolVersion = 1
 
 // Resource is everything a runtime needs to set up one stub: one routine,
 // on one repo, in one runtime.

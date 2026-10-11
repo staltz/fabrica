@@ -179,10 +179,6 @@ func TestHookCommandRoundTrip(t *testing.T) {
 	if !ok || got != h {
 		t.Errorf("round trip = %+v, %v", got, ok)
 	}
-	old := "fabrica hook --runtime cursor-local --deployment d --routine r --stub f --event git.pre_push"
-	if got, ok := ParseHookCommand(old); !ok || got.Factory != "d" {
-		t.Errorf("hooks from before the rename should still be recognized: %+v, %v", got, ok)
-	}
 	for _, notOurs := range []string{"my-linter", "fabrica mcp", "/bin/fabricate hook", "fabrica hook --factory d"} {
 		if _, ok := ParseHookCommand(notOurs); ok {
 			t.Errorf("%q shouldn't be recognized as a Fabrica hook", notOurs)

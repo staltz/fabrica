@@ -123,33 +123,6 @@ func TestMigratesFromV1(t *testing.T) {
 	}
 }
 
-func TestMigratesFromV2(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "runs.db")
-	raw, _ := sql.Open("sqlite", path)
-	if _, err := raw.Exec(schemaV1 + schemaV2 + "PRAGMA user_version = 2;"); err != nil {
-		t.Fatal(err)
-	}
-	raw.Exec(`INSERT INTO runs (run_id, started_at, intent, deployment, factory_sha, served_by) VALUES ('run_old', '2026-10-01T00:00:00Z', 'old run', 'pr-review', 'abc123', 'remote')`)
-	raw.Exec(`INSERT INTO memories (deployment, routine, repo, content, updated_at, updated_by) VALUES ('pr-review', 'deps', 'github.com/acme/app', 'note', '2026-10-01T00:00:00Z', 'run_old')`)
-	raw.Close()
-	db, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	ctx := context.Background()
-	if r, err := db.Get(ctx, "run_old"); err != nil || r.Factory != "pr-review" || r.BlueprintSHA != "abc123" {
-		t.Errorf("old runs keep their factory and blueprint commit: %+v, %v", r, err)
-	}
-	if m, _ := db.Memory(ctx, "pr-review", "deps", "github.com/acme/app"); m.Content != "note" {
-		t.Errorf("old memories survive the migration: %+v", m)
-	}
-	var factory string
-	if err := db.db.QueryRow(`SELECT factory FROM run_overview WHERE run_id = 'run_old'`).Scan(&factory); err != nil || factory != "pr-review" {
-		t.Errorf("run_overview uses the new columns: %q, %v", factory, err)
-	}
-}
-
 func TestNewerSchemaIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.db")
 	raw, _ := sql.Open("sqlite", path)

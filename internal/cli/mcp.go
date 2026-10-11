@@ -140,13 +140,7 @@ func newHook(g *globals) *cobra.Command {
 	f.StringVar(&o.Routine, "routine", "", "the routine")
 	f.StringVar(&o.Fingerprint, "stub", "", "the stub fingerprint")
 	f.StringVar(&o.Event, "event", "", "the trigger")
-	// Hooks installed before deployments were renamed to factories still
-	// pass --deployment.
-	f.StringVar(&o.Factory, "deployment", "", "the local factory (old name of --factory)")
-	_ = f.MarkHidden("deployment")
-	cmd.MarkFlagsOneRequired("factory", "deployment")
-	cmd.MarkFlagsMutuallyExclusive("factory", "deployment")
-	for _, name := range []string{"runtime", "routine", "stub", "event"} {
+	for _, name := range []string{"runtime", "factory", "routine", "stub", "event"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd

@@ -7,8 +7,6 @@ factories/<name>.yaml             # what to deploy where (you write these)
 state/<name>.yaml                 # what's installed, one per cloud factory (only Fabrica writes these)
 ```
 
-Home repos from before factories got their name kept them in `deployments/`, with `factory:` for the blueprint and `repos:` for the targets. Fabrica refuses to work on such a home repo, rather than mistake it for one whose factories were all deleted. To update it, run `git mv deployments factories`, rename those two keys in each file, and commit.
-
 ## Personal and team home repos
 
 - Your **personal** home repo is the folder `FABRICA_HOME` points to, or `~/.fabrica` by default. It can hold both local and cloud factories. Your local run history (`runs.db`) lives in it too, so `runs.db*` belongs in its `.gitignore`.

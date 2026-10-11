@@ -46,8 +46,8 @@ def main():
         fail("usage: api <list|create|update|delete>")
     op = sys.argv[1]
     request = json.load(sys.stdin)
-    if request.get("version") != 2:
-        fail(f"this provider speaks protocol version 2, not {request.get('version')}")
+    if request.get("version") != 1:
+        fail(f"this provider speaks protocol version 1, not {request.get('version')}")
 
     resources = load()
 

@@ -185,10 +185,6 @@ type HandoffData struct {
 	ConfirmCommand string
 }
 
-// Deployment is Factory under its old name, for handoff.md templates
-// written before deployments were renamed to factories.
-func (d HandoffData) Deployment() string { return d.Factory }
-
 // HandoffTrigger describes the trigger to set up.
 type HandoffTrigger struct {
 	On          string

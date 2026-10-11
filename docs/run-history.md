@@ -21,7 +21,7 @@ Fields written by the server (times, blueprint commit, factory, skills loaded) a
 
 ## The schema
 
-The database's `PRAGMA user_version` is the schema version, `3` for this one. Version 2 added `memories`, and version 3 renamed the `deployment` columns to `factory` and `factory_sha` to `blueprint_sha`; Fabrica migrates older databases when it opens them.
+The database's `PRAGMA user_version` is the schema version, `2` for this one. Version 2 added `memories`; Fabrica migrates older databases when it opens them.
 
 ### `runs`
 

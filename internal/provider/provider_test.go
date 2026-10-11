@@ -175,7 +175,7 @@ esac
 		t.Fatalf("Create = %q, %v", id, err)
 	}
 	sent, _ := os.ReadFile(filepath.Join(dir, "last-request.json"))
-	if !strings.Contains(string(sent), `"version":2`) || !strings.Contains(string(sent), `"op":"create"`) {
+	if !strings.Contains(string(sent), `"version":1`) || !strings.Contains(string(sent), `"op":"create"`) {
 		t.Errorf("unexpected request: %s", sent)
 	}
 	if err := api.Update(ctx, "r2", Resource{Factory: "pr-review"}); err != nil {
@@ -228,16 +228,5 @@ func TestCursorHandoffMirrorsTheRoutinesMemory(t *testing.T) {
 		if err != nil || !strings.Contains(out, want) {
 			t.Errorf("memory needed=%v: want %q in:\n%s (%v)", needed, want, out, err)
 		}
-	}
-}
-
-func TestHandoffTemplatesCanUseTheOldDeploymentName(t *testing.T) {
-	tmpl, err := parseHandoff("handoff.md", "{{.Deployment}} and {{.Factory}}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out strings.Builder
-	if err := tmpl.Execute(&out, HandoffData{Factory: "pr-review"}); err != nil || out.String() != "pr-review and pr-review" {
-		t.Errorf("got %q, %v", out.String(), err)
 	}
 }

@@ -32,28 +32,28 @@ import (
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 3
+const SchemaVersion = 2
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
 // see docs/run-history.md.
-const Schema = schemaV1 + schemaV2 + schemaV3
+const Schema = schemaV1 + schemaV2
 
 // migrations[i] takes a database from schema version i to i+1.
-var migrations = []string{schemaV1, schemaV2, schemaV3}
+var migrations = []string{schemaV1, schemaV2}
 
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
 CREATE TABLE runs (
-  run_id      TEXT PRIMARY KEY,
-  started_at  TEXT NOT NULL,             -- RFC 3339, UTC
-  intent      TEXT NOT NULL,             -- the agent's summary of the request, at most 20 words
-  routine     TEXT,                      -- NULL for interactive sessions
-  runtime     TEXT,
-  repo        TEXT,                      -- like github.com/acme/app
-  deployment  TEXT,
-  factory_sha TEXT,                      -- the exact factory commit served
-  stub        TEXT,                      -- the stub fingerprint the run claimed, if any
-  served_by   TEXT NOT NULL CHECK (served_by IN ('local', 'remote'))
+  run_id        TEXT PRIMARY KEY,
+  started_at    TEXT NOT NULL,           -- RFC 3339, UTC
+  intent        TEXT NOT NULL,           -- the agent's summary of the request, at most 20 words
+  routine       TEXT,                    -- NULL for interactive sessions
+  runtime       TEXT,
+  repo          TEXT,                    -- like github.com/acme/app
+  factory       TEXT,
+  blueprint_sha TEXT,                    -- the exact blueprint commit served
+  stub          TEXT,                    -- the stub fingerprint the run claimed, if any
+  served_by     TEXT NOT NULL CHECK (served_by IN ('local', 'remote'))
 );
 
 CREATE TABLE checkpoints (
@@ -79,7 +79,7 @@ CREATE INDEX skill_loads_by_run ON skill_loads(run_id);
 CREATE VIEW run_overview AS
 SELECT
   r.run_id, r.started_at, r.intent, r.routine, r.runtime, r.repo,
-  r.deployment, r.factory_sha, r.served_by,
+  r.factory, r.blueprint_sha, r.served_by,
   (SELECT c.status  FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_status,
   (SELECT c.summary FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_summary,
   (SELECT COUNT(*)  FROM checkpoints c WHERE c.run_id = r.run_id) AS checkpoint_count,
@@ -89,38 +89,18 @@ FROM runs r;
 
 // schemaV2 adds routine memories.
 const schemaV2 = `
--- The notes a routine keeps between runs, one per deployment, routine and
+-- The notes a routine keeps between runs, one per factory, routine and
 -- repo. Only routines with memory: true have one, and only on runtimes
 -- whose own memory Fabrica stands in for.
 CREATE TABLE memories (
-  deployment TEXT NOT NULL,
+  factory    TEXT NOT NULL,
   routine    TEXT NOT NULL,
   repo       TEXT NOT NULL,
   content    TEXT NOT NULL,              -- Markdown, written by the agent
   updated_at TEXT NOT NULL,              -- RFC 3339, UTC
   updated_by TEXT NOT NULL REFERENCES runs(run_id),
-  PRIMARY KEY (deployment, routine, repo)
+  PRIMARY KEY (factory, routine, repo)
 );
-`
-
-// schemaV3 follows the renames of deployments to factories and of
-// factories to blueprints.
-const schemaV3 = `
-DROP VIEW run_overview;
-ALTER TABLE runs RENAME COLUMN deployment TO factory;
-ALTER TABLE runs RENAME COLUMN factory_sha TO blueprint_sha;
-ALTER TABLE memories RENAME COLUMN deployment TO factory;
-
--- One row per run with its latest checkpoint, for quick looks.
-CREATE VIEW run_overview AS
-SELECT
-  r.run_id, r.started_at, r.intent, r.routine, r.runtime, r.repo,
-  r.factory, r.blueprint_sha, r.served_by,
-  (SELECT c.status  FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_status,
-  (SELECT c.summary FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_summary,
-  (SELECT COUNT(*)  FROM checkpoints c WHERE c.run_id = r.run_id) AS checkpoint_count,
-  (SELECT group_concat(skill, ',') FROM (SELECT DISTINCT s.skill FROM skill_loads s WHERE s.run_id = r.run_id ORDER BY s.skill)) AS skills_loaded
-FROM runs r;
 `
 
 // DB is a run-history database.

@@ -119,7 +119,7 @@ func ParseHookCommand(cmd string) (Hook, bool) {
 		switch args[i] {
 		case "--runtime":
 			h.Runtime = args[i+1]
-		case "--factory", "--deployment": // --deployment is from before the rename
+		case "--factory":
 			h.Factory = args[i+1]
 		case "--routine":
 			h.Routine = args[i+1]

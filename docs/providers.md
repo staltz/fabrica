@@ -127,7 +127,7 @@ Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, t
 
 The protocol is deliberately boring, so you can write a provider in any language. Fabrica runs `api <op>`, writes one JSON request to its stdin, and reads one JSON response from its stdout. A non-zero exit, or an `"error"` field in the response, means the operation failed, and whatever the program printed on stderr is shown to the user. The environment is passed through, so the program can read its credentials from environment variables. Each call times out after two minutes.
 
-Every request has `"version": 2` and `"op"`. (Version 1 called the `factory` field `deployment`.) The operations are:
+Every request has `"version": 1` and `"op"`. The operations are:
 
 | Op | Request | Response |
 |---|---|---|

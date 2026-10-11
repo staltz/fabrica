@@ -18,14 +18,7 @@ import (
 const (
 	FactoriesDir = "factories"
 	StateDir     = "state"
-	// LegacyFactoriesDir is what FactoriesDir was called before
-	// deployments were renamed to factories.
-	LegacyFactoriesDir = "deployments"
 )
-
-// RenameHint says how to update a home repo from before deployments were
-// renamed to factories.
-const RenameHint = "Fabrica now calls deployments factories: rename the folder with `git mv deployments factories`, and in each file rename the factory: key to blueprint: and repos: to targets:, then commit"
 
 // Home is a home repo, read from disk.
 type Home struct {
@@ -56,17 +49,6 @@ func Open(dir string) (*Home, error) {
 		return nil, err
 	}
 	h := &Home{Dir: abs, Personal: paths.Same(abs, personal), Factories: map[string]*Factory{}}
-
-	// A home repo from before the rename would look like it has no
-	// factories, and apply would delete everything their state records.
-	// An empty deployments/ folder, like the one Fabrica used to create in
-	// your personal home repo, is harmless.
-	legacy, _ := os.ReadDir(filepath.Join(abs, LegacyFactoriesDir))
-	for _, e := range legacy {
-		if strings.HasSuffix(e.Name(), ".yaml") || strings.HasSuffix(e.Name(), ".yml") {
-			return nil, fmt.Errorf("the home repo at %s has a %s/ folder; %s", abs, LegacyFactoriesDir, RenameHint)
-		}
-	}
 
 	entries, err := os.ReadDir(filepath.Join(abs, FactoriesDir))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {

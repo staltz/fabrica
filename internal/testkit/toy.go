@@ -153,7 +153,7 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return err
 	}
-	if req.Version != 2 {
+	if req.Version != 1 {
 		return fmt.Errorf("unsupported protocol version %d", req.Version)
 	}
 	enc := json.NewEncoder(out)

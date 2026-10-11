@@ -160,14 +160,6 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 	if err := names.Validate(name); err != nil {
 		return fail("the file name isn't a valid factory name: %v", err)
 	}
-	var keys map[string]yaml.Node
-	if err := yamlx.DecodeLenient(data, &keys); err == nil {
-		for _, old := range []string{"factory", "repos"} {
-			if _, ok := keys[old]; ok {
-				return failHint(RenameHint, "%s: is from before deployments were renamed to factories; use blueprint: and targets:", old)
-			}
-		}
-	}
 	var f factoryFile
 	if err := yamlx.DecodeStrict(data, &f); err != nil {
 		return fail("%v", err)

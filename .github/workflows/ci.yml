@@ -30,5 +30,5 @@ jobs:
       - name: Examples still pass `fabrica check`
         run: |
           go build -o fabrica ./cmd/fabrica
-          ./fabrica check examples/starter-factory
-          ./fabrica check examples/custom-provider/factory
+          ./fabrica check examples/starter-blueprint
+          ./fabrica check examples/custom-provider/blueprint

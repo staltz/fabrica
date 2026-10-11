@@ -76,6 +76,52 @@ func TestFactoryErrors(t *testing.T) {
 	}
 }
 
+func TestRoutineOnSomeRuntimes(t *testing.T) {
+	yaml := `blueprint: { git: github.com/acme/blueprint, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud, cursor-cloud]
+routines:
+  - pr-review
+  - routine: release-notes
+    runtimes: [claude-code-cloud]
+targets: [github.com/acme/app]
+`
+	h := openHome(t, false, map[string]string{"factories/x.yaml": yaml})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	d := h.Factories["x"]
+	if !d.Runs("pr-review", "cursor-cloud") || !d.Runs("release-notes", "claude-code-cloud") || d.Runs("release-notes", "cursor-cloud") {
+		t.Errorf("routine runtimes = %v", d.RoutineRuntimes)
+	}
+	if got := strings.Join(d.RoutinesOn("cursor-cloud"), ","); got != "pr-review" {
+		t.Errorf("routines on cursor-cloud = %s", got)
+	}
+	if got := strings.Join(d.Routines, ","); got != "pr-review,release-notes" {
+		t.Errorf("routines = %s", got)
+	}
+}
+
+func TestRoutineRuntimesErrors(t *testing.T) {
+	head := "blueprint: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud, cursor-cloud]\ntargets: [github.com/a/b]\n"
+	cases := map[string]string{
+		"runtimes of r: codex isn't in the factory's runtimes":        "routines: [{ routine: r, runtimes: [codex] }]\n",
+		"runtimes of r: claude was renamed to claude-code-cloud":      "routines: [{ routine: r, runtimes: [claude] }]\n",
+		"runtimes of r is empty":                                      "routines: [{ routine: r, runtimes: [] }]\n",
+		`runtimes of r lists "cursor-cloud" twice`:                    "routines: [{ routine: r, runtimes: [cursor-cloud, cursor-cloud] }]\n",
+		`unknown key "runtime"`:                                       "routines: [{ routine: r, runtime: [cursor-cloud] }]\n",
+		"a routine entry needs a routine key":                         "routines: [{ runtimes: [cursor-cloud] }]\n",
+		`routines: lists "r" twice`:                                   "routines: [r, { routine: r, runtimes: [cursor-cloud] }]\n",
+		"runtimes: lists claude-code-cloud, but none of the routines": "routines: [{ routine: r, runtimes: [cursor-cloud] }]\n",
+	}
+	for want, routines := range cases {
+		h := openHome(t, false, map[string]string{"factories/x.yaml": head + routines})
+		if got := h.Diags.String(); !h.Diags.HasCode("factory.invalid") || !strings.Contains(got, want) {
+			t.Errorf("want %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestFactoryWithOldRuntimeName(t *testing.T) {
 	cases := map[string]string{
 		"runtimes: claude-code was renamed to claude-code-local": "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code]\ntargets: [\"*\"]\n",

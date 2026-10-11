@@ -255,6 +255,55 @@ func TestUnsupportedTriggerIsAnError(t *testing.T) {
 	}
 }
 
+func TestRoutineOnSomeRuntimes(t *testing.T) {
+	h := newHarness(t)
+	// Only claude-code-cloud has release-notes' trigger, so on toy it would
+	// be an error.
+	h.w.UpdateBlueprint(map[string]string{
+		"routines/release-notes.md": "---\ntrigger: { on: github.release.published }\nconnectors: [github]\n---\nWrite the release notes.\n",
+		"routines/triage.md":        "---\ntrigger: { on: github.pull_request.synchronize }\nconnectors: [github]\n---\nLabel the PR.\n",
+	})
+	routines := "routines:\n  - pr-review\n  - { routine: release-notes, runtimes: [claude-code-cloud] }\n  - { routine: triage, runtimes: [toy] }"
+	factory := strings.Replace(testkit.PRReviewFactory, "routines: [pr-review]", routines, 1)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": factory}).CommitPush("add")
+
+	// 2 repos × (pr-review on 2 runtimes + release-notes on 1 + triage on 1).
+	p := h.plan()
+	if p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 8 {
+		t.Fatalf("exit code = %d, want 2 with 8 changes\n%s", p.ExitCode(), render(p))
+	}
+	for _, c := range p.Factory("pr-review").Changes {
+		if c.Routine == "release-notes" && c.Key.Runtime != "claude-code-cloud" || c.Routine == "triage" && c.Key.Runtime != "toy" {
+			t.Errorf("%s shouldn't be on %s", c.Routine, c.Key.Runtime)
+		}
+	}
+	h.apply()
+	if got := len(h.w.Toy.Resources()); got != 4 {
+		t.Fatalf("toy runtime has %d resources, want 4 (pr-review and triage)", got)
+	}
+
+	// Narrowing pr-review to claude-code-cloud deletes its toy stubs.
+	h.w.Home.Pull()
+	narrowed := strings.Replace(factory, "  - pr-review\n", "  - { routine: pr-review, runtimes: [claude-code-cloud] }\n", 1)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": narrowed}).CommitPush("narrow")
+	p = h.plan()
+	var deletes []string
+	for _, c := range p.Factory("pr-review").Changes {
+		if c.Action == plan.Delete {
+			deletes = append(deletes, c.Routine+" on "+c.Key.Runtime+": "+strings.Join(c.Reasons, ""))
+		}
+	}
+	if len(deletes) != 2 || deletes[0] != "pr-review on toy: routine pr-review no longer runs on runtime toy" {
+		t.Fatalf("deletes = %v\n%s", deletes, render(p))
+	}
+	h.apply()
+	for _, r := range h.w.Toy.Resources() {
+		if !strings.Contains(r.Identity, "#triage@") {
+			t.Errorf("only triage should be left on toy, got %+v", r)
+		}
+	}
+}
+
 func TestLockIsRespectedAndCanBeRemoved(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")

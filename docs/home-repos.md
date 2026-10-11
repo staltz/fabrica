@@ -39,15 +39,37 @@ params:
 | `blueprint` | yes | `git` and `ref` (and optionally `path`) of the blueprint, like an import. |
 | `server` | for cloud | The URL of your self-hosted Fabrica server. Must be `https` (plain `http` only for localhost). |
 | `runtimes` | yes | Where to run: built-in runtimes, or ones from the blueprint's [folder providers](providers.md#folder-providers). A factory is either all cloud or all local. |
-| `routines` | for cloud | Which of the blueprint's routines to deploy. |
+| `routines` | for cloud | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
 
 - **The file name is the factory's ID.** `factories/pr-review.yaml` is the factory `pr-review`.
-- **It expands to every combination** of routines × targets × runtimes. The example creates 1 × 2 × 2 = 4 remote resources, each tracked separately.
+- **It expands to every combination** of routines × targets × runtimes. The example creates 1 × 2 × 2 = 4 remote resources, each tracked separately. A routine can be narrowed to some of the runtimes, see [below](#routines-on-some-runtimes).
 - **The endpoint** is `server` plus the factory's name: `https://fabrica.acme.dev/pr-review`. Fabrica builds it for you.
 - **Repo names** are always written as `host/owner/repo`. Git remotes like `git@github.com:acme/app.git` are turned into that form, in lowercase.
 - **Overlap is allowed.** Several factories, from different home repos and different blueprints, may target the same repo. Two PR reviewers on one repo is a people problem, not one the tool prevents.
+
+### Routines on some runtimes
+
+By default every routine runs on every runtime of its factory. To run a routine on only some of them, write it as `{ routine, runtimes }`:
+
+```yaml
+# factories/acme-app.yaml
+blueprint: { git: github.com/acme/blueprint, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud, cursor-cloud]
+routines:
+  - pr-review                                              # on both runtimes
+  - { routine: release-notes, runtimes: [claude-code-cloud] }
+targets: [github.com/acme/app]
+```
+
+This creates 3 remote resources: `pr-review` on both runtimes, and `release-notes` only on `claude-code-cloud`. Since `release-notes` never meets `cursor-cloud`, it doesn't matter whether Cursor supports its trigger.
+
+- A routine's `runtimes` must be listed in the factory's own `runtimes:`, which still decide whether the factory is cloud or local.
+- In a cloud factory, every runtime must have at least one routine running on it. A runtime with none is an error, since it would install nothing.
+- Narrowing a routine to fewer runtimes works like removing a runtime: `plan` shows its stubs on the other runtimes as deletes, and the server refuses their runs straight away.
+- Locally, it decides which tools get the routine's hook or scheduled task. Every runtime of a local factory still serves its blueprint over MCP.
 
 ### Params
 

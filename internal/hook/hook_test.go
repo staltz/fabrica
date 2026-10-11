@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -133,5 +134,12 @@ func TestQuietWhenItDoesNotApply(t *testing.T) {
 	}
 	if out := run(t, o, `{"cwd": "`+t.TempDir()+`", "tool_input": {"command": "git push"}}`); out != nil {
 		t.Errorf("outside a git repo the hook must stay quiet, got %v", out)
+	}
+	narrowed := "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [{ routine: review-before-push, runtimes: [cursor-local] }]\n"
+	if err := os.WriteFile(filepath.Join(o.HomeDir, "factories", "oss-work.yaml"), []byte(narrowed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(t, o, in); out != nil {
+		t.Errorf("a routine narrowed to other runtimes must stay quiet, got %v", out)
 	}
 }

@@ -97,7 +97,7 @@ func Run(ctx context.Context, o Options) error {
 		return nil
 	}
 	d, _ := h.MatchLocal(repo, o.Runtime)
-	if d == nil || d.Name != o.Factory || !d.HasRoutine(o.Routine) {
+	if d == nil || d.Name != o.Factory || !d.Runs(o.Routine, o.Runtime) {
 		return nil // this routine doesn't apply here (anymore)
 	}
 	if ws, err := product.InspectDir(ctx, top); err != nil || !ws.HasLine() {

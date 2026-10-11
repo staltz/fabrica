@@ -82,7 +82,7 @@ What gets baked into the stub is called its **shape**: the trigger, the connecto
 
 The home repo and the blueprint can change at any time, but a stub stays installed until `apply` changes it. So before a routine run starts, `run_begin` checks two things, in this order:
 
-1. **The stub is still deployed.** In the latest home repo, the factory must still include the stub's routine, target and runtime. Remove any of them (or delete the factory) and the stub stops as soon as the server sees the change, even before `apply` gets around to deleting it.
+1. **The stub is still deployed.** In the latest home repo, the factory must still include the stub's routine, target and runtime, and run that routine on that runtime. Remove any of them (or delete the factory) and the stub stops as soon as the server sees the change, even before `apply` gets around to deleting it.
 2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector or memory setting.
 
 If either check fails, the server refuses the run, records it as `failed`, and tells the agent the factory needs `fabrica apply`. A stub never runs a routine that's no longer deployed for its repo, expects a different trigger, or needs a connector the stub doesn't have.

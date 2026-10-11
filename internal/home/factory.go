@@ -62,8 +62,11 @@ type Factory struct {
 	Server    string
 	Runtimes  []string
 	Routines  []string
-	Targets   []Target
-	Params    map[string]string
+	// RoutineRuntimes narrows routines to some of the factory's
+	// runtimes. A routine that isn't in it runs on all of them.
+	RoutineRuntimes map[string][]string
+	Targets         []Target
+	Params          map[string]string
 	// Scope is cloud or local, worked out from the runtimes.
 	Scope provider.Scope
 }
@@ -104,6 +107,27 @@ func (d *Factory) HasRuntime(rt string) bool { return contains(d.Runtimes, rt) }
 // HasRoutine reports whether the factory includes a routine.
 func (d *Factory) HasRoutine(r string) bool { return contains(d.Routines, r) }
 
+// Runs reports whether the factory runs a routine on a runtime: both are
+// in the factory, and the routine isn't narrowed to other runtimes.
+func (d *Factory) Runs(routine, runtime string) bool {
+	if !d.HasRoutine(routine) || !d.HasRuntime(runtime) {
+		return false
+	}
+	only, ok := d.RoutineRuntimes[routine]
+	return !ok || contains(only, runtime)
+}
+
+// RoutinesOn lists the routines the factory runs on a runtime.
+func (d *Factory) RoutinesOn(runtime string) []string {
+	var out []string
+	for _, r := range d.Routines {
+		if d.Runs(r, runtime) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // ParamsFor merges the factory's params with one target's overrides.
 func (d *Factory) ParamsFor(repo string) map[string]string {
 	out := map[string]string{}
@@ -135,9 +159,14 @@ type factoryFile struct {
 	Blueprint *BlueprintRef        `yaml:"blueprint"`
 	Server    string               `yaml:"server"`
 	Runtimes  []string             `yaml:"runtimes"`
-	Routines  []string             `yaml:"routines"`
+	Routines  []yaml.Node          `yaml:"routines"`
 	Targets   []yaml.Node          `yaml:"targets"`
 	Params    map[string]yaml.Node `yaml:"params"`
+}
+
+type routineFile struct {
+	Routine  string   `yaml:"routine"`
+	Runtimes []string `yaml:"runtimes"`
 }
 
 type targetFile struct {
@@ -206,8 +235,9 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 	}
 
 	seen = map[string]bool{}
-	for _, r := range f.Routines {
-		if err := names.Validate(r); err != nil {
+	for _, node := range f.Routines {
+		r, only, err := parseRoutineEntry(&node, d.Runtimes)
+		if err != nil {
 			return fail("routines: %v", err)
 		}
 		if seen[r] {
@@ -215,6 +245,12 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		}
 		seen[r] = true
 		d.Routines = append(d.Routines, r)
+		if only != nil {
+			if d.RoutineRuntimes == nil {
+				d.RoutineRuntimes = map[string][]string{}
+			}
+			d.RoutineRuntimes[r] = only
+		}
 	}
 
 	var err error
@@ -258,6 +294,11 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		if len(d.Routines) == 0 {
 			return fail("routines: is empty; a cloud factory exists to run routines, so list at least one")
 		}
+		for _, rt := range d.Runtimes {
+			if len(d.RoutinesOn(rt)) == 0 {
+				return fail("runtimes: lists %s, but none of the routines run on it; remove it, or add it to a routine's runtimes", rt)
+			}
+		}
 	case provider.Local:
 		if !personal {
 			return fail("local factories only live in your personal home repo; team home repos are cloud-only in v0.1")
@@ -284,6 +325,60 @@ func missingServerHint(file string, personal bool) string {
 	}
 	// Indent the later lines so they line up under "hint:".
 	return strings.Join(steps, "\n  ")
+}
+
+// parseRoutineEntry reads one entry under routines:, which is a name, or
+// `{ routine, runtimes }` to run it on only some of the factory's
+// runtimes. only is nil when the routine runs on all of them.
+func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []string, err error) {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		name = node.Value
+	case yaml.MappingNode:
+		var rf routineFile
+		if err := node.Decode(&rf); err != nil {
+			return "", nil, err
+		}
+		// Decode isn't strict, so check the keys ourselves.
+		hasRuntimes := false
+		for i := 0; i < len(node.Content); i += 2 {
+			switch k := node.Content[i].Value; k {
+			case "routine":
+			case "runtimes":
+				hasRuntimes = true
+			default:
+				return "", nil, fmt.Errorf("line %d: unknown key %q (a routine entry has routine and runtimes)", node.Content[i].Line, k)
+			}
+		}
+		name = rf.Routine
+		if name == "" {
+			return "", nil, fmt.Errorf("line %d: a routine entry needs a routine key", node.Line)
+		}
+		if hasRuntimes {
+			if len(rf.Runtimes) == 0 {
+				return "", nil, fmt.Errorf("runtimes of %s is empty; list where it should run, or write just its name to run it on every runtime", name)
+			}
+			only = []string{}
+			for _, rt := range rf.Runtimes {
+				if current, ok := provider.Renamed(rt); ok {
+					return "", nil, fmt.Errorf("runtimes of %s: %s was renamed to %s; use the new name", name, rt, current)
+				}
+				if !contains(runtimes, rt) {
+					return "", nil, fmt.Errorf("runtimes of %s: %s isn't in the factory's runtimes: [%s]", name, rt, strings.Join(runtimes, ", "))
+				}
+				if contains(only, rt) {
+					return "", nil, fmt.Errorf("runtimes of %s lists %q twice", name, rt)
+				}
+				only = append(only, rt)
+			}
+		}
+	default:
+		return "", nil, fmt.Errorf("line %d: each routine is a name like pr-review, or `{ routine: …, runtimes: […] }`", node.Line)
+	}
+	if err := names.Validate(name); err != nil {
+		return "", nil, err
+	}
+	return name, only, nil
 }
 
 func parseTarget(node *yaml.Node) (Target, error) {

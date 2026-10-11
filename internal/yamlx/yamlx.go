@@ -104,7 +104,7 @@ var (
 
 // friendly rewrites the YAML library's error messages into something a
 // person can act on. For example "field foo not found in type
-// factory.manifestFile" becomes `unknown key "foo"`.
+// blueprint.manifestFile" becomes `unknown key "foo"`.
 func friendly(err error) error {
 	msg := err.Error()
 	msg = strings.TrimPrefix(msg, "yaml: ")
@@ -151,7 +151,7 @@ func goTypeName(t string) string {
 	case strings.HasPrefix(t, "int") || strings.HasPrefix(t, "float"):
 		return "a number"
 	default:
-		// A struct type, like factory.triggerFile.
+		// A struct type, like blueprint.triggerFile.
 		return "a map"
 	}
 }

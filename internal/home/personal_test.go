@@ -27,7 +27,7 @@ func TestEnsurePersonalCreatesHomeRepo(t *testing.T) {
 	if err != nil || !created || got != dir {
 		t.Fatalf("EnsurePersonal = %q, %v, %v; want %q, true, nil", got, created, err, dir)
 	}
-	for _, sub := range []string{".git", DeploymentsDir} {
+	for _, sub := range []string{".git", FactoriesDir} {
 		if info, err := os.Stat(filepath.Join(dir, sub)); err != nil || !info.IsDir() {
 			t.Errorf("want a %s folder: %v", sub, err)
 		}
@@ -36,7 +36,7 @@ func TestEnsurePersonalCreatesHomeRepo(t *testing.T) {
 		t.Errorf(".gitignore = %q", s)
 	}
 	h, err := Open(dir)
-	if err != nil || !h.Personal || len(h.Deployments) != 0 || len(h.Diags) != 0 {
+	if err != nil || !h.Personal || len(h.Factories) != 0 || len(h.Diags) != 0 {
 		t.Errorf("the new home repo should open clean: %+v, %v", h, err)
 	}
 
@@ -79,7 +79,7 @@ func TestEnsurePersonalLeavesGitReposAlone(t *testing.T) {
 	if _, created, err := EnsurePersonal(context.Background()); err != nil || created {
 		t.Fatalf("EnsurePersonal = %v, %v; want false, nil", created, err)
 	}
-	for _, name := range []string{DeploymentsDir, ".gitignore"} {
+	for _, name := range []string{FactoriesDir, ".gitignore"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			t.Errorf("%s shouldn't be added to a git repo that's already there", name)
 		}

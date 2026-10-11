@@ -15,48 +15,48 @@ func TestNewCommand(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	work := t.TempDir()
 
-	out := mustFab(t, 0, work, "new", "my-factory")
+	out := mustFab(t, 0, work, "new", "my-blueprint")
 	for _, want := range []string{
-		"from Fabrica's starter factory",
+		"from Fabrica's starter blueprint",
 		"5 skills, 3 routines, 4 rules, 2 connectors",
 		"Initialized a new git repo there.",
-		"cd my-factory",
-		`git add . && git commit -m "Start a factory"`,
-		"factory: { git: github.com/you/my-factory, ref: main }",
+		"cd my-blueprint",
+		`git add . && git commit -m "Start a blueprint"`,
+		"blueprint: { git: github.com/you/my-blueprint, ref: main }",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("want %q in:\n%s", want, out)
 		}
 	}
-	factoryDir := filepath.Join(work, "my-factory")
-	if _, err := os.Stat(filepath.Join(factoryDir, ".git")); err != nil {
-		t.Errorf("the factory should be a git repo: %v", err)
+	blueprintDir := filepath.Join(work, "my-blueprint")
+	if _, err := os.Stat(filepath.Join(blueprintDir, ".git")); err != nil {
+		t.Errorf("the blueprint should be a git repo: %v", err)
 	}
-	if testkit.Git(t, factoryDir, "status", "--porcelain") == "" {
+	if testkit.Git(t, blueprintDir, "status", "--porcelain") == "" {
 		t.Error("new shouldn't commit: the files should be waiting to be added")
 	}
-	if out := mustFab(t, 0, work, "check", "my-factory"); !strings.Contains(out, "No problems found") {
-		t.Errorf("the new factory should check clean:\n%s", out)
+	if out := mustFab(t, 0, work, "check", "my-blueprint"); !strings.Contains(out, "No problems found") {
+		t.Errorf("the new blueprint should check clean:\n%s", out)
 	}
 
-	out = mustFab(t, 1, work, "new", "my-factory")
-	if !strings.Contains(out, "is already a factory") {
+	out = mustFab(t, 1, work, "new", "my-blueprint")
+	if !strings.Contains(out, "is already a blueprint") {
 		t.Errorf("a second new should refuse:\n%s", out)
 	}
 
 	out = mustFab(t, 0, work, "new", "--empty", "--no-git", "blank")
-	if !strings.Contains(out, "Created an empty factory") || strings.Contains(out, "git add") {
+	if !strings.Contains(out, "Created an empty blueprint") || strings.Contains(out, "git add") {
 		t.Errorf("new --empty --no-git:\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(work, "blank", ".git")); err == nil {
 		t.Error("--no-git shouldn't run git init")
 	}
 	if out := mustFab(t, 0, work, "check", "blank"); !strings.Contains(out, "0 skills") || !strings.Contains(out, "No problems found") {
-		t.Errorf("the empty factory should check clean:\n%s", out)
+		t.Errorf("the empty blueprint should check clean:\n%s", out)
 	}
 }
 
-// A factory can live in a subfolder of a repo that's already there, like a
+// A blueprint can live in a subfolder of a repo that's already there, like a
 // monorepo, or a repo just cloned from a git host.
 func TestNewInsideAnExistingRepo(t *testing.T) {
 	host := testkit.NewHost(t)
@@ -68,12 +68,12 @@ func TestNewInsideAnExistingRepo(t *testing.T) {
 	clone := filepath.Join(t.TempDir(), "monorepo")
 	testkit.Git(t, filepath.Dir(clone), "clone", "--quiet", mono.URL(), clone)
 
-	out := mustFab(t, 0, clone, "new", "factories/acme")
+	out := mustFab(t, 0, clone, "new", "blueprints/acme")
 	if !strings.Contains(out, "It's inside the git repo at") ||
-		!strings.Contains(out, "factory: { git: github.com/acme/monorepo, ref: main, path: factories/acme }") {
+		!strings.Contains(out, "blueprint: { git: github.com/acme/monorepo, ref: main, path: blueprints/acme }") {
 		t.Errorf("new in a subfolder:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(clone, "factories", "acme", ".git")); err == nil {
+	if _, err := os.Stat(filepath.Join(clone, "blueprints", "acme", ".git")); err == nil {
 		t.Error("there shouldn't be a repo inside the repo")
 	}
 
@@ -81,7 +81,7 @@ func TestNewInsideAnExistingRepo(t *testing.T) {
 	out = mustFab(t, 0, clone, "new", ".")
 	if !strings.Contains(out, "kept the README.md that was already there") ||
 		!strings.Contains(out, "It's at the root of a git repo that was already there.") ||
-		!strings.Contains(out, "factory: { git: github.com/acme/monorepo, ref: main }") ||
+		!strings.Contains(out, "blueprint: { git: github.com/acme/monorepo, ref: main }") ||
 		strings.Contains(out, "cd .") {
 		t.Errorf("new at the root of a clone:\n%s", out)
 	}

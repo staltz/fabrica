@@ -24,7 +24,7 @@ const (
 )
 
 // ToyProviderFiles are the files of the toy folder provider, ready to drop
-// into a factory under providers/toy/.
+// into a blueprint under providers/toy/.
 var ToyProviderFiles = map[string]string{
 	"providers/toy/provider.yaml": `kind: cloud
 description: A pretend runtime used in Fabrica's tests

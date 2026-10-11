@@ -17,7 +17,7 @@ If your team uses AI coding agents, your "how we work" knowledge probably ends u
 
 So when you improve your process, you have to update it everywhere. And when you switch tools, you start over.
 
-Fabrica treats your agent setup as its own versioned thing, called a **factory**, kept apart from the software it builds. Your product repo versions your code. Your factory repo versions *how that code gets built*.
+Fabrica treats your agent setup as its own versioned thing, called a **blueprint**, kept apart from the software it builds. Your product repo versions your code. Your blueprint repo versions *how that code gets built*. Deploy a blueprint to some product repos (its **targets**) in some tools, and that deployment is a **factory**.
 
 ## How it works
 
@@ -25,17 +25,17 @@ There are three kinds of repo:
 
 | Repo | What's in it |
 |---|---|
-| **Factory repo** | Skills, routines, rules and connectors: your process. It doesn't know who uses it. |
-| **Home repo** | Deployments: "run *this* factory on *these* repos in *these* tools". This is the only place factories and product repos meet. |
+| **Blueprint repo** | Skills, routines, rules and connectors: your process. It doesn't know who uses it. |
+| **Home repo** | Factories: "run *this* blueprint on *these* targets in *these* tools". Targets are product repos. This is the only place blueprints and product repos meet. |
 | **Product repo** | Your code. The only Fabrica thing in it is one sentence at the top of its `AGENTS.md`. |
 
 Then:
 
-1. You write a factory.
-2. You say which factory runs where, in your home repo.
+1. You write a blueprint.
+2. You deploy it as a factory in your home repo: which product repos it targets, in which tools.
 3. You run `fabrica apply`.
 
-From then on, agents in those tools load your factory live over MCP. Fabrica never copies factory content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
+From then on, agents in those tools load your blueprint live over MCP. Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
 
 ## Install
 
@@ -45,7 +45,7 @@ Fabrica is a single static binary.
 curl -fsSL https://raw.githubusercontent.com/staltz/fabrica/main/install.sh | bash
 ```
 
-That puts `fabrica` in `~/.local/bin` (set `FABRICA_INSTALL_DIR` to change it). You also need `git`, since Fabrica runs it to read factories and to commit state. Later, `fabrica -u` updates it to the latest release.
+That puts `fabrica` in `~/.local/bin` (set `FABRICA_INSTALL_DIR` to change it). You also need `git`, since Fabrica runs it to read blueprints and to commit state. Later, `fabrica -u` updates it to the latest release.
 
 Prefer building from source? You'll need Go 1.26 or newer:
 
@@ -55,26 +55,26 @@ go install github.com/staltz/fabrica/cmd/fabrica@latest
 
 ## Try it in five minutes (solo, on your laptop)
 
-This sets up your own factory for every repo you work on, in Claude Code and Cursor.
+This sets up your own blueprint for every repo you work on, in Claude Code and Cursor.
 
-**1. Make a factory.** Start from the [starter factory](examples/starter-factory/), which comes built into `fabrica`:
+**1. Make a blueprint.** Start from the [starter blueprint](examples/starter-blueprint/), which comes built into `fabrica`:
 
 ```sh
-fabrica new ~/code/my-factory
-cd ~/code/my-factory
+fabrica new ~/code/my-blueprint
+cd ~/code/my-blueprint
 fabrica check        # should say: No problems found.
-git add . && git commit -m "My factory"
+git add . && git commit -m "My blueprint"
 ```
 
-Push it somewhere git can reach, like `github.com/you/my-factory`.
+Push it somewhere git can reach, like `github.com/you/my-blueprint`.
 
-**2. Add a deployment to your personal home repo** at `~/.fabrica`. Fabrica created it the first time you ran it (a git repo with an empty `deployments/` folder), so just add a file:
+**2. Add a factory to your personal home repo** at `~/.fabrica`. Fabrica created it the first time you ran it (a git repo with an empty `factories/` folder), so just add a file:
 
 ```sh
-cat > ~/.fabrica/deployments/my-default.yaml <<'EOF'
-factory: { git: github.com/you/my-factory, ref: main }
+cat > ~/.fabrica/factories/my-default.yaml <<'EOF'
+blueprint: { git: github.com/you/my-blueprint, ref: main }
 runtimes: [claude-code-local, cursor-local]
-repos: ["*"]                 # every repo not matched by another local deployment
+targets: ["*"]               # every repo not matched by another local factory
 EOF
 ```
 
@@ -99,16 +99,16 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 
 | Command | What it does |
 |---|---|
-| `fabrica new <folder>` | Starts a new factory repo, from the starter factory or (with `--empty`) from scratch. |
-| `fabrica check [folder]` | Lints a factory, validates a home repo's deployments, or checks a product repo. It works out which one the folder is. |
-| `fabrica lock` | Pins a factory's imports to exact commits, in `fabrica.lock`. |
+| `fabrica new <folder>` | Starts a new blueprint repo, from the starter blueprint or (with `--empty`) from scratch. |
+| `fabrica check [folder]` | Lints a blueprint, validates a home repo's factories, or checks a product repo. It works out which one the folder is. |
+| `fabrica lock` | Pins a blueprint's imports to exact commits, in `fabrica.lock`. |
 | `fabrica upgrade [alias…]` | Moves imports to newer commits, showing a diff first. |
 | `fabrica plan` | Shows what `apply` would do and what's blocking it. Exits `0` when in sync, `2` with changes, `1` with errors. |
 | `fabrica apply` | Installs and updates stubs in runtimes, and sets up your local tools. |
-| `fabrica destroy [deployment…]` | The opposite of `apply`: removes everything it installed, and leaves your deployment files alone. Asks first. |
+| `fabrica destroy [factory…]` | The opposite of `apply`: removes everything it installed, and leaves your factory files alone. Asks first. |
 | `fabrica confirm <id>` | Closes a handoff once someone has followed its instructions. |
-| `fabrica unlock <deployment>` | Removes a lock left behind by a crashed apply. |
-| `fabrica mcp [--http]` | Serves a factory over MCP: locally over stdio, or remotely over HTTP. |
+| `fabrica unlock <factory>` | Removes a lock left behind by a crashed apply. |
+| `fabrica mcp [--http]` | Serves a blueprint over MCP: locally over stdio, or remotely over HTTP. |
 | `fabrica -u` | Updates Fabrica itself to the latest release. |
 
 Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
@@ -116,9 +116,9 @@ Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 ## Documentation
 
 - [Getting started](docs/getting-started.md): a hands-on tutorial, solo and team.
-- [Concepts](docs/concepts.md): factories, home repos, stubs, shapes and runs, explained.
-- [Writing a factory](docs/factories.md): the factory format in full (skills, routines, rules, connectors, imports, expects).
-- [Home repos](docs/home-repos.md): deployments, state, the apply lock, handoffs and CI.
+- [Concepts](docs/concepts.md): blueprints, home repos, stubs, shapes and runs, explained.
+- [Writing a blueprint](docs/blueprints.md): the blueprint format in full (skills, routines, rules, connectors, imports, expects).
+- [Home repos](docs/home-repos.md): factories, state, the apply lock, handoffs and CI.
 - [Product repos](docs/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
 - [The MCP server](docs/mcp-server.md): the tools agents use, and how to run the remote server.
 - [Providers](docs/providers.md): what each runtime supports, and how to write your own provider.
@@ -127,7 +127,7 @@ Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 - [CLI reference](docs/cli.md): every command and flag.
 - [Architecture](docs/architecture.md): how the code is organized, for contributors.
 
-Examples live in [examples/](examples/): a [starter factory](examples/starter-factory/), a [home repo](examples/home/), a [product repo](examples/product-repo/) and a [custom provider](examples/custom-provider/).
+Examples live in [examples/](examples/): a [starter blueprint](examples/starter-blueprint/), a [home repo](examples/home/), a [product repo](examples/product-repo/) and a [custom provider](examples/custom-provider/).
 
 ## What v0.1 can't do yet
 

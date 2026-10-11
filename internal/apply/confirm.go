@@ -10,8 +10,8 @@ import (
 
 // Confirmed describes what `fabrica confirm` recorded.
 type Confirmed struct {
-	Deployment string
-	Pending    home.Pending
+	Factory string
+	Pending home.Pending
 	// Unverifiable is true when a create or update was confirmed without
 	// a remote ID.
 	Unverifiable bool
@@ -19,7 +19,7 @@ type Confirmed struct {
 
 // Confirm closes a pending handoff: the person (or computer-use agent)
 // followed the instructions, so the change is now real. Like apply, it
-// refuses to write while another apply holds the deployment's lock.
+// refuses to write while another apply holds the factory's lock.
 func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (*Confirmed, error) {
 	r, err := OpenRepo(ctx, homeDir)
 	if err != nil {
@@ -47,10 +47,10 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (
 		return nil, fmt.Errorf("there's no pending handoff %s in %s; `fabrica plan` lists the pending ones", id, homeDir)
 	}
 
-	result := &Confirmed{Deployment: name}
+	result := &Confirmed{Factory: name}
 	err = r.Update(ctx, name, "fabrica: confirm "+id, func(s *home.State) error {
 		if s.Lock != nil {
-			return &ErrLocked{Deployment: name, Lock: *s.Lock}
+			return &ErrLocked{Factory: name, Lock: *s.Lock}
 		}
 		i, ok := s.FindPending(id)
 		if !ok {
@@ -66,7 +66,7 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (
 			}
 			res := home.Resource{
 				ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo,
-				RemoteID: remoteID, Mode: "handoff", FactoryCommit: p.FactoryCommit,
+				RemoteID: remoteID, Mode: "handoff", BlueprintCommit: p.BlueprintCommit,
 				TokenHash: p.TokenHash, Shape: *p.Shape, AppliedAt: now.UTC().Truncate(time.Second),
 			}
 			if res.RemoteID == "" {

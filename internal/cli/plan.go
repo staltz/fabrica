@@ -38,15 +38,15 @@ func planEnv(t *tools, only []string) (*plan.Env, error) {
 func newPlan(g *globals) *cobra.Command {
 	var asJSON, noRefresh, destroy bool
 	cmd := &cobra.Command{
-		Use:   "plan [deployment...]",
+		Use:   "plan [factory...]",
 		Short: "Show what apply would do, and what stops it",
-		Long: `Plan compares what your home repo and its factories ask for with what's
-installed, for every deployment (or the ones you name), and shows:
+		Long: `Plan compares what your home repo and its blueprints ask for with what's
+installed, for every factory (or the ones you name), and shows:
 
   - creates, updates and deletes, with the reason for each
   - how each runtime handles each trigger, connector and side effect
     (native, emulated or unsupported), and its apply mode
-  - whether each deployment follows a branch or is frozen
+  - whether each factory follows a branch or is frozen
   - pending handoffs, and resources Fabrica can't verify
   - errors that block apply
 
@@ -56,7 +56,7 @@ there are only changes, 1 when there are errors. Running it on a schedule
 in the home repo's CI catches problems that appear after an apply.
 
 Set FABRICA_SERVER_SECRET to also catch rotated tokens. In CI (when $CI is
-set), local deployments are skipped.
+set), local factories are skipped.
 
 With --destroy, it shows what ` + "`fabrica destroy`" + ` would remove instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,24 +105,24 @@ With --destroy, it shows what ` + "`fabrica destroy`" + ` would remove instead.`
 func newApply(g *globals) *cobra.Command {
 	var handoffDir string
 	cmd := &cobra.Command{
-		Use:   "apply [deployment...]",
+		Use:   "apply [factory...]",
 		Short: "Make runtimes match your home repo",
-		Long: `Apply reconciles your deployments with their runtimes.
+		Long: `Apply reconciles your factories with their runtimes.
 
-For each cloud deployment with changes and no errors, it takes the
-deployment's lock (a commit to its state file, pushed to the home repo),
-looks up the deployment's resources in each runtime by identity, re-plans,
+For each cloud factory with changes and no errors, it takes the
+factory's lock (a commit to its state file, pushed to the home repo),
+looks up the factory's resources in each runtime by identity, re-plans,
 applies each change (through the runtime's API, or by writing handoff
 instructions for a person or a computer-use agent to follow), and then
 records the results and releases the lock in one commit. Cloud applies
-need FABRICA_SERVER_SECRET, to compute each deployment's token.
+need FABRICA_SERVER_SECRET, to compute each factory's token.
 
-For local deployments in your personal home repo, it installs the
+For local factories in your personal home repo, it installs the
 user-level fabrica MCP server and local routine hooks in each local tool.
 It never writes into a product repo.
 
 Apply works from the latest home repo on its remote, so commit and push
-your deployment changes first.`,
+your factory changes first.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			dir, err := g.homeDir(ctx)
@@ -146,7 +146,7 @@ your deployment changes first.`,
 				return err
 			}
 			if len(res.Handoffs) > 0 {
-				fmt.Fprintf(out, "\n%s to follow. Each one ends with the `fabrica confirm` command to run when it's done. They contain the deployment's token, so keep them private:\n", plural(len(res.Handoffs), "handoff"))
+				fmt.Fprintf(out, "\n%s to follow. Each one ends with the `fabrica confirm` command to run when it's done. They contain the factory's token, so keep them private:\n", plural(len(res.Handoffs), "handoff"))
 				for _, f := range res.Handoffs {
 					fmt.Fprintf(out, "  %s\n", f)
 				}
@@ -168,23 +168,23 @@ func newDestroy(g *globals) *cobra.Command {
 	var handoffDir string
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "destroy [deployment...]",
+		Use:   "destroy [factory...]",
 		Short: "Remove everything apply installed",
-		Long: `Destroy is the opposite of apply: it removes everything your deployments
+		Long: `Destroy is the opposite of apply: it removes everything your factories
 (or the ones you name) installed in their runtimes. It leaves the
-deployment files alone, so the next apply puts it all back. To stop
-deploying something for good, delete its deployment file and apply.
+factory files alone, so the next apply puts it all back. To stop
+deploying something for good, delete its factory file and apply.
 
-For each cloud deployment, it deletes every resource in its state, the
+For each cloud factory, it deletes every resource in its state, the
 same way apply deletes a stub that's no longer deployed: through the
 runtime's API, or by writing a delete handoff for a person or a
 computer-use agent to follow and confirm. Like apply, it takes the
-deployment's lock and records the results in one commit, pushed to the
+factory's lock and records the results in one commit, pushed to the
 home repo. Deleting needs no token, so FABRICA_SERVER_SECRET is optional.
 
 For your personal home repo, it removes what Fabrica installed in your
 local tools: the fabrica MCP server, connector servers, hooks and
-scheduled tasks. When you name local deployments and others still use the
+scheduled tasks. When you name local factories and others still use the
 same tool, only the named ones' hooks and scheduled tasks go.
 
 It shows what it will remove and asks before changing anything. Pass
@@ -233,7 +233,7 @@ nothing.`,
 			}
 			if len(res.Handoffs) > 0 {
 				// Unlike apply's, delete handoffs carry no token.
-				fmt.Fprintf(out, "\n%s to follow. Each one ends with the `fabrica confirm` command to run when it's done. Until then, its stub can still run, since the Fabrica server serves a deployment for as long as its file is in %s/:\n", plural(len(res.Handoffs), "delete handoff"), home.DeploymentsDir)
+				fmt.Fprintf(out, "\n%s to follow. Each one ends with the `fabrica confirm` command to run when it's done. Until then, its stub can still run, since the Fabrica server serves a factory for as long as its file is in %s/:\n", plural(len(res.Handoffs), "delete handoff"), home.FactoriesDir)
 				for _, f := range res.Handoffs {
 					fmt.Fprintf(out, "  %s\n", f)
 				}
@@ -259,7 +259,7 @@ instructions. Pass --remote-id with the runtime's ID for the resource when
 you have it. Without one, Fabrica tracks the resource as unverifiable: no
 drift detection and no automatic deletion.
 
-Like apply, confirm writes the deployment's state file, so it commits and
+Like apply, confirm writes the factory's state file, so it commits and
 pushes to the home repo, and refuses while an apply holds the lock.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -274,7 +274,7 @@ pushes to the home repo, and refuses while an apply holds the lock.`,
 			}
 			out := cmd.OutOrStdout()
 			p := c.Pending
-			fmt.Fprintf(out, "Confirmed %s: %s %s @ %s on %s (deployment %s).\n", p.ID, p.Action, p.Routine, p.Repo, p.Runtime, c.Deployment)
+			fmt.Fprintf(out, "Confirmed %s: %s %s @ %s on %s (factory %s).\n", p.ID, p.Action, p.Routine, p.Repo, p.Runtime, c.Factory)
 			if c.Unverifiable {
 				fmt.Fprintln(out, "There's no remote ID, so Fabrica tracks it as unverifiable: no drift detection and no automatic deletion.")
 			}
@@ -287,7 +287,7 @@ pushes to the home repo, and refuses while an apply holds the lock.`,
 
 func newUnlock(g *globals) *cobra.Command {
 	return &cobra.Command{
-		Use:   "unlock <deployment>",
+		Use:   "unlock <factory>",
 		Short: "Remove a lock left behind by a crashed apply",
 		Long: `Fabrica can't tell a crashed apply from a slow one, so it never guesses:
 a crashed apply leaves its lock in place, and plan and apply show who
@@ -306,7 +306,7 @@ removes the lock. The next apply adopts whatever the crashed one created.`,
 			}
 			out := cmd.OutOrStdout()
 			if lock == nil {
-				fmt.Fprintf(out, "Deployment %s wasn't locked.\n", args[0])
+				fmt.Fprintf(out, "Factory %s wasn't locked.\n", args[0])
 				return nil
 			}
 			fmt.Fprintf(out, "Removed the lock on %s, held by %q since %s.\n", args[0], lock.Holder, lock.Since.Format(time.RFC3339))

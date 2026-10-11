@@ -37,7 +37,7 @@ func NewCache(dir string) *Cache {
 type Mode int
 
 const (
-	// Full downloads everything. Factories use this: we read whole trees.
+	// Full downloads everything. Blueprints use this: we read whole trees.
 	Full Mode = iota
 	// Partial downloads commits and trees but fetches file contents only
 	// when we read them. Product repos use this: we only look at a handful

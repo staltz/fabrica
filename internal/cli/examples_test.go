@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/product"
@@ -28,10 +28,10 @@ func examplesDir(t *testing.T) string {
 	return dir
 }
 
-func loadExampleFactory(t *testing.T, name string) *factory.Factory {
+func loadExampleBlueprint(t *testing.T, name string) *blueprint.Blueprint {
 	t.Helper()
-	l := factory.NewLoader(gitx.NewCache(t.TempDir()))
-	f, diags := l.LoadDir(context.Background(), filepath.Join(examplesDir(t), name), factory.LoadOptions{})
+	l := blueprint.NewLoader(gitx.NewCache(t.TempDir()))
+	f, diags := l.LoadDir(context.Background(), filepath.Join(examplesDir(t), name), blueprint.LoadOptions{})
 	if f != nil {
 		diags = append(diags, f.Lint()...)
 	}
@@ -41,8 +41,8 @@ func loadExampleFactory(t *testing.T, name string) *factory.Factory {
 	return f
 }
 
-func TestStarterFactoryIsClean(t *testing.T) {
-	f := loadExampleFactory(t, "starter-factory")
+func TestStarterBlueprintIsClean(t *testing.T) {
+	f := loadExampleBlueprint(t, "starter-blueprint")
 	if len(f.Skills) != 5 || len(f.Routines) != 3 || len(f.Rules) != 4 || len(f.Connectors) != 2 {
 		t.Errorf("the docs describe 5 skills, 3 routines, 4 rules and 2 connectors; got %d, %d, %d, %d",
 			len(f.Skills), len(f.Routines), len(f.Rules), len(f.Connectors))
@@ -54,8 +54,8 @@ func TestStarterFactoryIsClean(t *testing.T) {
 	}
 }
 
-func TestCustomProviderFactoryIsClean(t *testing.T) {
-	f := loadExampleFactory(t, filepath.Join("custom-provider", "factory"))
+func TestCustomProviderBlueprintIsClean(t *testing.T) {
+	f := loadExampleBlueprint(t, filepath.Join("custom-provider", "blueprint"))
 	if p := f.Providers["acme-runner"]; p == nil || p.Provider == nil || p.Provider.APIPath == "" {
 		t.Errorf("acme-runner should load with its api program: %+v", p)
 	}
@@ -67,8 +67,8 @@ func TestExampleHomeReposParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if team.Diags.HasErrors() || len(team.Deployments) != 2 {
-		t.Errorf("examples/home: %d deployments\n%s", len(team.Deployments), team.Diags)
+	if team.Diags.HasErrors() || len(team.Factories) != 2 {
+		t.Errorf("examples/home: %d factories\n%s", len(team.Factories), team.Diags)
 	}
 	personalDir := filepath.Join(examplesDir(t), "personal-home")
 	t.Setenv("FABRICA_HOME", personalDir)
@@ -76,8 +76,8 @@ func TestExampleHomeReposParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if personal.Diags.HasErrors() || len(personal.Deployments) != 2 {
-		t.Errorf("examples/personal-home: %d deployments\n%s", len(personal.Deployments), personal.Diags)
+	if personal.Diags.HasErrors() || len(personal.Factories) != 2 {
+		t.Errorf("examples/personal-home: %d factories\n%s", len(personal.Factories), personal.Diags)
 	}
 	if d, _ := personal.MatchLocal("github.com/oss/project", "claude-code-local"); d == nil || d.Name != "oss-work" {
 		t.Errorf("oss-work should win for its repo, got %v", d)
@@ -85,14 +85,14 @@ func TestExampleHomeReposParse(t *testing.T) {
 }
 
 func TestExampleProductRepoPasses(t *testing.T) {
-	f := loadExampleFactory(t, "starter-factory")
+	f := loadExampleBlueprint(t, "starter-blueprint")
 	ws, err := product.InspectDir(context.Background(), filepath.Join(examplesDir(t), "product-repo"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	diags := product.Check(ws, f)
 	if problems := append(diags.Only(diag.Error), diags.Only(diag.Warning)...); len(problems) > 0 {
-		t.Errorf("examples/product-repo should pass against the starter factory:\n%s", problems)
+		t.Errorf("examples/product-repo should pass against the starter blueprint:\n%s", problems)
 	}
 }
 
@@ -103,12 +103,12 @@ func TestCustomProviderEndToEnd(t *testing.T) {
 		t.Skip("python3 isn't installed")
 	}
 	w := setupCLI(t)
-	repo := w.Host.Repo("github.com/acme/acme-factory")
-	copyTree(t, filepath.Join(examplesDir(t), "custom-provider", "factory"), repo.Dir)
-	repo.Commit("acme factory")
+	repo := w.Host.Repo("github.com/acme/acme-blueprint")
+	copyTree(t, filepath.Join(examplesDir(t), "custom-provider", "blueprint"), repo.Dir)
+	repo.Commit("acme blueprint")
 	db := filepath.Join(t.TempDir(), "acme-runner.json")
 	t.Setenv("ACME_RUNNER_DB", db)
-	w.Home.Write(map[string]string{"deployments/triage.yaml": "factory: { git: github.com/acme/acme-factory, ref: main }\nserver: https://fabrica.example.com\nruntimes: [acme-runner]\nroutines: [triage]\nrepos: [github.com/acme/app]\n"}).CommitPush("triage")
+	w.Home.Write(map[string]string{"factories/triage.yaml": "blueprint: { git: github.com/acme/acme-blueprint, ref: main }\nserver: https://fabrica.example.com\nruntimes: [acme-runner]\nroutines: [triage]\ntargets: [github.com/acme/app]\n"}).CommitPush("triage")
 
 	out := mustFab(t, 2, w.Home.Dir, "plan")
 	if !strings.Contains(out, "+ create triage @ github.com/acme/app on acme-runner (api)") {

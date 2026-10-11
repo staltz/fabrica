@@ -23,17 +23,17 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/provider"
 )
 
 // Target is where a routine is being deployed: one runtime of one
-// deployment.
+// factory.
 type Target struct {
-	Deployment string
-	Runtime    *provider.Provider
-	// Endpoint is the deployment's Fabrica server URL, like
+	Factory string
+	Runtime *provider.Provider
+	// Endpoint is the factory's Fabrica server URL, like
 	// https://fabrica.acme.dev/pr-review. Empty for local runtimes, which
 	// talk to `fabrica mcp` over stdio.
 	Endpoint string
@@ -63,8 +63,8 @@ type ShapeConnector struct {
 	// MCP server is registered, either because the connector is an MCP
 	// server or because it's a native connector emulated through its
 	// fallback).
-	Kind   string             `json:"kind"`
-	Server *factory.MCPServer `json:"server,omitempty"`
+	Kind   string               `json:"kind"`
+	Server *blueprint.MCPServer `json:"server,omitempty"`
 }
 
 // Memory settings in a shape.
@@ -104,7 +104,7 @@ type Use struct {
 
 // Evaluation is a routine checked against one runtime.
 type Evaluation struct {
-	Routine     *factory.Routine
+	Routine     *blueprint.Routine
 	Trigger     Use
 	Connectors  []Use
 	SideEffects []Use
@@ -132,7 +132,7 @@ func (e *Evaluation) SideEffect(name string) (Use, bool) {
 // Evaluate checks a routine against a runtime's capability matrix and works
 // out its shape. Problems are reported in Diags, but the shape is filled in
 // as far as possible either way.
-func Evaluate(f *factory.Factory, r *factory.Routine, t Target) *Evaluation {
+func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluation {
 	m := t.Runtime.Matrix
 	e := &Evaluation{Routine: r}
 	where := r.Where()
@@ -154,27 +154,27 @@ func Evaluate(f *factory.Factory, r *factory.Routine, t Target) *Evaluation {
 	for _, mc := range r.Connectors {
 		conn := f.Connectors[mc.Name]
 		if conn == nil {
-			continue // the factory loader already reported it
+			continue // the blueprint loader already reported it
 		}
 		use := Use{Name: mc.Name}
 		var installed *ShapeConnector
 		switch conn.Kind {
-		case factory.NativeConnector:
+		case blueprint.NativeConnector:
 			use.Support = m.Connector(mc.Name)
 			switch use.Support {
 			case provider.Native:
-				installed = &ShapeConnector{Name: mc.Name, Kind: factory.NativeConnector}
+				installed = &ShapeConnector{Name: mc.Name, Kind: blueprint.NativeConnector}
 			case provider.Emulated:
 				if conn.Fallback == nil {
 					use.Support = provider.Unsupported
 				} else {
-					installed = &ShapeConnector{Name: mc.Name, Kind: factory.MCPConnector, Server: conn.Fallback}
+					installed = &ShapeConnector{Name: mc.Name, Kind: blueprint.MCPConnector, Server: conn.Fallback}
 				}
 			}
-		case factory.MCPConnector:
+		case blueprint.MCPConnector:
 			use.Support = m.Connector("mcp." + conn.Server.Transport)
 			if use.Support == provider.Native {
-				installed = &ShapeConnector{Name: mc.Name, Kind: factory.MCPConnector, Server: conn.Server}
+				installed = &ShapeConnector{Name: mc.Name, Kind: blueprint.MCPConnector, Server: conn.Server}
 			}
 		}
 		if installed == nil {
@@ -233,18 +233,18 @@ func Evaluate(f *factory.Factory, r *factory.Routine, t Target) *Evaluation {
 	return e
 }
 
-func connectorDesc(c *factory.Connector) string {
-	if c.Kind == factory.MCPConnector {
+func connectorDesc(c *blueprint.Connector) string {
+	if c.Kind == blueprint.MCPConnector {
 		return fmt.Sprintf("%s (an MCP server over %s)", c.Ref.Name, c.Server.Transport)
 	}
 	return c.Ref.Name
 }
 
-func connectorHint(c *factory.Connector, m *provider.Matrix) string {
+func connectorHint(c *blueprint.Connector, m *provider.Matrix) string {
 	switch {
-	case c.Kind == factory.NativeConnector && m.Connector(c.Ref.Name) == provider.Emulated:
+	case c.Kind == blueprint.NativeConnector && m.Connector(c.Ref.Name) == provider.Emulated:
 		return fmt.Sprintf("this runtime has no built-in %s integration, but could use an MCP server instead; add a fallback: MCP server to connectors/%s.yaml", c.Ref.Name, c.Ref.Name)
-	case c.Kind == factory.MCPConnector:
+	case c.Kind == blueprint.MCPConnector:
 		return fmt.Sprintf("this runtime doesn't support MCP servers over %s; use another transport, or mark the connector optional (%s?) in the routine", c.Server.Transport, c.Ref.Name)
 	default:
 		return fmt.Sprintf("mark it optional (%s?) in the routine if it can run without it, or deploy to a runtime that has it", c.Ref.Name)
@@ -277,13 +277,13 @@ func Prompt(identity, routine, runtime, repo, fingerprint string) string {
 }
 
 // LocalPrompt is what a local routine's hook tells the agent.
-func LocalPrompt(routine, deployment, runtime, repo, fingerprint string) string {
-	return fmt.Sprintf("Fabrica routine `%s` (from your local deployment `%s`) should run now. Call `run_begin` with routine `%s`, runtime `%s`, repo `%s` and stub `%s`, and an intent that sums up what you're about to do in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.",
-		routine, deployment, routine, runtime, repo, fingerprint)
+func LocalPrompt(routine, factory, runtime, repo, fingerprint string) string {
+	return fmt.Sprintf("Fabrica routine `%s` (from your local factory `%s`) should run now. Call `run_begin` with routine `%s`, runtime `%s`, repo `%s` and stub `%s`, and an intent that sums up what you're about to do in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.",
+		routine, factory, routine, runtime, repo, fingerprint)
 }
 
 // DescribeTrigger turns a trigger into words for handoff instructions.
-func DescribeTrigger(tr factory.Trigger, repo string) string {
+func DescribeTrigger(tr blueprint.Trigger, repo string) string {
 	if tr.On == "schedule" {
 		return fmt.Sprintf("on a schedule, cron `%s` (UTC)", tr.Cron)
 	}
@@ -317,7 +317,7 @@ func DescribeMemory(needed bool, support provider.Support) string {
 // DescribeConnector says how to set up one installed connector, for
 // handoff instructions.
 func DescribeConnector(c ShapeConnector) string {
-	if c.Kind == factory.NativeConnector {
+	if c.Kind == blueprint.NativeConnector {
 		return fmt.Sprintf("the runtime's built-in %s integration (connect it if it isn't connected yet)", c.Name)
 	}
 	s := c.Server

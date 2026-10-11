@@ -8,7 +8,7 @@
 // like a cloud stub. The Fabrica MCP server does the stale-stub checks.
 //
 // Hooks never block you because of Fabrica's own problems: when something
-// is off (no git repo, no matching deployment, no Fabrica line), the hook
+// is off (no git repo, no matching factory, no Fabrica line), the hook
 // quietly does nothing, and the MCP server explains what's wrong.
 package hook
 
@@ -33,7 +33,7 @@ import (
 // Options describe one hook firing.
 type Options struct {
 	Runtime     string
-	Deployment  string
+	Factory     string
 	Routine     string
 	Fingerprint string
 	Event       string
@@ -97,13 +97,13 @@ func Run(ctx context.Context, o Options) error {
 		return nil
 	}
 	d, _ := h.MatchLocal(repo, o.Runtime)
-	if d == nil || d.Name != o.Deployment || !d.Runs(o.Routine, o.Runtime) {
+	if d == nil || d.Name != o.Factory || !d.Runs(o.Routine, o.Runtime) {
 		return nil // this routine doesn't apply here (anymore)
 	}
 	if ws, err := product.InspectDir(ctx, top); err != nil || !ws.HasLine() {
 		return nil // the MCP server tells the agent what's missing
 	}
-	prompt := stub.LocalPrompt(o.Routine, o.Deployment, o.Runtime, repo, o.Fingerprint)
+	prompt := stub.LocalPrompt(o.Routine, o.Factory, o.Runtime, repo, o.Fingerprint)
 
 	switch o.Event {
 	case localtools.SessionStart:
@@ -207,6 +207,6 @@ func headCommit(ctx context.Context, dir string) string {
 }
 
 func markerKey(o Options, session, head string) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{o.Runtime, o.Deployment, o.Routine, o.Event, session, head}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{o.Runtime, o.Factory, o.Routine, o.Event, session, head}, "\x00")))
 	return hex.EncodeToString(sum[:16])
 }

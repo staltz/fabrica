@@ -12,17 +12,17 @@ import (
 
 func sampleConfig(runtime string) Config {
 	hooks := []Hook{
-		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: GitPrePush, Deployment: "oss-work", Routine: "review-before-push", Fingerprint: "7f3a9c7f3a9c"},
-		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: SessionStop, Deployment: "oss-work", Routine: "tidy", Fingerprint: "abcdefabcdef"},
+		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: GitPrePush, Factory: "oss-work", Routine: "review-before-push", Fingerprint: "7f3a9c7f3a9c"},
+		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: SessionStop, Factory: "oss-work", Routine: "tidy", Fingerprint: "abcdefabcdef"},
 	}
 	if runtime == "claude-code-local" || runtime == "codex-cli" {
-		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Deployment: "d", Routine: "hello", Fingerprint: "111111111111"})
+		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Factory: "d", Routine: "hello", Fingerprint: "111111111111"})
 	}
 	var tasks []Task
 	if runtime == "claude-code-local" {
 		tasks = []Task{
-			{Deployment: "oss-work", Routine: "update-dep", Repo: "github.com/acme/app", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run `update-dep`: it's Monday.\n\nSecond paragraph."},
-			{Deployment: "oss-work", Routine: "update-dep", Repo: "github.com/acme/lib", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run it on lib."},
+			{Factory: "oss-work", Routine: "update-dep", Repo: "github.com/acme/app", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run `update-dep`: it's Monday.\n\nSecond paragraph."},
+			{Factory: "oss-work", Routine: "update-dep", Repo: "github.com/acme/lib", Cron: "0 9 * * 1", Fingerprint: "222222222222", Prompt: "Run it on lib."},
 		}
 	}
 	return Config{
@@ -141,7 +141,7 @@ func snapshot(t *testing.T, tool Tool) map[string]string {
 func TestClaudeHookShape(t *testing.T) {
 	home := t.TempDir()
 	tool, _ := For("claude-code-local", home)
-	if err := tool.Write(Config{Hooks: []Hook{{Binary: "/usr/bin/fabrica", Runtime: "claude-code-local", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}}}); err != nil {
+	if err := tool.Write(Config{Hooks: []Hook{{Binary: "/usr/bin/fabrica", Runtime: "claude-code-local", Event: GitPrePush, Factory: "d", Routine: "r", Fingerprint: "f"}}}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
@@ -160,26 +160,26 @@ func TestClaudeHookShape(t *testing.T) {
 	}
 	g := v.Hooks["PreToolUse"]
 	if len(g) != 1 || g[0].Matcher != "Bash" || g[0].Hooks[0].Type != "command" || g[0].Hooks[0].Timeout != 30 ||
-		g[0].Hooks[0].Command != "/usr/bin/fabrica hook --runtime claude-code-local --deployment d --routine r --stub f --event git.pre_push" {
+		g[0].Hooks[0].Command != "/usr/bin/fabrica hook --runtime claude-code-local --factory d --routine r --stub f --event git.pre_push" {
 		t.Errorf("unexpected hooks:\n%s", data)
 	}
 }
 
 func TestCursorRefusesUnsupportedTrigger(t *testing.T) {
 	tool, _ := For("cursor-local", t.TempDir())
-	err := tool.Write(Config{Hooks: []Hook{{Binary: "fabrica", Event: SessionStart, Deployment: "d", Routine: "r", Fingerprint: "f"}}})
+	err := tool.Write(Config{Hooks: []Hook{{Binary: "fabrica", Event: SessionStart, Factory: "d", Routine: "r", Fingerprint: "f"}}})
 	if err == nil {
 		t.Error("Cursor has no session.start hook, so writing one should fail")
 	}
 }
 
 func TestHookCommandRoundTrip(t *testing.T) {
-	h := Hook{Binary: "/Users/me/My Tools/fabrica", Runtime: "cursor-local", Event: GitPrePush, Deployment: "d", Routine: "r", Fingerprint: "f"}
+	h := Hook{Binary: "/Users/me/My Tools/fabrica", Runtime: "cursor-local", Event: GitPrePush, Factory: "d", Routine: "r", Fingerprint: "f"}
 	got, ok := ParseHookCommand(HookCommand(h))
 	if !ok || got != h {
 		t.Errorf("round trip = %+v, %v", got, ok)
 	}
-	for _, notOurs := range []string{"my-linter", "fabrica mcp", "/bin/fabricate hook", "fabrica hook --deployment d"} {
+	for _, notOurs := range []string{"my-linter", "fabrica mcp", "/bin/fabricate hook", "fabrica hook --factory d"} {
 		if _, ok := ParseHookCommand(notOurs); ok {
 			t.Errorf("%q shouldn't be recognized as a Fabrica hook", notOurs)
 		}
@@ -198,7 +198,7 @@ func TestInvalidJSONIsReported(t *testing.T) {
 func TestClaudeTaskShape(t *testing.T) {
 	home := t.TempDir()
 	tool, _ := For("claude-code-local", home)
-	task := Task{Deployment: "dogfood", Routine: "update-dep", Repo: "github.com/staltz/fabrica", Cron: "0 9 * * 1", Fingerprint: "abc123abc123", Prompt: "Do it."}
+	task := Task{Factory: "dogfood", Routine: "update-dep", Repo: "github.com/staltz/fabrica", Cron: "0 9 * * 1", Fingerprint: "abc123abc123", Prompt: "Do it."}
 	if err := tool.Write(Config{Tasks: []Task{task}}); err != nil {
 		t.Fatal(err)
 	}
@@ -263,9 +263,9 @@ func TestLocalCron(t *testing.T) {
 
 func TestTaskSetup(t *testing.T) {
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.FixedZone("EEST", 3*3600))
-	a := Task{Deployment: "d", Routine: "a", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "A"}
-	b := Task{Deployment: "d", Routine: "b", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "B"}
-	c := Task{Deployment: "d", Routine: "c", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "C"}
+	a := Task{Factory: "d", Routine: "a", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "A"}
+	b := Task{Factory: "d", Routine: "b", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "B"}
+	c := Task{Factory: "d", Routine: "c", Repo: "github.com/x/y", Cron: "0 9 * * 1", Fingerprint: "1", Prompt: "C"}
 	b2, c2 := b, c
 	b2.Prompt = "B, reworded"
 	c2.Cron, c2.Fingerprint = "0 10 * * 1", "2"

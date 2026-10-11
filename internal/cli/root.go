@@ -1,6 +1,6 @@
 // Package cli is the `fabrica` command line.
 //
-// Fabrica sits beside git and never wraps it. Factory and home repos are
+// Fabrica sits beside git and never wraps it. Blueprint and home repos are
 // plain git repos that you edit and review with your usual git and PR
 // workflow. The CLI only ever writes to git in one place: committing and
 // pushing state in a home repo.
@@ -18,8 +18,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/mcpserver"
@@ -91,17 +91,18 @@ func newRoot() *cobra.Command {
 		Use:   "fabrica",
 		Short: "Write down how your AI agents build software, once, and run it on many AI tools",
 		Long: `Fabrica lets you write down how your AI agents build software (skills,
-routines, rules) once, in a git repo called a factory, and run that same
+routines, rules) once, in a git repo called a blueprint, and run that same
 setup on many AI coding tools: Claude, Cursor, Codex and more.
 
-A home repo says which factory runs on which product repos and tools.
-Agents load the factory live from the Fabrica MCP server, so improving
+Deploying a blueprint makes a factory: a file in a home repo that says
+which product repos (its targets) and tools the blueprint runs on.
+Agents load the blueprint live from the Fabrica MCP server, so improving
 your process is just a git merge. Every agent run is recorded.
 
 Typical workflow:
-  fabrica new        start a new factory repo
-  fabrica check      lint a factory, a home repo or a product repo
-  fabrica lock       pin a factory's imports in fabrica.lock
+  fabrica new        start a new blueprint repo
+  fabrica check      lint a blueprint, a home repo or a product repo
+  fabrica lock       pin a blueprint's imports in fabrica.lock
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
   fabrica apply      install stubs in runtimes, and Fabrica in your local tools
   fabrica destroy    remove everything apply installed
@@ -164,7 +165,7 @@ func (g *globals) homeDir(ctx context.Context) (string, error) {
 }
 
 func isHomeRepo(dir string) bool {
-	for _, sub := range []string{home.DeploymentsDir, home.StateDir} {
+	for _, sub := range []string{home.FactoriesDir, home.StateDir} {
 		if info, err := os.Stat(filepath.Join(dir, sub)); err == nil && info.IsDir() {
 			return true
 		}
@@ -176,7 +177,7 @@ func isHomeRepo(dir string) bool {
 type tools struct {
 	cacheDir string
 	git      *gitx.Cache
-	loader   *factory.Loader
+	loader   *blueprint.Loader
 }
 
 func newTools() (*tools, error) {
@@ -185,7 +186,7 @@ func newTools() (*tools, error) {
 		return nil, err
 	}
 	cache := gitx.NewCache(dir)
-	return &tools{cacheDir: dir, git: cache, loader: factory.NewLoader(cache)}, nil
+	return &tools{cacheDir: dir, git: cache, loader: blueprint.NewLoader(cache)}, nil
 }
 
 // fabricaBinary is the path local tools should run. We prefer the path on

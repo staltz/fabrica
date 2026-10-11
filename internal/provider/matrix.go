@@ -68,11 +68,11 @@ const (
 	Text SkillTransport = "text"
 )
 
-// Token placements: how a runtime passes the deployment's secret token to
+// Token placements: how a runtime passes the factory's secret token to
 // the Fabrica MCP server.
 const (
 	TokenInHeader = "header" // Authorization: Bearer …
-	TokenInURL    = "url"    // …/<deployment>/t/<token>
+	TokenInURL    = "url"    // …/<factory>/t/<token>
 )
 
 // Matrix is a provider's capability matrix.
@@ -276,7 +276,7 @@ func lookup(m map[string]Support, key string) Support {
 	return Unsupported
 }
 
-// TokenPlacement picks how to pass the deployment token: in a header when
+// TokenPlacement picks how to pass the factory token: in a header when
 // the runtime allows it (tokens in URLs can leak through logs and
 // screenshots), otherwise in the URL.
 func (m *Matrix) TokenPlacement() string {

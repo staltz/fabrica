@@ -13,30 +13,30 @@ import (
 	"github.com/staltz/fabrica/internal/yamlx"
 )
 
-// State is state/<deployment>.yaml: everything one cloud deployment owns
+// State is state/<factory>.yaml: everything one cloud factory owns
 // in its runtimes. Only Fabrica writes it, and it's committed to the home
 // repo, so it's versioned and shared like everything else.
 type State struct {
 	// Lock is only present while an apply (or confirm) is running.
 	Lock *Lock `yaml:"lock,omitempty"`
-	// Factory is the factory the last apply used. Fabrica needs it to clean
-	// up after a deleted deployment whose runtime came from a folder
-	// provider in that factory.
-	Factory *StateFactory `yaml:"factory,omitempty"`
+	// Blueprint is the blueprint the last apply used. Fabrica needs it to clean
+	// up after a deleted factory whose runtime came from a folder
+	// provider in that blueprint.
+	Blueprint *StateBlueprint `yaml:"blueprint,omitempty"`
 	// Resources are the stubs installed in runtimes.
 	Resources []Resource `yaml:"resources"`
 	// Pending are handoffs waiting for `fabrica confirm`.
 	Pending []Pending `yaml:"pending"`
 }
 
-// Lock says who's applying this deployment right now.
+// Lock says who's applying this factory right now.
 type Lock struct {
 	Holder string    `yaml:"holder"`
 	Since  time.Time `yaml:"since"`
 }
 
-// StateFactory records a factory at an exact commit.
-type StateFactory struct {
+// StateBlueprint records a blueprint at an exact commit.
+type StateBlueprint struct {
 	Git    string `yaml:"git"`
 	Path   string `yaml:"path,omitempty"`
 	Commit string `yaml:"commit"`
@@ -61,9 +61,9 @@ type Resource struct {
 	// RemoteID is the runtime's own ID for the resource. Empty means the
 	// resource is unverifiable: it was confirmed after a handoff without an
 	// ID, so Fabrica can't check on it or delete it automatically.
-	RemoteID      string `yaml:"remote_id,omitempty"`
-	Mode          string `yaml:"mode"`
-	FactoryCommit string `yaml:"factory_commit"`
+	RemoteID        string `yaml:"remote_id,omitempty"`
+	Mode            string `yaml:"mode"`
+	BlueprintCommit string `yaml:"blueprint_commit"`
 	// TokenHash fingerprints the token baked into the resource, so `plan`
 	// notices a rotated server secret.
 	TokenHash string    `yaml:"token_hash,omitempty"`
@@ -88,13 +88,13 @@ type Pending struct {
 	// RemoteID is the resource's ID for updates and deletes, when known.
 	RemoteID string `yaml:"remote_id,omitempty"`
 	// Shape is what the handoff installs (creates and updates).
-	Shape         *Shape    `yaml:"shape,omitempty"`
-	TokenHash     string    `yaml:"token_hash,omitempty"`
-	FactoryCommit string    `yaml:"factory_commit,omitempty"`
-	IssuedAt      time.Time `yaml:"issued_at"`
+	Shape           *Shape    `yaml:"shape,omitempty"`
+	TokenHash       string    `yaml:"token_hash,omitempty"`
+	BlueprintCommit string    `yaml:"blueprint_commit,omitempty"`
+	IssuedAt        time.Time `yaml:"issued_at"`
 }
 
-// Key identifies a resource within a deployment: the same identity can
+// Key identifies a resource within a factory: the same identity can
 // exist once per runtime.
 type Key struct {
 	Runtime string
@@ -107,12 +107,12 @@ func (r Resource) Key() Key { return Key{r.Runtime, r.ID} }
 // Key returns the key of the resource a pending handoff is about.
 func (p Pending) Key() Key { return Key{p.Runtime, p.Resource} }
 
-// StatePath is the path of a deployment's state file inside a home repo.
+// StatePath is the path of a factory's state file inside a home repo.
 func StatePath(name string) string { return filepath.Join(StateDir, name+".yaml") }
 
-const stateHeader = "# Written by Fabrica. Don't edit by hand.\n# It records what this deployment installed in each runtime.\n"
+const stateHeader = "# Written by Fabrica. Don't edit by hand.\n# It records what this factory installed in each runtime.\n"
 
-// ReadState reads a deployment's state. A missing file is an empty state.
+// ReadState reads a factory's state. A missing file is an empty state.
 func ReadState(homeDir, name string) (*State, error) {
 	data, err := os.ReadFile(filepath.Join(homeDir, StatePath(name)))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -151,7 +151,7 @@ func moveRenamedRuntimes(s *State) {
 	}
 }
 
-// WriteState writes a deployment's state, sorted so diffs stay small.
+// WriteState writes a factory's state, sorted so diffs stay small.
 func WriteState(homeDir, name string, s *State) error {
 	sort.Slice(s.Resources, func(i, j int) bool { return keyLess(s.Resources[i].Key(), s.Resources[j].Key()) })
 	sort.Slice(s.Pending, func(i, j int) bool { return keyLess(s.Pending[i].Key(), s.Pending[j].Key()) })

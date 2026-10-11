@@ -36,7 +36,7 @@ func OpenWorktree(ctx context.Context, dir string) (Worktree, error) {
 }
 
 // Init makes dir a new, empty git repo. `fabrica new` uses it for a new
-// factory, and leaves the first commit to you.
+// blueprint, and leaves the first commit to you.
 func Init(ctx context.Context, dir string) (Worktree, error) {
 	if _, err := run(ctx, dir, "init", "--quiet"); err != nil {
 		return Worktree{}, err
@@ -145,7 +145,7 @@ func (w Worktree) Sync(ctx context.Context) error {
 
 // PullRebase fetches the upstream branch and replays our local commits on
 // top of it. We use it after a rejected push of a state commit, when the
-// newer remote commits are unrelated (for example, another deployment's
+// newer remote commits are unrelated (for example, another factory's
 // state file).
 func (w Worktree) PullRebase(ctx context.Context) error {
 	remote, branch, err := w.Upstream(ctx)

@@ -1,9 +1,9 @@
 # A custom provider
 
-This example shows how a factory can teach Fabrica about a runtime it doesn't know, by shipping a **folder provider**. The runtime here is "Acme Runner", a pretend in-house agent runner. Its "API" is a JSON file on your disk, so you can watch exactly what Fabrica does.
+This example shows how a blueprint can teach Fabrica about a runtime it doesn't know, by shipping a **folder provider**. The runtime here is "Acme Runner", a pretend in-house agent runner. Its "API" is a JSON file on your disk, so you can watch exactly what Fabrica does.
 
 ```
-factory/
+blueprint/
   fabrica.yaml
   providers/acme-runner/
     provider.yaml      # the capability matrix: plain data
@@ -26,15 +26,15 @@ The full reference is in [docs/providers.md](../../docs/providers.md).
 
 ## Try it
 
-You'll need `python3` and a product repo you can point at. Push the `factory/` folder to a git repo of its own (say `github.com/you/acme-factory`). Make sure your product repo has the [Fabrica line](../../docs/product-repos.md#the-fabrica-line) at the top of its `AGENTS.md`. Then, in a home repo:
+You'll need `python3` and a product repo you can point at. Push the `blueprint/` folder to a git repo of its own (say `github.com/you/acme-blueprint`). Make sure your product repo has the [Fabrica line](../../docs/product-repos.md#the-fabrica-line) at the top of its `AGENTS.md`. Then, in a home repo:
 
 ```yaml
-# deployments/triage.yaml
-factory: { git: github.com/you/acme-factory, ref: main }
+# factories/triage.yaml
+blueprint: { git: github.com/you/acme-blueprint, ref: main }
 server: https://fabrica.example.com
 runtimes: [acme-runner]
 routines: [triage]
-repos: [github.com/you/your-app]
+targets: [github.com/you/your-app]
 ```
 
 ```sh

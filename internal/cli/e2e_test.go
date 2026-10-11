@@ -16,7 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/mcpserver"
@@ -83,25 +83,25 @@ func setupCLI(t *testing.T) *testkit.World {
 func TestCheckCommands(t *testing.T) {
 	w := setupCLI(t)
 
-	out := mustFab(t, 0, w.Factory.Dir, "check")
+	out := mustFab(t, 0, w.Blueprint.Dir, "check")
 	if !strings.Contains(out, "2 skills, 2 routines, 2 rules, 2 connectors, 1 provider") || !strings.Contains(out, "No problems found") {
-		t.Errorf("factory check output:\n%s", out)
+		t.Errorf("blueprint check output:\n%s", out)
 	}
 
 	// A typo is an error, with the file and the fix.
-	w.Factory.Write(map[string]string{"rules/broken.mdc": "---\nalwaysapply: true\n---\nHi\n"})
-	out = mustFab(t, 1, w.Factory.Dir, "check")
+	w.Blueprint.Write(map[string]string{"rules/broken.mdc": "---\nalwaysapply: true\n---\nHi\n"})
+	out = mustFab(t, 1, w.Blueprint.Dir, "check")
 	if !strings.Contains(out, "rules/broken.mdc") || !strings.Contains(out, `unknown key "alwaysapply" (rules only have description, globs and alwaysApply)`) {
 		t.Errorf("want the typo reported:\n%s", out)
 	}
 
-	// A product repo checked against a factory.
-	out = mustFab(t, 0, w.App.Dir, "check", "--factory", "github.com/acme/factory@stable")
+	// A product repo checked against a blueprint.
+	out = mustFab(t, 0, w.App.Dir, "check", "--blueprint", "github.com/acme/blueprint@stable")
 	if !strings.Contains(out, "github.com/acme/app") || !strings.Contains(out, "doesn't provide optional skill \"test\"") {
 		t.Errorf("product check output:\n%s", out)
 	}
 	w.API.Write(map[string]string{"AGENTS.md": "# API\n"})
-	out = mustFab(t, 1, w.API.Dir, "check", "--factory", w.Factory.Dir)
+	out = mustFab(t, 1, w.API.Dir, "check", "--blueprint", w.Blueprint.Dir)
 	if !strings.Contains(out, "doesn't start with the Fabrica line") || !strings.Contains(out, testkit.FabricaLine) {
 		t.Errorf("want a missing-line error that shows the line:\n%s", out)
 	}
@@ -111,7 +111,7 @@ func TestLockAndUpgradeCommands(t *testing.T) {
 	w := setupCLI(t)
 	dir := t.TempDir()
 	testkit.WriteFiles(t, dir, map[string]string{
-		"fabrica.yaml": "imports:\n  acme: { git: github.com/acme/factory, ref: main, only: [skills/pr-review, rules/tests-first] }\n",
+		"fabrica.yaml": "imports:\n  acme: { git: github.com/acme/blueprint, ref: main, only: [skills/pr-review, rules/tests-first] }\n",
 	})
 	out := mustFab(t, 1, dir, "check")
 	if !strings.Contains(out, "run `fabrica lock`") {
@@ -126,7 +126,7 @@ func TestLockAndUpgradeCommands(t *testing.T) {
 		t.Errorf("a second lock should be a no-op:\n%s", out)
 	}
 
-	w.UpdateFactory(map[string]string{"skills/pr-review/SKILL.md": "---\nname: pr-review\ndescription: Better reviews.\n---\nNew.\n"})
+	w.UpdateBlueprint(map[string]string{"skills/pr-review/SKILL.md": "---\nname: pr-review\ndescription: Better reviews.\n---\nNew.\n"})
 	out = mustFab(t, 1, dir, "upgrade") // no terminal and no --yes: refuses
 	if !strings.Contains(out, "~ skills/pr-review") || !strings.Contains(out, "run again with --yes") {
 		t.Errorf("upgrade without --yes:\n%s", out)
@@ -147,11 +147,11 @@ func TestLockAndUpgradeCommands(t *testing.T) {
 func TestSuccessTest(t *testing.T) {
 	w := setupCLI(t)
 	w.Home.Write(map[string]string{
-		"deployments/pr-review.yaml": `factory: { git: github.com/acme/factory, ref: stable }
+		"factories/pr-review.yaml": `blueprint: { git: github.com/acme/blueprint, ref: stable }
 server: https://fabrica.acme.dev
 runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review]
-repos: [github.com/acme/app]
+targets: [github.com/acme/app]
 params: { slack_channel: "#eng" }
 `,
 	}).CommitPush("deploy pr-review")
@@ -178,7 +178,7 @@ params: { slack_channel: "#eng" }
 	}
 	defer db.Close()
 	cache := gitx.NewCache(t.TempDir())
-	srv, err := mcpserver.NewRemote(mcpserver.RemoteOptions{Home: "github.com/acme/home", Secret: testkit.Secret, Git: cache, Loader: factory.NewLoader(cache), Runs: db})
+	srv, err := mcpserver.NewRemote(mcpserver.RemoteOptions{Home: "github.com/acme/home", Secret: testkit.Secret, Git: cache, Loader: blueprint.NewLoader(cache), Runs: db})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,11 +280,11 @@ func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func TestDestroyCommand(t *testing.T) {
 	w := setupCLI(t)
 	w.Home.Write(map[string]string{
-		"deployments/pr-review.yaml": `factory: { git: github.com/acme/factory, ref: stable }
+		"factories/pr-review.yaml": `blueprint: { git: github.com/acme/blueprint, ref: stable }
 server: https://fabrica.acme.dev
 runtimes: [claude-code-cloud]
 routines: [pr-review]
-repos: [github.com/acme/app]
+targets: [github.com/acme/app]
 `,
 	}).CommitPush("deploy pr-review")
 	home, handoffs := w.Home.Dir, t.TempDir()
@@ -301,7 +301,7 @@ repos: [github.com/acme/app]
 	// Deleting needs no server secret.
 	t.Setenv(token.EnvVar, "")
 	out := mustFab(t, 2, home, "plan", "--destroy")
-	if !strings.Contains(out, "- delete pr-review @ github.com/acme/app on claude-code-cloud (handoff): the deployment is being destroyed") {
+	if !strings.Contains(out, "- delete pr-review @ github.com/acme/app on claude-code-cloud (handoff): the factory is being destroyed") {
 		t.Fatalf("plan --destroy:\n%s", out)
 	}
 	if out := mustFab(t, 0, home, "plan"); !strings.Contains(out, "In sync.") {
@@ -344,7 +344,7 @@ func TestLocalMCPOverStdio(t *testing.T) {
 	w := setupCLI(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n",
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
 	})
 	userHome := os.Getenv("HOME")
 	bin, _ := os.Executable()
@@ -378,7 +378,7 @@ func TestLocalMCPOverStdio(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	if instr := cs.InitializeResult().Instructions; !strings.Contains(instr, "repo github.com/acme/app, deployment my-default") {
+	if instr := cs.InitializeResult().Instructions; !strings.Contains(instr, "repo github.com/acme/app, factory my-default") {
 		t.Errorf("instructions = %s", instr)
 	}
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "run_begin", Arguments: map[string]any{"intent": "fix the login bug"}})
@@ -413,8 +413,8 @@ func TestVersionAndUsageErrors(t *testing.T) {
 			t.Errorf("fabrica %s = %q, want %q like `fabrica version`", flag, got, out)
 		}
 	}
-	if out, code := fab(t, t.TempDir(), "lock"); code != 1 || !strings.Contains(out, "isn't a factory") {
-		t.Errorf("lock outside a factory: %d %s", code, out)
+	if out, code := fab(t, t.TempDir(), "lock"); code != 1 || !strings.Contains(out, "isn't a blueprint") {
+		t.Errorf("lock outside a blueprint: %d %s", code, out)
 	}
 	if out, code := fab(t, "", "mcp"); code != 1 || !strings.Contains(out, "--runtime is required") {
 		t.Errorf("mcp without --runtime: %d %s", code, out)

@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
 )
 
-func load(t *testing.T, files map[string]string) *factory.Factory {
+func load(t *testing.T, files map[string]string) *blueprint.Blueprint {
 	t.Helper()
 	dir := t.TempDir()
 	base := map[string]string{
@@ -29,7 +29,7 @@ func load(t *testing.T, files map[string]string) *factory.Factory {
 		base[k] = v
 	}
 	testkit.WriteFiles(t, dir, base)
-	f, diags := factory.NewLoader(gitx.NewCache(t.TempDir())).LoadDir(context.Background(), dir, factory.LoadOptions{})
+	f, diags := blueprint.NewLoader(gitx.NewCache(t.TempDir())).LoadDir(context.Background(), dir, blueprint.LoadOptions{})
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -41,7 +41,7 @@ func target(t *testing.T, runtime string) stub.Target {
 	if !ok {
 		t.Fatalf("no built-in %s", runtime)
 	}
-	tg := stub.Target{Deployment: "pr-review", Runtime: p}
+	tg := stub.Target{Factory: "pr-review", Runtime: p}
 	if !p.IsLocal() {
 		tg.Endpoint = "https://fabrica.acme.dev/pr-review"
 	}

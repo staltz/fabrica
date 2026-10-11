@@ -1,5 +1,5 @@
 // Package examples holds Fabrica's examples. The only Go in it builds the
-// starter factory into the fabrica binary, so `fabrica new` can write it out
+// starter blueprint into the fabrica binary, so `fabrica new` can write it out
 // on machines that don't have a copy of this repo.
 package examples
 
@@ -8,12 +8,12 @@ import (
 	"io/fs"
 )
 
-//go:embed starter-factory
+//go:embed starter-blueprint
 var starter embed.FS
 
-// StarterFactory is examples/starter-factory, rooted at the factory itself.
-func StarterFactory() fs.FS {
-	sub, err := fs.Sub(starter, "starter-factory")
+// StarterBlueprint is examples/starter-blueprint, rooted at the blueprint itself.
+func StarterBlueprint() fs.FS {
+	sub, err := fs.Sub(starter, "starter-blueprint")
 	if err != nil {
 		panic(err) // can't happen: the folder is embedded above
 	}

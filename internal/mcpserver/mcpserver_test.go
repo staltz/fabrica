@@ -12,7 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/runs"
@@ -104,7 +104,7 @@ func newLocalWorld(t *testing.T) *localWorld {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\nroutines: [review-before-push]\n",
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\nroutines: [review-before-push]\n",
 	})
 	ws := filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
@@ -117,7 +117,7 @@ func newLocalWorld(t *testing.T) *localWorld {
 	t.Cleanup(func() { db.Close() })
 	return &localWorld{w: w, db: db, ws: ws, dbPath: dbPath, opts: LocalOptions{
 		Runtime: "claude-code-local", HomeDir: w.Home.Dir, Workspace: ws,
-		Git: cache, Loader: factory.NewLoader(cache), Runs: db, SkillCache: t.TempDir(),
+		Git: cache, Loader: blueprint.NewLoader(cache), Runs: db, SkillCache: t.TempDir(),
 	}}
 }
 
@@ -129,12 +129,12 @@ func (lw *localWorld) connect(t *testing.T) (*client, string) {
 // localStub computes the fingerprint a local hook for the routine carries.
 func localStub(t *testing.T, opts LocalOptions, routine string) string {
 	t.Helper()
-	remote := opts.Git.Remote("https://github.com/acme/factory.git", gitx.Full)
+	remote := opts.Git.Remote("https://github.com/acme/blueprint.git", gitx.Full)
 	resolved, err := remote.Resolve(context.Background(), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, diags := opts.Loader.LoadGit(context.Background(), "github.com/acme/factory", resolved.Commit, "")
+	f, diags := opts.Loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -196,7 +196,7 @@ func TestLocalSession(t *testing.T) {
 
 	// Run history knows what happened.
 	run, err := lw.db.Get(context.Background(), runID)
-	if err != nil || run.Repo != "github.com/acme/app" || run.Runtime != "claude-code-local" || run.Deployment != "my-default" || len(run.FactorySHA) != 40 {
+	if err != nil || run.Repo != "github.com/acme/app" || run.Runtime != "claude-code-local" || run.Factory != "my-default" || len(run.BlueprintSHA) != 40 {
 		t.Errorf("run = %+v, %v", run, err)
 	}
 	skills, _ := lw.db.SkillsLoaded(context.Background(), runID)
@@ -232,8 +232,8 @@ func TestLocalRefusesSkillClashes(t *testing.T) {
 	testkit.WriteFiles(t, lw.ws, map[string]string{".claude/skills/pr-review/SKILL.md": "---\nname: pr-review\ndescription: x\n---\n"})
 	c, _ := lw.connect(t)
 	c.ok("rules_get", nil) // rules still load
-	c.fails("skill_load", map[string]any{"name": "pdf"}, "same names as factory skills (pr-review)")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug"}, "same names as factory skills")
+	c.fails("skill_load", map[string]any{"name": "pdf"}, "same names as blueprint skills (pr-review)")
+	c.fails("run_begin", map[string]any{"intent": "fix a bug"}, "same names as blueprint skills")
 }
 
 func TestLocalUsesRootsFromTheClient(t *testing.T) {
@@ -255,10 +255,10 @@ func TestLocalStubNoLongerDeployed(t *testing.T) {
 	lw := newLocalWorld(t)
 	c, _ := lw.connect(t)
 	fp := localStub(t, lw.opts, "review-before-push")
-	// The routine is removed from the deployment after the hook was
+	// The routine is removed from the factory after the hook was
 	// installed.
-	lw.w.Home.Write(map[string]string{"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local]\nrepos: [\"*\"]\n"})
-	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in deployment my-default")
+	lw.w.Home.Write(map[string]string{"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n"})
+	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in factory my-default")
 }
 
 func TestLocalStubNoLongerRunsOnRuntime(t *testing.T) {
@@ -267,8 +267,8 @@ func TestLocalStubNoLongerRunsOnRuntime(t *testing.T) {
 	fp := localStub(t, lw.opts, "review-before-push")
 	// The routine is narrowed to another runtime after the hook was
 	// installed.
-	lw.w.Home.Write(map[string]string{"deployments/my-default.yaml": "factory: { git: github.com/acme/factory, ref: main }\nruntimes: [claude-code-local, cursor-local]\nrepos: [\"*\"]\nroutines: [{ routine: review-before-push, runtimes: [cursor-local] }]\n"})
-	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push doesn't run on runtime claude-code-local in deployment my-default")
+	lw.w.Home.Write(map[string]string{"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [\"*\"]\nroutines: [{ routine: review-before-push, runtimes: [cursor-local] }]\n"})
+	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push doesn't run on runtime claude-code-local in factory my-default")
 }
 
 type remoteWorld struct {
@@ -276,21 +276,21 @@ type remoteWorld struct {
 	srv    *Remote
 	ts     *httptest.Server
 	db     *runs.DB
-	loader *factory.Loader
+	loader *blueprint.Loader
 	cache  *gitx.Cache
 }
 
 func newRemoteWorld(t *testing.T) *remoteWorld {
 	t.Helper()
 	w := testkit.NewWorld(t)
-	w.Home.Write(map[string]string{"deployments/pr-review.yaml": testkit.PRReviewDeployment}).CommitPush("add pr-review")
+	w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add pr-review")
 	cache := gitx.NewCache(t.TempDir())
 	db, err := runs.Open(filepath.Join(t.TempDir(), "runs.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	loader := factory.NewLoader(cache)
+	loader := blueprint.NewLoader(cache)
 	srv, err := NewRemote(RemoteOptions{Home: "github.com/acme/home", Secret: testkit.Secret, Git: cache, Loader: loader, Runs: db})
 	if err != nil {
 		t.Fatal(err)
@@ -317,8 +317,8 @@ func (rw *remoteWorld) connect(t *testing.T, path string) *client {
 // remoteStub computes the fingerprint of the claude-code-cloud stub, the way apply does.
 func (rw *remoteWorld) remoteStub(t *testing.T) string {
 	t.Helper()
-	resolved, _ := rw.cache.Remote("https://github.com/acme/factory.git", gitx.Full).Resolve(context.Background(), "stable")
-	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/factory", resolved.Commit, "")
+	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(context.Background(), "stable")
+	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
 	p, _ := provider.Builtin("claude-code-cloud")
 	return stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Shape.Fingerprint()
 }
@@ -405,9 +405,9 @@ func TestRemoteRoutineRun(t *testing.T) {
 		t.Errorf("skills loaded = %v", skills)
 	}
 
-	// The factory changes the routine's trigger. Once the server has
+	// The blueprint changes the routine's trigger. Once the server has
 	// fetched it, the old stub is refused, even in this old session.
-	rw.w.UpdateFactory(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "opened", "synchronize", 1)})
+	rw.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "opened", "synchronize", 1)})
 	if err := rw.srv.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -417,16 +417,16 @@ func TestRemoteRoutineRun(t *testing.T) {
 		t.Error("the earlier run should still be in history")
 	}
 
-	// A repo removed from the deployment stops its stub too.
+	// A repo removed from the factory stops its stub too.
 	rw.w.Home.Pull()
-	rw.w.Home.Write(map[string]string{"deployments/pr-review.yaml": strings.Replace(testkit.PRReviewDeployment, "  - repo: github.com/acme/api\n    params: { slack_channel: \"#api\" }\n", "", 1)}).CommitPush("drop api")
+	rw.w.Home.Write(map[string]string{"factories/pr-review.yaml": strings.Replace(testkit.PRReviewFactory, "  - repo: github.com/acme/api\n    params: { slack_channel: \"#api\" }\n", "", 1)}).CommitPush("drop api")
 	rw.srv.Refresh(context.Background())
-	c.fails("run_begin", args, "repo github.com/acme/api isn't in deployment pr-review anymore")
+	c.fails("run_begin", args, "repo github.com/acme/api isn't in factory pr-review anymore")
 }
 
-func TestRemoteDeletedDeploymentStopsServing(t *testing.T) {
+func TestRemoteDeletedFactoryStopsServing(t *testing.T) {
 	rw := newRemoteWorld(t)
-	testkit.Git(t, rw.w.Home.Dir, "rm", "--quiet", "deployments/pr-review.yaml")
+	testkit.Git(t, rw.w.Home.Dir, "rm", "--quiet", "factories/pr-review.yaml")
 	rw.w.Home.CommitPush("delete")
 	rw.srv.Refresh(context.Background())
 	res, err := http.Post(rw.ts.URL+"/pr-review/t/"+token.For(testkit.Secret, "pr-review"), "application/json", strings.NewReader("{}"))
@@ -435,13 +435,13 @@ func TestRemoteDeletedDeploymentStopsServing(t *testing.T) {
 	}
 	res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d, want 404 once the deployment is deleted", res.StatusCode)
+		t.Errorf("status = %d, want 404 once the factory is deleted", res.StatusCode)
 	}
 }
 
 func TestRemoteRoutineMemory(t *testing.T) {
 	rw := newRemoteWorld(t)
-	rw.w.UpdateFactory(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nmemory: true\n", 1)})
+	rw.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nmemory: true\n", 1)})
 	if err := rw.srv.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}

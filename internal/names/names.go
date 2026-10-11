@@ -1,7 +1,7 @@
-// Package names handles the names of factory items and the way you refer to
+// Package names handles the names of blueprint items and the way you refer to
 // them.
 //
-// Every item in a factory (a skill, a routine, a rule, a connector or a
+// Every item in a blueprint (a skill, a routine, a rule, a connector or a
 // provider) gets its name from its file or folder name. You refer to an item
 // by kind and name, exactly like its path: `skills/pr-review`,
 // `routines/pr-review`, `rules/tests-first`. Each kind has its own namespace,
@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// Kind is one of the kinds of item a factory can contain.
+// Kind is one of the kinds of item a blueprint can contain.
 type Kind string
 
 const (

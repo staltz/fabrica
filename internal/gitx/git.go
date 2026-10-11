@@ -1,7 +1,7 @@
 // Package gitx is Fabrica's thin wrapper around the `git` command.
 //
 // Fabrica sits beside git and never wraps it for you, but it still needs git
-// to do its job: to read factories at exact commits, to read product repos'
+// to do its job: to read blueprints at exact commits, to read product repos'
 // default branches, and to commit and push state in your home repo. Instead
 // of re-implementing git, we run the real `git` binary. That way your
 // credential helpers, SSH keys and `url.<base>.insteadOf` rewrites all just

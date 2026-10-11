@@ -52,7 +52,7 @@ def main():
     resources = load()
 
     if op == "list":
-        # Everything whose identity belongs to this deployment's endpoint.
+        # Everything whose identity belongs to this factory's endpoint.
         endpoint = request["endpoint"].split("://", 1)[-1]
         found = [
             {"identity": r["identity"], "remote_id": rid, "fingerprint": r["fingerprint"]}

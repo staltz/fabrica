@@ -1,9 +1,0 @@
-# A different factory for one open source project, plus a local routine
-# that reviews my commits before every push.
-#
-# A specific repo always beats the wildcard, so in github.com/oss/project
-# this deployment wins over my-default.
-factory: { git: github.com/me/oss-factory, ref: main }
-runtimes: [claude-code-local, cursor-local]
-repos: [github.com/oss/project]
-routines: [review-before-push]

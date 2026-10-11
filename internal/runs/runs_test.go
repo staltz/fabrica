@@ -20,7 +20,7 @@ func TestRecordAndRead(t *testing.T) {
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	id := NewID(now)
 	if err := db.Begin(ctx, Run{ID: id, StartedAt: now, Intent: "review the new PR", Routine: "pr-review", Runtime: "claude-code-cloud",
-		Repo: "github.com/acme/app", Deployment: "pr-review", FactorySHA: strings.Repeat("a", 40), Stub: "7f3a9c7f3a9c", ServedBy: ServedRemote}); err != nil {
+		Repo: "github.com/acme/app", Factory: "pr-review", BlueprintSHA: strings.Repeat("a", 40), Stub: "7f3a9c7f3a9c", ServedBy: ServedRemote}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.SkillLoaded(ctx, id, "pr-review", now.Add(time.Second)); err != nil {
@@ -184,7 +184,7 @@ func TestDocQueries(t *testing.T) {
 		`SELECT started_at, runtime, repo, routine, intent, last_status FROM run_overview ORDER BY started_at DESC LIMIT 10`,
 		`SELECT routine, COUNT(*) AS runs, SUM(last_status = 'failed') AS failed FROM run_overview WHERE routine IS NOT NULL AND started_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-28 days') GROUP BY routine ORDER BY failed DESC`,
 		`SELECT r.started_at, r.repo, c.author, c.summary FROM checkpoints c JOIN runs r USING (run_id) WHERE c.status = 'failed' ORDER BY c.at DESC`,
-		`SELECT r.started_at, r.deployment, r.routine, r.runtime, r.repo, c.summary FROM checkpoints c JOIN runs r USING (run_id) WHERE c.author = 'fabrica' ORDER BY c.at DESC`,
+		`SELECT r.started_at, r.factory, r.routine, r.runtime, r.repo, c.summary FROM checkpoints c JOIN runs r USING (run_id) WHERE c.author = 'fabrica' ORDER BY c.at DESC`,
 		`SELECT skill, COUNT(DISTINCT run_id) AS runs FROM skill_loads GROUP BY skill ORDER BY runs DESC`,
 		`SELECT r.routine, l.value AS link FROM checkpoints c JOIN runs r USING (run_id), json_each(c.links) l WHERE l.value LIKE '%/pull/%'`,
 	}

@@ -24,7 +24,7 @@ const (
 	Error Severity = iota
 	// Warning means something looks off, but it never stops anything.
 	Warning
-	// Note is plain information, like "this deployment follows a branch".
+	// Note is plain information, like "this factory follows a branch".
 	Note
 )
 
@@ -68,7 +68,7 @@ type Diagnostic struct {
 
 // String renders the diagnostic on one or two lines, like:
 //
-//	✗ routines/pr-review.md: skill "pr-review" doesn't exist in this factory
+//	✗ routines/pr-review.md: skill "pr-review" doesn't exist in this blueprint
 //	  hint: add skills/pr-review to the import's only: list
 func (d Diagnostic) String() string {
 	var b strings.Builder
@@ -159,7 +159,7 @@ func (l List) HasCode(code string) bool {
 }
 
 // Prefixed returns a copy of the list where every Where is prefixed, which is
-// how we say "this problem is inside import `base`" or "inside deployment
+// how we say "this problem is inside import `base`" or "inside factory
 // `pr-review`".
 func (l List) Prefixed(prefix string) List {
 	out := make(List, len(l))

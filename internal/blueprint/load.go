@@ -1,17 +1,17 @@
-// Package factory reads factories: the git repos (or folders in one) that
+// Package blueprint reads blueprints: the git repos (or folders in one) that
 // describe how agents should build software.
 //
-// A factory has a manifest (fabrica.yaml), a lock (fabrica.lock), and items:
+// A blueprint has a manifest (fabrica.yaml), a lock (fabrica.lock), and items:
 // skills, routines, rules, connectors and providers. It can import other
-// factories, and plain repos full of skills or rules, in whole or in part.
-// After imports are resolved, a factory is one flat set of names, with a
+// blueprints, and plain repos full of skills or rules, in whole or in part.
+// After imports are resolved, a blueprint is one flat set of names, with a
 // separate namespace for each kind of item.
 //
 // Loading never guesses. Two imports bringing the same item, an import
 // that changed since the lock was written, or a routine that needs a skill
 // you didn't bring in are all errors, reported together so you can fix
 // them in one go.
-package factory
+package blueprint
 
 import (
 	"context"
@@ -35,16 +35,16 @@ import (
 // maxImportDepth stops runaway import chains.
 const maxImportDepth = 8
 
-// Source says where a factory came from.
+// Source says where a blueprint came from.
 type Source struct {
 	// Dir is the folder holding fabrica.yaml.
 	Dir string
-	// Git is the git: value as written in a deployment or import. Empty for
-	// a factory read straight from a folder (like while you're writing it).
+	// Git is the git: value as written in a factory or import. Empty for
+	// a blueprint read straight from a folder (like while you're writing it).
 	Git string
 	// Commit is the exact commit. Empty for a folder.
 	Commit string
-	// Path is the factory's subfolder inside its repo.
+	// Path is the blueprint's subfolder inside its repo.
 	Path string
 }
 
@@ -59,8 +59,8 @@ func (s Source) String() string {
 	return out + "@" + gitx.Short(s.Commit)
 }
 
-// Factory is a factory with every import resolved into one flat set.
-type Factory struct {
+// Blueprint is a blueprint with every import resolved into one flat set.
+type Blueprint struct {
 	Source     Source
 	Manifest   *Manifest
 	Lock       *Lock
@@ -69,9 +69,9 @@ type Factory struct {
 	Rules      map[string]*Rule
 	Connectors map[string]*Connector
 	Providers  map[string]*ProviderItem
-	// Imports are the factory's direct imports, sorted by alias.
+	// Imports are the blueprint's direct imports, sorted by alias.
 	Imports []*Import
-	// Overrides are imported items this factory excluded and then defined
+	// Overrides are imported items this blueprint excluded and then defined
 	// itself, under the same name.
 	Overrides []Override
 }
@@ -80,9 +80,9 @@ type Factory struct {
 type Import struct {
 	Spec   ImportSpec
 	Commit string
-	// IsFactory is false for plain skill or rule repos.
-	IsFactory bool
-	// Expects is what the imported factory expects from product repos.
+	// IsBlueprint is false for plain skill or rule repos.
+	IsBlueprint bool
+	// Expects is what the imported blueprint expects from product repos.
 	Expects []names.MaybeName
 	// offered is everything the import brings, before only: or exclude:.
 	offered map[names.Ref]item
@@ -103,14 +103,14 @@ func (i *Import) OfferedHash(ref names.Ref) (string, bool) {
 	return it.info().Hash, true
 }
 
-// Override is an imported item that this factory replaced with its own.
+// Override is an imported item that this blueprint replaced with its own.
 type Override struct {
 	Ref   names.Ref
 	Alias string
 }
 
-// Loader reads factories. It remembers imports it already read (a commit's
-// content never changes), so loading many deployments of the same factory
+// Loader reads blueprints. It remembers imports it already read (a commit's
+// content never changes), so loading many factories of the same blueprint
 // stays fast. It's safe to use from several goroutines.
 type Loader struct {
 	Git *gitx.Cache
@@ -124,53 +124,53 @@ func NewLoader(cache *gitx.Cache) *Loader {
 	return &Loader{Git: cache, memo: map[string]*tree{}}
 }
 
-// tree is one factory (or plain repo) with its own imports resolved, before
+// tree is one blueprint (or plain repo) with its own imports resolved, before
 // the importer's filters apply.
 type tree struct {
-	items     map[names.Ref]item
-	diags     diag.List
-	isFactory bool
-	manifest  *Manifest
-	lock      *Lock
-	imports   []*Import
-	overrides []Override
+	items       map[names.Ref]item
+	diags       diag.List
+	isBlueprint bool
+	manifest    *Manifest
+	lock        *Lock
+	imports     []*Import
+	overrides   []Override
 }
 
 // LoadOptions tweak a load.
 type LoadOptions struct {
-	// Lock, when set, is used instead of the factory's fabrica.lock. That's
+	// Lock, when set, is used instead of the blueprint's fabrica.lock. That's
 	// how `fabrica lock` and `fabrica upgrade` check a new lock before
 	// writing it.
 	Lock *Lock
 }
 
-// LoadDir reads the factory in a folder, like the one you're writing.
-func (l *Loader) LoadDir(ctx context.Context, dir string, opts LoadOptions) (*Factory, diag.List) {
+// LoadDir reads the blueprint in a folder, like the one you're writing.
+func (l *Loader) LoadDir(ctx context.Context, dir string, opts LoadOptions) (*Blueprint, diag.List) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, diag.AsList(err, "factory.unreadable", dir)
+		return nil, diag.AsList(err, "blueprint.unreadable", dir)
 	}
 	return l.load(ctx, Source{Dir: abs}, opts)
 }
 
-// LoadGit reads the factory at an exact commit of a git repo.
-func (l *Loader) LoadGit(ctx context.Context, gitSpec, commit, subpath string) (*Factory, diag.List) {
+// LoadGit reads the blueprint at an exact commit of a git repo.
+func (l *Loader) LoadGit(ctx context.Context, gitSpec, commit, subpath string) (*Blueprint, diag.List) {
 	remote := l.Git.Remote(repourl.GitURL(gitSpec), gitx.Full)
 	root, err := remote.Tree(ctx, commit)
 	if err != nil {
-		return nil, diag.AsList(err, "factory.fetch", gitSpec)
+		return nil, diag.AsList(err, "blueprint.fetch", gitSpec)
 	}
 	dir := filepath.Join(root, filepath.FromSlash(subpath))
 	return l.load(ctx, Source{Dir: dir, Git: gitSpec, Commit: commit, Path: subpath}, LoadOptions{})
 }
 
-func (l *Loader) load(ctx context.Context, src Source, opts LoadOptions) (*Factory, diag.List) {
+func (l *Loader) load(ctx context.Context, src Source, opts LoadOptions) (*Blueprint, diag.List) {
 	t := l.build(ctx, src, opts.Lock, nil)
 	diags := append(diag.List(nil), t.diags...)
 	if t.manifest == nil {
 		return nil, diags
 	}
-	f := &Factory{
+	f := &Blueprint{
 		Source:     src,
 		Manifest:   t.manifest,
 		Lock:       t.lock,
@@ -200,9 +200,9 @@ func (l *Loader) load(ctx context.Context, src Source, opts LoadOptions) (*Facto
 	return f, diags.Dedup()
 }
 
-// build reads one factory folder and resolves its imports.
+// build reads one blueprint folder and resolves its imports.
 func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stack []string) *tree {
-	t := &tree{isFactory: true, items: map[names.Ref]item{}}
+	t := &tree{isBlueprint: true, items: map[names.Ref]item{}}
 	m, diags := ReadManifest(src.Dir)
 	if m == nil {
 		if _, err := os.Stat(filepath.Join(src.Dir, "fabrica.yml")); err == nil && len(diags) > 0 {
@@ -222,7 +222,7 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 	}
 	t.lock = lock
 	if len(m.Imports) > 0 && lock == nil {
-		t.diags.Errorf("lock.missing", LockFile, "this factory has imports but no %s", LockFile).
+		t.diags.Errorf("lock.missing", LockFile, "this blueprint has imports but no %s", LockFile).
 			Hintf("run `fabrica lock` to pin every import to an exact commit")
 	}
 	if lock != nil {
@@ -253,7 +253,7 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 		}
 		sub := l.loadImport(ctx, spec, pin.Commit, stack)
 		t.diags = append(t.diags, sub.diags.Prefixed("import "+spec.Alias)...)
-		imp := &Import{Spec: spec, Commit: pin.Commit, IsFactory: sub.isFactory, offered: sub.items}
+		imp := &Import{Spec: spec, Commit: pin.Commit, IsBlueprint: sub.isBlueprint, offered: sub.items}
 		if sub.manifest != nil {
 			imp.Expects = sub.manifest.Expects
 		}
@@ -309,7 +309,7 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 	return t
 }
 
-// loadImport reads one import at a pinned commit: a factory if its folder
+// loadImport reads one import at a pinned commit: a blueprint if its folder
 // has a fabrica.yaml, a plain repo otherwise.
 func (l *Loader) loadImport(ctx context.Context, spec ImportSpec, commit string, stack []string) *tree {
 	url := repourl.GitURL(spec.Git)
@@ -318,7 +318,7 @@ func (l *Loader) loadImport(ctx context.Context, spec ImportSpec, commit string,
 		if k == key {
 			t := &tree{items: map[names.Ref]item{}}
 			t.diags.Errorf("import.cycle", "", "importing %s@%s leads back to itself", spec.Git, gitx.Short(commit)).
-				Hintf("factories can't import each other in a circle; remove one of the imports")
+				Hintf("blueprints can't import each other in a circle; remove one of the imports")
 			return t
 		}
 	}
@@ -365,7 +365,7 @@ func (l *Loader) readImport(ctx context.Context, spec ImportSpec, url, commit st
 	return loadPlain(root, spec.Path)
 }
 
-// loadPlain reads a repo that isn't a factory: its skills from
+// loadPlain reads a repo that isn't a blueprint: its skills from
 // <path>/*/SKILL.md (path defaults to "skills"), its Cursor rules from
 // .cursor/rules/*.mdc, and a root AGENTS.md as the always-on rule
 // rules/agents-md.
@@ -416,7 +416,7 @@ func loadPlain(root, skillsPath string) *tree {
 	return t
 }
 
-// loadItems reads the items defined directly in a factory folder.
+// loadItems reads the items defined directly in a blueprint folder.
 func loadItems(dir string) (map[names.Ref]item, diag.List) {
 	items := map[names.Ref]item{}
 	var diags diag.List
@@ -425,7 +425,7 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 	readDir := func(sub string) []fs.DirEntry {
 		entries, err := os.ReadDir(filepath.Join(dir, sub))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			diags.Errorf("factory.unreadable", sub, "%v", err)
+			diags.Errorf("blueprint.unreadable", sub, "%v", err)
 		}
 		return entries
 	}
@@ -436,7 +436,7 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 		case isSymlink(e):
 			diags.Errorf("skill.symlink", file, "skill folders can't be symlinks; Fabrica serves skills exactly as they are in git")
 		case !e.IsDir():
-			diags.Warnf("factory.stray-file", file, "isn't a skill folder, so Fabrica ignores it (skills live in skills/<name>/SKILL.md)")
+			diags.Warnf("blueprint.stray-file", file, "isn't a skill folder, so Fabrica ignores it (skills live in skills/<name>/SKILL.md)")
 		default:
 			add(parseSkill(filepath.Join(dir, "skills", e.Name()), e.Name(), file))
 		}
@@ -445,11 +445,11 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 		file := "routines/" + e.Name()
 		switch {
 		case e.IsDir() || !strings.HasSuffix(e.Name(), ".md"):
-			diags.Warnf("factory.stray-file", file, "isn't a routine, so Fabrica ignores it (routines are routines/<name>.md files)")
+			diags.Warnf("blueprint.stray-file", file, "isn't a routine, so Fabrica ignores it (routines are routines/<name>.md files)")
 		default:
 			data, err := os.ReadFile(filepath.Join(dir, "routines", e.Name()))
 			if err != nil {
-				diags.Errorf("factory.unreadable", file, "%v", err)
+				diags.Errorf("blueprint.unreadable", file, "%v", err)
 				continue
 			}
 			add(parseRoutine(data, strings.TrimSuffix(e.Name(), ".md"), file))
@@ -461,11 +461,11 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 		case !e.IsDir() && strings.HasSuffix(e.Name(), ".md"):
 			diags.Errorf("rule.extension", file, "rules use Cursor's .mdc extension").Hintf("rename it to rules/%s.mdc", strings.TrimSuffix(e.Name(), ".md"))
 		case e.IsDir() || !strings.HasSuffix(e.Name(), ".mdc"):
-			diags.Warnf("factory.stray-file", file, "isn't a rule, so Fabrica ignores it (rules are rules/<name>.mdc files)")
+			diags.Warnf("blueprint.stray-file", file, "isn't a rule, so Fabrica ignores it (rules are rules/<name>.mdc files)")
 		default:
 			data, err := os.ReadFile(filepath.Join(dir, "rules", e.Name()))
 			if err != nil {
-				diags.Errorf("factory.unreadable", file, "%v", err)
+				diags.Errorf("blueprint.unreadable", file, "%v", err)
 				continue
 			}
 			add(parseRule(data, strings.TrimSuffix(e.Name(), ".mdc"), file))
@@ -477,11 +477,11 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 		case !e.IsDir() && strings.HasSuffix(e.Name(), ".yml"):
 			diags.Errorf("connector.extension", file, "connector files use the .yaml extension").Hintf("rename it to connectors/%s.yaml", strings.TrimSuffix(e.Name(), ".yml"))
 		case e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml"):
-			diags.Warnf("factory.stray-file", file, "isn't a connector, so Fabrica ignores it (connectors are connectors/<name>.yaml files)")
+			diags.Warnf("blueprint.stray-file", file, "isn't a connector, so Fabrica ignores it (connectors are connectors/<name>.yaml files)")
 		default:
 			data, err := os.ReadFile(filepath.Join(dir, "connectors", e.Name()))
 			if err != nil {
-				diags.Errorf("factory.unreadable", file, "%v", err)
+				diags.Errorf("blueprint.unreadable", file, "%v", err)
 				continue
 			}
 			add(parseConnector(data, strings.TrimSuffix(e.Name(), ".yaml"), file))
@@ -490,13 +490,13 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 	for _, e := range readDir("providers") {
 		file := "providers/" + e.Name()
 		if !e.IsDir() || isSymlink(e) {
-			diags.Warnf("factory.stray-file", file, "isn't a provider folder, so Fabrica ignores it (providers live in providers/<name>/provider.yaml)")
+			diags.Warnf("blueprint.stray-file", file, "isn't a provider folder, so Fabrica ignores it (providers live in providers/<name>/provider.yaml)")
 			continue
 		}
 		add(loadProviderItem(filepath.Join(dir, "providers", e.Name()), e.Name(), file))
 	}
 	if info, err := os.Stat(filepath.Join(dir, "evals")); err == nil && info.IsDir() {
-		diags.Warnf("factory.evals", "evals/", "evals/ is reserved for skill and routine tests in a future version; v0.1 ignores it")
+		diags.Warnf("blueprint.evals", "evals/", "evals/ is reserved for skill and routine tests in a future version; v0.1 ignores it")
 	}
 	return items, diags
 }

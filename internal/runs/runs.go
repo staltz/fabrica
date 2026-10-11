@@ -44,16 +44,16 @@ var migrations = []string{schemaV1, schemaV2}
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
 CREATE TABLE runs (
-  run_id      TEXT PRIMARY KEY,
-  started_at  TEXT NOT NULL,             -- RFC 3339, UTC
-  intent      TEXT NOT NULL,             -- the agent's summary of the request, at most 20 words
-  routine     TEXT,                      -- NULL for interactive sessions
-  runtime     TEXT,
-  repo        TEXT,                      -- like github.com/acme/app
-  deployment  TEXT,
-  factory_sha TEXT,                      -- the exact factory commit served
-  stub        TEXT,                      -- the stub fingerprint the run claimed, if any
-  served_by   TEXT NOT NULL CHECK (served_by IN ('local', 'remote'))
+  run_id        TEXT PRIMARY KEY,
+  started_at    TEXT NOT NULL,           -- RFC 3339, UTC
+  intent        TEXT NOT NULL,           -- the agent's summary of the request, at most 20 words
+  routine       TEXT,                    -- NULL for interactive sessions
+  runtime       TEXT,
+  repo          TEXT,                    -- like github.com/acme/app
+  factory       TEXT,
+  blueprint_sha TEXT,                    -- the exact blueprint commit served
+  stub          TEXT,                    -- the stub fingerprint the run claimed, if any
+  served_by     TEXT NOT NULL CHECK (served_by IN ('local', 'remote'))
 );
 
 CREATE TABLE checkpoints (
@@ -79,7 +79,7 @@ CREATE INDEX skill_loads_by_run ON skill_loads(run_id);
 CREATE VIEW run_overview AS
 SELECT
   r.run_id, r.started_at, r.intent, r.routine, r.runtime, r.repo,
-  r.deployment, r.factory_sha, r.served_by,
+  r.factory, r.blueprint_sha, r.served_by,
   (SELECT c.status  FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_status,
   (SELECT c.summary FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_summary,
   (SELECT COUNT(*)  FROM checkpoints c WHERE c.run_id = r.run_id) AS checkpoint_count,
@@ -89,17 +89,17 @@ FROM runs r;
 
 // schemaV2 adds routine memories.
 const schemaV2 = `
--- The notes a routine keeps between runs, one per deployment, routine and
+-- The notes a routine keeps between runs, one per factory, routine and
 -- repo. Only routines with memory: true have one, and only on runtimes
 -- whose own memory Fabrica stands in for.
 CREATE TABLE memories (
-  deployment TEXT NOT NULL,
+  factory    TEXT NOT NULL,
   routine    TEXT NOT NULL,
   repo       TEXT NOT NULL,
   content    TEXT NOT NULL,              -- Markdown, written by the agent
   updated_at TEXT NOT NULL,              -- RFC 3339, UTC
   updated_by TEXT NOT NULL REFERENCES runs(run_id),
-  PRIMARY KEY (deployment, routine, repo)
+  PRIMARY KEY (factory, routine, repo)
 );
 `
 
@@ -166,16 +166,16 @@ const (
 
 // Run is one run record.
 type Run struct {
-	ID         string
-	StartedAt  time.Time
-	Intent     string
-	Routine    string
-	Runtime    string
-	Repo       string
-	Deployment string
-	FactorySHA string
-	Stub       string
-	ServedBy   string
+	ID           string
+	StartedAt    time.Time
+	Intent       string
+	Routine      string
+	Runtime      string
+	Repo         string
+	Factory      string
+	BlueprintSHA string
+	Stub         string
+	ServedBy     string
 }
 
 // Checkpoint statuses.
@@ -203,10 +203,10 @@ type Checkpoint struct {
 // Begin records the start of a run.
 func (d *DB) Begin(ctx context.Context, r Run) error {
 	_, err := d.db.ExecContext(ctx,
-		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, deployment, factory_sha, stub, served_by)
+		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, stamp(r.StartedAt), r.Intent, null(r.Routine), null(r.Runtime), null(r.Repo),
-		null(r.Deployment), null(r.FactorySHA), null(r.Stub), r.ServedBy)
+		null(r.Factory), null(r.BlueprintSHA), null(r.Stub), r.ServedBy)
 	return err
 }
 
@@ -236,10 +236,10 @@ var ErrNoRun = errors.New("no such run")
 func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 	var r Run
 	var started string
-	var routine, runtime, repo, deployment, sha, stub sql.NullString
+	var routine, runtime, repo, factory, sha, stub sql.NullString
 	err := d.db.QueryRowContext(ctx,
-		`SELECT run_id, started_at, intent, routine, runtime, repo, deployment, factory_sha, stub, served_by FROM runs WHERE run_id = ?`, runID).
-		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &deployment, &sha, &stub, &r.ServedBy)
+		`SELECT run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by FROM runs WHERE run_id = ?`, runID).
+		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoRun
 	}
@@ -247,7 +247,7 @@ func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 		return nil, err
 	}
 	r.StartedAt, _ = time.Parse(time.RFC3339Nano, started)
-	r.Routine, r.Runtime, r.Repo, r.Deployment, r.FactorySHA, r.Stub = routine.String, runtime.String, repo.String, deployment.String, sha.String, stub.String
+	r.Routine, r.Runtime, r.Repo, r.Factory, r.BlueprintSHA, r.Stub = routine.String, runtime.String, repo.String, factory.String, sha.String, stub.String
 	return &r, nil
 }
 
@@ -302,14 +302,14 @@ type Memory struct {
 // keeps memories to notes, which every run reads in full, rather than logs.
 const MaxMemoryBytes = 16 * 1024
 
-// Memory reads a routine's memory for one deployment and repo. A routine
+// Memory reads a routine's memory for one factory and repo. A routine
 // that never saved anything has an empty one.
-func (d *DB) Memory(ctx context.Context, deployment, routine, repo string) (Memory, error) {
+func (d *DB) Memory(ctx context.Context, factory, routine, repo string) (Memory, error) {
 	var m Memory
 	var at string
 	err := d.db.QueryRowContext(ctx,
-		`SELECT content, updated_at, updated_by FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`,
-		deployment, routine, repo).Scan(&m.Content, &at, &m.UpdatedBy)
+		`SELECT content, updated_at, updated_by FROM memories WHERE factory = ? AND routine = ? AND repo = ?`,
+		factory, routine, repo).Scan(&m.Content, &at, &m.UpdatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Memory{}, nil
 	}
@@ -320,20 +320,20 @@ func (d *DB) Memory(ctx context.Context, deployment, routine, repo string) (Memo
 	return m, nil
 }
 
-// SaveMemory replaces a routine's memory for one deployment and repo, on
+// SaveMemory replaces a routine's memory for one factory and repo, on
 // behalf of a run. Empty content forgets everything.
-func (d *DB) SaveMemory(ctx context.Context, deployment, routine, repo, content, runID string, at time.Time) error {
+func (d *DB) SaveMemory(ctx context.Context, factory, routine, repo, content, runID string, at time.Time) error {
 	if len(content) > MaxMemoryBytes {
 		return fmt.Errorf("the memory is %d bytes, but the limit is %d; keep only what future runs need, and save it again", len(content), MaxMemoryBytes)
 	}
 	if strings.TrimSpace(content) == "" {
-		_, err := d.db.ExecContext(ctx, `DELETE FROM memories WHERE deployment = ? AND routine = ? AND repo = ?`, deployment, routine, repo)
+		_, err := d.db.ExecContext(ctx, `DELETE FROM memories WHERE factory = ? AND routine = ? AND repo = ?`, factory, routine, repo)
 		return err
 	}
 	_, err := d.db.ExecContext(ctx,
-		`INSERT INTO memories (deployment, routine, repo, content, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT (deployment, routine, repo) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-		deployment, routine, repo, content, stamp(at), runID)
+		`INSERT INTO memories (factory, routine, repo, content, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (factory, routine, repo) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+		factory, routine, repo, content, stamp(at), runID)
 	return err
 }
 

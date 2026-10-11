@@ -3,11 +3,11 @@
 A product repo is the repo with your actual code. It stays about the product. It may contain:
 
 - its code,
-- **repo-specific skills**, in the usual places (`.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.codex/skills/`, `.github/skills/`), including ones that satisfy a factory's `expects:`,
+- **repo-specific skills**, in the usual places (`.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.codex/skills/`, `.github/skills/`), including ones that satisfy a blueprint's `expects:`,
 - **product-knowledge rules** in `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/` and so on: conventions specific to this product, its architecture, its context,
 - **the Fabrica line**.
 
-What it shouldn't contain is *process* instructions that belong in a factory. A product repo never says *which* factory works on it, so any number of people or teams can point different factories at it.
+What it shouldn't contain is *process* instructions that belong in a blueprint. A product repo never says *which* blueprint works on it, so any number of people or teams can point different blueprints at it.
 
 ## The Fabrica line
 
@@ -20,7 +20,7 @@ Before starting, load this repo's working rules from the Fabrica MCP server; if 
 - If the repo also has a root `CLAUDE.md`, that file must start with the same sentence too, because Claude Code ignores `AGENTS.md` whenever a `CLAUDE.md` exists.
 - Nested `AGENTS.md` files, `.cursor/rules/` and `.cursorrules` don't need it.
 - Fabrica checks for the exact sentence. If a future version changes the wording, it'll keep accepting the old sentences forever, so converted repos never break on upgrade.
-- **The line is required everywhere,** including in repos matched by a wildcard local deployment. If it's missing, Fabrica refuses to serve that repo.
+- **The line is required everywhere,** including in repos matched by a wildcard local factory. If it's missing, Fabrica refuses to serve that repo.
 
 Here's a typical `AGENTS.md`:
 
@@ -38,7 +38,7 @@ This is the customer-facing web app. It's a Next.js app with a Postgres database
 
 Everything below the line is product knowledge, which is exactly what belongs here. There's a full example in [examples/product-repo](../examples/product-repo/).
 
-Why `AGENTS.md`? It's the one file that Codex, Cursor and Claude Code all load on their own. Putting the pointer there is the most reliable way to make factory rules always-on in every tool, without Fabrica writing files into product repos. And teammates who don't use Fabrica can safely ignore the line, as it says.
+Why `AGENTS.md`? It's the one file that Codex, Cursor and Claude Code all load on their own. Putting the pointer there is the most reliable way to make blueprint rules always-on in every tool, without Fabrica writing files into product repos. And teammates who don't use Fabrica can safely ignore the line, as it says.
 
 ## Product knowledge only, enforced by the agent
 
@@ -48,12 +48,12 @@ Whether an instruction is "product knowledge" or "process" is a judgment call ("
 
 The agent records the conflict with `run_report(status: "failed")`, so it shows up in run history. Some conflicts will slip through, since it's the agent's judgment, but they don't go unnoticed for long.
 
-## Skills the factory expects
+## Skills the blueprint expects
 
-A factory can list skills it hopes each product repo will provide, in `expects:`:
+A blueprint can list skills it hopes each product repo will provide, in `expects:`:
 
 ```yaml
-# the factory's fabrica.yaml
+# the blueprint's fabrica.yaml
 expects: [test, deploy?]
 ```
 
@@ -63,11 +63,11 @@ The repo provides them as ordinary skills with those names, with no Fabrica synt
 .agents/skills/test/SKILL.md     # how *this* repo runs its tests
 ```
 
-If the repo doesn't provide one, the factory's own skill of the same name (if it has one) is used as a default. `fabrica check` in the repo tells you which expectations are met.
+If the repo doesn't provide one, the blueprint's own skill of the same name (if it has one) is used as a default. `fabrica check` in the repo tells you which expectations are met.
 
 ## Skill name clashes
 
-If the product repo has a skill with the same name as a factory skill, **Fabrica fails closed**. It doesn't pick one. The only exception is names in the factory's `expects:`, where the repo overriding the factory's default is exactly the point.
+If the product repo has a skill with the same name as a blueprint skill, **Fabrica fails closed**. It doesn't pick one. The only exception is names in the blueprint's `expects:`, where the repo overriding the blueprint's default is exactly the point.
 
 Where it's caught:
 
@@ -80,9 +80,9 @@ Where it's caught:
 Inside the repo:
 
 ```sh
-fabrica check                                  # against the factory your deployments use for it
-fabrica check --factory ../my-factory          # against a factory folder
-fabrica check --factory github.com/acme/factory@stable
+fabrica check                                  # against the blueprint your factories use for it
+fabrica check --blueprint ../my-blueprint      # against a blueprint folder
+fabrica check --blueprint github.com/acme/blueprint@stable
 ```
 
 It reports a missing Fabrica line (and shows the exact sentence to add), skill clashes, and unmet expectations.

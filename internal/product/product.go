@@ -6,10 +6,10 @@
 //
 //   - its root AGENTS.md (and root CLAUDE.md, if there is one) starts with
 //     the Fabrica line, and
-//   - none of its own skills has the same name as a factory skill, unless
-//     the factory expects the repo to provide that skill.
+//   - none of its own skills has the same name as a blueprint skill, unless
+//     the blueprint expects the repo to provide that skill.
 //
-// It also reports skills the factory expects but the repo doesn't provide.
+// It also reports skills the blueprint expects but the repo doesn't provide.
 package product
 
 import (
@@ -23,9 +23,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/fabline"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/promptblock"
 	"github.com/staltz/fabrica/internal/repourl"
@@ -117,8 +117,8 @@ func InspectRemote(ctx context.Context, cache *gitx.Cache, repo string) (*Worksp
 	return ws, nil
 }
 
-// Check checks a workspace against the factory that would serve it.
-func Check(ws *Workspace, f *factory.Factory) diag.List {
+// Check checks a workspace against the blueprint that would serve it.
+func Check(ws *Workspace, f *blueprint.Blueprint) diag.List {
 	var diags diag.List
 	where := ws.Repo
 	if where == "" {
@@ -130,8 +130,8 @@ func Check(ws *Workspace, f *factory.Factory) diag.List {
 	}
 	for _, name := range sortedSkillNames(ws.Skills) {
 		if _, ok := f.Skills[name]; ok && !f.Expects(name) {
-			diags.Errorf("product.skill-clash", where, "the repo has its own skill %q (%s), and so does the factory; Fabrica won't pick one", name, strings.Join(ws.Skills[name], ", ")).
-				Hintf("rename or remove the repo's skill, or, if repos are meant to provide their own %q, add it to the factory's expects:", name)
+			diags.Errorf("product.skill-clash", where, "the repo has its own skill %q (%s), and so does the blueprint; Fabrica won't pick one", name, strings.Join(ws.Skills[name], ", ")).
+				Hintf("rename or remove the repo's skill, or, if repos are meant to provide their own %q, add it to the blueprint's expects:", name)
 		}
 	}
 	for _, e := range f.Manifest.Expects {
@@ -141,19 +141,19 @@ func Check(ws *Workspace, f *factory.Factory) diag.List {
 		_, fallback := f.Skills[e.Name]
 		switch {
 		case fallback:
-			diags.Notef("product.expects-default", where, "the repo doesn't provide skill %q, so the factory's default is used", e.Name)
+			diags.Notef("product.expects-default", where, "the repo doesn't provide skill %q, so the blueprint's default is used", e.Name)
 		case e.Optional:
 			diags.Notef("product.expects-optional", where, "the repo doesn't provide optional skill %q", e.Name)
 		default:
-			diags.Warnf("product.unmet-expects", where, "the factory expects the repo to provide skill %q, but it doesn't", e.Name).
+			diags.Warnf("product.unmet-expects", where, "the blueprint expects the repo to provide skill %q, but it doesn't", e.Name).
 				Hintf("add it as a repo skill, for example in .agents/skills/%s/SKILL.md", e.Name)
 		}
 	}
 	return diags
 }
 
-// Clashes returns the repo skills that clash with factory skills.
-func Clashes(ws *Workspace, f *factory.Factory) []string {
+// Clashes returns the repo skills that clash with blueprint skills.
+func Clashes(ws *Workspace, f *blueprint.Blueprint) []string {
 	var out []string
 	for _, name := range sortedSkillNames(ws.Skills) {
 		if _, ok := f.Skills[name]; ok && !f.Expects(name) {

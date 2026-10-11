@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/fabline"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/product"
 	"github.com/staltz/fabrica/internal/testkit"
 )
 
-func loadFactory(t *testing.T) *factory.Factory {
+func loadBlueprint(t *testing.T) *blueprint.Blueprint {
 	t.Helper()
 	dir := t.TempDir()
 	testkit.WriteFiles(t, dir, map[string]string{
@@ -20,7 +20,7 @@ func loadFactory(t *testing.T) *factory.Factory {
 		"skills/pr-review/SKILL.md": "---\nname: pr-review\ndescription: Reviews.\n---\nx\n",
 		"skills/lint/SKILL.md":      "---\nname: lint\ndescription: Default lint.\n---\nx\n",
 	})
-	f, diags := factory.NewLoader(gitx.NewCache(t.TempDir())).LoadDir(context.Background(), dir, factory.LoadOptions{})
+	f, diags := blueprint.NewLoader(gitx.NewCache(t.TempDir())).LoadDir(context.Background(), dir, blueprint.LoadOptions{})
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
@@ -28,7 +28,7 @@ func loadFactory(t *testing.T) *factory.Factory {
 }
 
 func TestCheckWorkspace(t *testing.T) {
-	f := loadFactory(t)
+	f := loadBlueprint(t)
 	dir := t.TempDir()
 	testkit.WriteFiles(t, dir, map[string]string{
 		"AGENTS.md":                         fabline.Sentence + "\n\n# App\n",
@@ -69,7 +69,7 @@ func TestInspectRemoteDefaultBranch(t *testing.T) {
 	if ws.HasLine() || ws.Repo != "github.com/acme/app" {
 		t.Errorf("workspace = %+v", ws)
 	}
-	diags := product.Check(ws, loadFactory(t))
+	diags := product.Check(ws, loadBlueprint(t))
 	if !diags.HasCode("product.unmet-expects") || !diags.HasCode("product.fabrica-line") {
 		t.Errorf("got:\n%s", diags)
 	}

@@ -25,12 +25,12 @@ func TestNormalize(t *testing.T) {
 
 func TestGitURL(t *testing.T) {
 	for in, want := range map[string]string{
-		"github.com/acme/factory":         "https://github.com/acme/factory.git",
-		"github.com/acme/factory.git":     "https://github.com/acme/factory.git",
-		"https://example.com/x.git":       "https://example.com/x.git",
-		"git@github.com:acme/factory.git": "git@github.com:acme/factory.git",
-		"/srv/git/factory":                "/srv/git/factory",
-		"file:///srv/git/factory":         "file:///srv/git/factory",
+		"github.com/acme/blueprint":         "https://github.com/acme/blueprint.git",
+		"github.com/acme/blueprint.git":     "https://github.com/acme/blueprint.git",
+		"https://example.com/x.git":         "https://example.com/x.git",
+		"git@github.com:acme/blueprint.git": "git@github.com:acme/blueprint.git",
+		"/srv/git/blueprint":                "/srv/git/blueprint",
+		"file:///srv/git/blueprint":         "file:///srv/git/blueprint",
 	} {
 		if got := GitURL(in); got != want {
 			t.Errorf("GitURL(%q) = %q, want %q", in, got, want)

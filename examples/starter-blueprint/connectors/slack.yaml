@@ -1,6 +1,6 @@
 # Slack, through the runtime's built-in integration.
 #
-# Routines in this factory list Slack as optional (slack?), so on a runtime
+# Routines in this blueprint list Slack as optional (slack?), so on a runtime
 # without it they still run and skip the Slack step.
 kind: native
 description: Slack, for posting short notes to a team channel

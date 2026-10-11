@@ -5,7 +5,7 @@
 // into a product repo:
 //
 //   - MCP servers: the `fabrica` server itself (which picks the right
-//     factory each time a session starts), plus a `fabrica-<connector>`
+//     blueprint each time a session starts), plus a `fabrica-<connector>`
 //     server for each connector a local routine needs.
 //   - Hooks: one per local routine, running `fabrica hook …`.
 //   - Scheduled tasks: one per repo for each local routine with a

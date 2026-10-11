@@ -1,17 +1,17 @@
-// Package mcpserver is the Fabrica MCP server, the only way factory content
+// Package mcpserver is the Fabrica MCP server, the only way blueprint content
 // reaches agents.
 //
 // One binary, two modes:
 //
 //   - `fabrica mcp` (local) talks stdio to Claude Code, Cursor or Codex on
-//     your machine. It picks the factory from your personal home repo's
-//     local deployments by matching the workspace's git remote, checks the
+//     your machine. It picks the blueprint from your personal home repo's
+//     local factories by matching the workspace's git remote, checks the
 //     workspace (the Fabrica line, skill clashes), and unpacks skill folders
 //     onto disk when they're loaded.
 //   - `fabrica mcp --http` (remote) serves cloud runtimes over HTTP, one
-//     endpoint per cloud deployment of one home repo.
+//     endpoint per cloud factory of one home repo.
 //
-// Each MCP session is served from one factory commit, fixed when the
+// Each MCP session is served from one blueprint commit, fixed when the
 // session starts, so a merge that lands mid-run never changes what that run
 // sees.
 package mcpserver
@@ -25,7 +25,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/product"
 	"github.com/staltz/fabrica/internal/provider"
@@ -38,9 +38,9 @@ var Version = "dev"
 // Snapshot is what one session serves.
 type Snapshot struct {
 	// Mode is runs.ServedLocal or runs.ServedRemote.
-	Mode       string
-	Factory    *factory.Factory
-	Deployment *home.Deployment
+	Mode      string
+	Blueprint *blueprint.Blueprint
+	Factory   *home.Factory
 	// Repo and Runtime are known up front locally (from the workspace and
 	// the tool). Remotely they come from each run's stub.
 	Repo    string
@@ -49,28 +49,28 @@ type Snapshot struct {
 	Workspace *product.Workspace
 	// Refusal, when set, is why Fabrica won't serve this session at all.
 	Refusal string
-	// Clashes are repo skills with the same name as factory skills. While
+	// Clashes are repo skills with the same name as blueprint skills. While
 	// there are any, run_begin and skill_load refuse.
 	Clashes []string
 	// SkillCache is where skill folders get unpacked (local only).
 	SkillCache string
 }
 
-// FactorySHA is the exact commit served.
-func (s *Snapshot) FactorySHA() string {
-	if s.Factory == nil {
+// BlueprintSHA is the exact commit served.
+func (s *Snapshot) BlueprintSHA() string {
+	if s.Blueprint == nil {
 		return ""
 	}
-	return s.Factory.Source.Commit
+	return s.Blueprint.Source.Commit
 }
 
 func (s *Snapshot) remote() bool { return s.Mode == runs.ServedRemote }
 
-func (s *Snapshot) deploymentName() string {
-	if s.Deployment == nil {
+func (s *Snapshot) factoryName() string {
+	if s.Factory == nil {
 		return ""
 	}
-	return s.Deployment.Name
+	return s.Factory.Name
 }
 
 // Backend is what differs between the local and the remote server.
@@ -79,10 +79,10 @@ type Backend interface {
 	// session's first tool call; the local server uses the MCP session to
 	// ask the client for its workspace roots.
 	Resolve(ctx context.Context, ss *mcp.ServerSession) *Snapshot
-	// LatestDeployment returns the served deployment as it is in the latest
+	// LatestFactory returns the served factory as it is in the latest
 	// home repo right now, or nil and a reason if it's gone. Stale-stub
 	// checks compare against this, never against state.
-	LatestDeployment(ctx context.Context, snap *Snapshot, repo, runtime string) (*home.Deployment, string)
+	LatestFactory(ctx context.Context, snap *Snapshot, repo, runtime string) (*home.Factory, string)
 }
 
 // Core holds what every session shares.
@@ -152,7 +152,7 @@ func writes() *mcp.ToolAnnotations {
 func (s *session) register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "skills_list",
-		Description: "List the names and descriptions of all skills in this repo's factory. Load the relevant ones with skill_load.",
+		Description: "List the names and descriptions of all skills in this repo's blueprint. Load the relevant ones with skill_load.",
 		Annotations: readOnly(),
 	}, s.skillsList)
 	mcp.AddTool(srv, &mcp.Tool{
@@ -205,17 +205,17 @@ func refusal(snap *Snapshot) error {
 	return fmt.Errorf("Fabrica can't serve this session: %s", snap.Refusal)
 }
 
-// clashError is the error while repo skills clash with factory skills.
+// clashError is the error while repo skills clash with blueprint skills.
 func clashError(snap *Snapshot) error {
 	if len(snap.Clashes) == 0 {
 		return nil
 	}
-	return fmt.Errorf("this repo has its own skills with the same names as factory skills (%s), and Fabrica won't pick one; rename or remove the repo's skills, or ask the factory's author to add them to expects:. Tell the user", strings.Join(snap.Clashes, ", "))
+	return fmt.Errorf("this repo has its own skills with the same names as blueprint skills (%s), and Fabrica won't pick one; rename or remove the repo's skills, or ask the blueprint's author to add them to expects:. Tell the user", strings.Join(snap.Clashes, ", "))
 }
 
 // runtimeProvider finds the provider for a runtime: built in, or a folder
-// provider from the factory.
-func runtimeProvider(f *factory.Factory, name string) (*provider.Provider, bool) {
+// provider from the blueprint.
+func runtimeProvider(f *blueprint.Blueprint, name string) (*provider.Provider, bool) {
 	if p, ok := provider.Builtin(name); ok {
 		return p, true
 	}

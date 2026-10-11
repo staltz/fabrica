@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ import (
 	"github.com/staltz/fabrica/internal/yamlx"
 )
 
-// File names at the root of a factory.
+// File names at the root of a blueprint.
 const (
 	ManifestFile = "fabrica.yaml"
 	LockFile     = "fabrica.lock"
@@ -26,7 +26,7 @@ type Manifest struct {
 	Description string
 	// Imports, sorted by alias.
 	Imports []ImportSpec
-	// Expects are skills the factory hopes the product repo provides.
+	// Expects are skills the blueprint hopes the product repo provides.
 	Expects []names.MaybeName
 }
 
@@ -47,7 +47,7 @@ type ImportSpec struct {
 	Alias string
 	Git   string
 	Ref   string
-	// Path is the subfolder the factory (or, for plain repos, the skills)
+	// Path is the subfolder the blueprint (or, for plain repos, the skills)
 	// lives in. Empty means the default.
 	Path string
 	// Only and Exclude filter what comes in. At most one of them is set.
@@ -92,14 +92,14 @@ type importFile struct {
 	Exclude *[]string `yaml:"exclude"`
 }
 
-// ReadManifest reads fabrica.yaml from a factory folder.
+// ReadManifest reads fabrica.yaml from a blueprint folder.
 func ReadManifest(dir string) (*Manifest, diag.List) {
 	var diags diag.List
 	data, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			diags.Errorf("manifest.missing", dir, "there's no %s here, so this isn't a factory", ManifestFile).
-				Hintf("create %s at the root of your factory (it can be empty to start with)", ManifestFile)
+			diags.Errorf("manifest.missing", dir, "there's no %s here, so this isn't a blueprint", ManifestFile).
+				Hintf("create %s at the root of your blueprint (it can be empty to start with)", ManifestFile)
 		} else {
 			diags.Errorf("manifest.unreadable", ManifestFile, "%v", err)
 		}
@@ -130,7 +130,7 @@ func parseManifest(data []byte) (*Manifest, error) {
 		}
 		spec := ImportSpec{Alias: alias, Git: strings.TrimSpace(imp.Git), Ref: strings.TrimSpace(imp.Ref)}
 		if spec.Git == "" {
-			return nil, fmt.Errorf("imports.%s: git is missing; say where the import lives, like `git: github.com/acme/base-factory`", alias)
+			return nil, fmt.Errorf("imports.%s: git is missing; say where the import lives, like `git: github.com/acme/base-blueprint`", alias)
 		}
 		if spec.Ref == "" {
 			return nil, fmt.Errorf("imports.%s: ref is missing; pin a branch, tag or commit (fabrica.lock records the exact commit)", alias)

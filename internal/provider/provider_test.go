@@ -170,7 +170,7 @@ esac
 	if err != nil || len(list) != 1 || list[0].RemoteID != "r1" {
 		t.Fatalf("List = %+v, %v", list, err)
 	}
-	id, err := api.Create(ctx, Resource{Identity: "x#r@github.com/a/b", Deployment: "pr-review", Fabrica: ResourceFabrica{Token: "secret"}})
+	id, err := api.Create(ctx, Resource{Identity: "x#r@github.com/a/b", Factory: "pr-review", Fabrica: ResourceFabrica{Token: "secret"}})
 	if err != nil || id != "r2" {
 		t.Fatalf("Create = %q, %v", id, err)
 	}
@@ -178,7 +178,7 @@ esac
 	if !strings.Contains(string(sent), `"version":1`) || !strings.Contains(string(sent), `"op":"create"`) {
 		t.Errorf("unexpected request: %s", sent)
 	}
-	if err := api.Update(ctx, "r2", Resource{Deployment: "pr-review"}); err != nil {
+	if err := api.Update(ctx, "r2", Resource{Factory: "pr-review"}); err != nil {
 		t.Fatal(err)
 	}
 	err = api.Delete(ctx, "pr-review", "r2")
@@ -192,7 +192,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 		p, _ := Builtin(name)
 		for _, action := range []string{"create", "update", "delete"} {
 			out, err := p.RenderHandoff(HandoffData{
-				ID: "h_abc", Action: action, Runtime: name, Deployment: "pr-review",
+				ID: "h_abc", Action: action, Runtime: name, Factory: "pr-review",
 				Identity: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app",
 				Routine:  "pr-review", Repo: "github.com/acme/app", RemoteID: "trig_1",
 				Trigger:        HandoffTrigger{On: "github.pull_request.opened", Description: "when a pull request is opened"},
@@ -221,7 +221,7 @@ func TestCursorHandoffMirrorsTheRoutinesMemory(t *testing.T) {
 	p, _ := Builtin("cursor-cloud")
 	for needed, want := range map[bool]string{true: "memory tool **on**", false: "memory tool **off** (it's on by default)"} {
 		out, err := p.RenderHandoff(HandoffData{
-			ID: "h_abc", Action: "create", Runtime: "cursor-cloud", Deployment: "pr-review",
+			ID: "h_abc", Action: "create", Runtime: "cursor-cloud", Factory: "pr-review",
 			Identity: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app", Routine: "pr-review", Repo: "github.com/acme/app",
 			Memory: HandoffMemory{Needed: needed, Support: string(Native)}, Prompt: "x", ConfirmCommand: "fabrica confirm h_abc",
 		})

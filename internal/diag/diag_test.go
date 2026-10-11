@@ -31,7 +31,7 @@ func TestListBasics(t *testing.T) {
 	if other := AsList(errors.New("boom"), "x.boom", "here"); other[0].Code != "x.boom" || other[0].Where != "here" {
 		t.Errorf("AsList(plain error) = %v", other)
 	}
-	if p := l.Prefixed("deployment pr-review"); p[0].Where != "deployment pr-review › b" {
+	if p := l.Prefixed("factory pr-review"); p[0].Where != "factory pr-review › b" {
 		t.Errorf("Prefixed = %q", p[0].Where)
 	}
 }

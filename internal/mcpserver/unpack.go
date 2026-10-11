@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 )
 
 // unpackSkill copies a skill's folder into the local cache and returns the
@@ -18,7 +18,7 @@ import (
 // after the content hash, so a folder never changes once written: a new
 // version of the skill gets a new folder. Nothing is ever written into the
 // product repo.
-func unpackSkill(cacheRoot string, sk *factory.Skill) (string, error) {
+func unpackSkill(cacheRoot string, sk *blueprint.Skill) (string, error) {
 	if cacheRoot == "" {
 		return "", errors.New("no skill cache folder configured")
 	}

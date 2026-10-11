@@ -17,7 +17,7 @@ v0.1 has **no built-in way to read run history**. Open the file with any SQLite 
 
 When Fabrica refuses a run (an outdated stub, a repo without the Fabrica line, a skill clash), it still records the run, with a `failed` checkpoint written by Fabrica itself that says why.
 
-Fields written by the server (times, factory commit, deployment, skills loaded) are reliable. Fields written by the agent (intent, summaries, statuses, links) are best effort: they depend on the agent calling the tools.
+Fields written by the server (times, blueprint commit, factory, skills loaded) are reliable. Fields written by the agent (intent, summaries, statuses, links) are best effort: they depend on the agent calling the tools.
 
 ## The schema
 
@@ -35,8 +35,8 @@ One row per run.
 | `routine` | stub | `NULL` for interactive sessions. |
 | `runtime` | stub (remote) or server (local) | Like `claude-code-cloud` or `cursor-local`. |
 | `repo` | stub (remote) or server (local) | Like `github.com/acme/app`. The local server works it out from the workspace. |
-| `deployment` | server | From the endpoint (remote) or the matched local deployment (local). |
-| `factory_sha` | server | The exact factory commit that was served. |
+| `factory` | server | From the endpoint (remote) or the matched local factory (local). |
+| `blueprint_sha` | server | The exact blueprint commit that was served. |
 | `stub` | stub | The stub fingerprint the run claimed, if any. |
 | `served_by` | server | `local` or `remote`. |
 
@@ -60,11 +60,11 @@ One row per `skill_load` during a run: `id`, `run_id`, `at` and `skill`.
 
 ### `memories`
 
-One row per deployment, routine and repo: the notes a routine with `memory: true` keeps for its own next runs, on runtimes where Fabrica keeps them (see [Memory](factories.md#memory)).
+One row per factory, routine and repo: the notes a routine with `memory: true` keeps for its own next runs, on runtimes where Fabrica keeps them (see [Memory](blueprints.md#memory)).
 
 | Column | What it is |
 |---|---|
-| `deployment`, `routine`, `repo` | Whose memory it is. Together they're the primary key. |
+| `factory`, `routine`, `repo` | Whose memory it is. Together they're the primary key. |
 | `content` | Markdown written by the agent with `memory_save`, at most 16 KiB. |
 | `updated_at` | RFC 3339, UTC, set by the server. |
 | `updated_by` | The run that saved it. |
@@ -111,7 +111,7 @@ ORDER BY c.at DESC;
 Runs Fabrica refused (usually stale stubs that need `fabrica apply`):
 
 ```sql
-SELECT r.started_at, r.deployment, r.routine, r.runtime, r.repo, c.summary
+SELECT r.started_at, r.factory, r.routine, r.runtime, r.repo, c.summary
 FROM checkpoints c JOIN runs r USING (run_id)
 WHERE c.author = 'fabrica'
 ORDER BY c.at DESC;
@@ -129,7 +129,7 @@ ORDER BY runs DESC;
 What each routine remembers:
 
 ```sql
-SELECT deployment, routine, repo, updated_at, content
+SELECT factory, routine, repo, updated_at, content
 FROM memories
 ORDER BY updated_at DESC;
 ```

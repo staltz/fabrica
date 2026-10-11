@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/paths"
@@ -24,21 +24,21 @@ import (
 )
 
 func newCheck(g *globals) *cobra.Command {
-	var factorySpec string
+	var blueprintSpec string
 	cmd := &cobra.Command{
 		Use:   "check [folder]",
-		Short: "Check a factory, a home repo or a product repo for problems",
+		Short: "Check a blueprint, a home repo or a product repo for problems",
 		Long: `Check looks at a folder and works out what it is:
 
-  - A factory (it has a fabrica.yaml): lints every item and import, and
+  - A blueprint (it has a fabrica.yaml): lints every item and import, and
     warns about likely mistakes, like a skill that mentions a skill you
     didn't import.
-  - A home repo (it has deployments/ or state/): validates every
-    deployment against its factory and the runtimes' capability matrices,
+  - A home repo (it has factories/ or state/): validates every
+    factory against its blueprint and the runtimes' capability matrices,
     and checks each deployed product repo's default branch.
   - Anything else is treated as a product repo: checks the Fabrica line,
-    skill name clashes and unmet expects: against the factory that serves
-    it (from your home repo's deployments, or --factory).
+    skill name clashes and unmet expects: against the blueprint that serves
+    it (from your home repo's factories, or --blueprint).
 
 It exits with 1 when there are errors, so it works well as a pre-commit
 hook or a CI step.`,
@@ -62,16 +62,16 @@ hook or a CI step.`,
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 			switch {
-			case exists(filepath.Join(abs, factory.ManifestFile)):
-				return checkFactory(ctx, out, t, abs)
+			case exists(filepath.Join(abs, blueprint.ManifestFile)):
+				return checkBlueprint(ctx, out, t, abs)
 			case isHomeRepo(abs):
 				return checkHome(ctx, out, t, abs)
 			default:
-				return checkProduct(ctx, out, t, g, abs, len(args) == 1, factorySpec)
+				return checkProduct(ctx, out, t, g, abs, len(args) == 1, blueprintSpec)
 			}
 		},
 	}
-	cmd.Flags().StringVar(&factorySpec, "factory", "", "for a product repo, the factory to check it against: a folder, or <git>[@<ref>]")
+	cmd.Flags().StringVar(&blueprintSpec, "blueprint", "", "for a product repo, the blueprint to check it against: a folder, or <git>[@<ref>]")
 	return cmd
 }
 
@@ -87,15 +87,15 @@ func failIfErrors(errs int) error {
 	return nil
 }
 
-func checkFactory(ctx context.Context, out io.Writer, t *tools, dir string) error {
-	f, diags := t.loader.LoadDir(ctx, dir, factory.LoadOptions{})
-	fmt.Fprintf(out, "Factory %s\n", dir)
+func checkBlueprint(ctx context.Context, out io.Writer, t *tools, dir string) error {
+	f, diags := t.loader.LoadDir(ctx, dir, blueprint.LoadOptions{})
+	fmt.Fprintf(out, "Blueprint %s\n", dir)
 	if f != nil {
 		diags = append(diags, f.Lint()...)
 		fmt.Fprintf(out, "  %s\n", itemCounts(f))
 		for _, imp := range f.Imports {
-			kind := "factory"
-			if !imp.IsFactory {
+			kind := "blueprint"
+			if !imp.IsBlueprint {
 				kind = "plain repo"
 			}
 			fmt.Fprintf(out, "  import %s: %s@%s → %s (%s)\n", imp.Spec.Alias, imp.Spec.Git, imp.Spec.Ref, gitx.Short(imp.Commit), kind)
@@ -130,7 +130,7 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 	}
 	fmt.Fprintf(out, "Home repo %s (%s)\n", dir, kind)
 	errs, warns := printDiags(out, p.Diags, false)
-	for _, d := range p.Deployments {
+	for _, d := range p.Factories {
 		scope := "cloud"
 		switch {
 		case d.Spec == nil:
@@ -138,7 +138,7 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 		case d.Local():
 			scope = "local"
 		}
-		fmt.Fprintf(out, "Deployment %s (%s)\n", d.Name, scope)
+		fmt.Fprintf(out, "Factory %s (%s)\n", d.Name, scope)
 		for _, n := range d.Notes {
 			fmt.Fprintf(out, "  · %s\n", n)
 		}
@@ -164,7 +164,7 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 
 // checkProduct checks a product repo. A folder you name explicitly is
 // treated as the repo's root; otherwise it's the git repo you're in.
-func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir string, explicit bool, factorySpec string) error {
+func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir string, explicit bool, blueprintSpec string) error {
 	repo, top, repoErr := product.RepoName(ctx, dir)
 	root := dir
 	if !explicit && top != "" {
@@ -187,16 +187,16 @@ func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir 
 
 	type target struct {
 		label string
-		f     *factory.Factory
+		f     *blueprint.Blueprint
 		diags diag.List
 	}
 	var targets []target
-	if factorySpec != "" {
-		f, diags := loadFactorySpec(ctx, t, factorySpec)
-		targets = append(targets, target{label: "factory " + factorySpec, f: f, diags: diags})
+	if blueprintSpec != "" {
+		f, diags := loadBlueprintSpec(ctx, t, blueprintSpec)
+		targets = append(targets, target{label: "blueprint " + blueprintSpec, f: f, diags: diags})
 	} else {
 		if repoErr != nil {
-			return fmt.Errorf("%v; pass --factory to say which factory to check against", repoErr)
+			return fmt.Errorf("%v; pass --blueprint to say which blueprint to check against", repoErr)
 		}
 		homeDir, err := g.homeDir(ctx)
 		if err != nil {
@@ -207,17 +207,17 @@ func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir 
 			return err
 		}
 		seen := map[string]bool{}
-		for _, d := range deploymentsCovering(h, repo) {
-			key := d.Factory.String()
+		for _, d := range factoriesCovering(h, repo) {
+			key := d.Blueprint.String()
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			f, diags := loadFactoryRef(ctx, t, d.Factory)
-			targets = append(targets, target{label: fmt.Sprintf("factory %s (deployment %s)", d.Factory, d.Name), f: f, diags: diags})
+			f, diags := loadBlueprintRef(ctx, t, d.Blueprint)
+			targets = append(targets, target{label: fmt.Sprintf("blueprint %s (factory %s)", d.Blueprint, d.Name), f: f, diags: diags})
 		}
 		if len(targets) == 0 {
-			return fmt.Errorf("no deployment in %s covers %s; pass --factory to check against a factory directly", homeDir, repo)
+			return fmt.Errorf("no factory in %s covers %s; pass --blueprint to check against a blueprint directly", homeDir, repo)
 		}
 	}
 
@@ -241,13 +241,13 @@ func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir 
 	return failIfErrors(errs)
 }
 
-// deploymentsCovering finds every deployment that serves repo: cloud ones
+// factoriesCovering finds every factory that serves repo: cloud ones
 // that list it, and the local one that matches it on each local runtime.
-func deploymentsCovering(h *home.Home, repo string) []*home.Deployment {
-	var out []*home.Deployment
+func factoriesCovering(h *home.Home, repo string) []*home.Factory {
+	var out []*home.Factory
 	seen := map[string]bool{}
 	for _, name := range h.Names() {
-		d := h.Deployments[name]
+		d := h.Factories[name]
 		if d.Scope == provider.Cloud && d.Covers(repo) {
 			out = append(out, d)
 			seen[name] = true
@@ -265,31 +265,31 @@ func deploymentsCovering(h *home.Home, repo string) []*home.Deployment {
 	return out
 }
 
-// loadFactorySpec loads a factory from a folder, or from "<git>[@<ref>]".
-func loadFactorySpec(ctx context.Context, t *tools, spec string) (*factory.Factory, diag.List) {
+// loadBlueprintSpec loads a blueprint from a folder, or from "<git>[@<ref>]".
+func loadBlueprintSpec(ctx context.Context, t *tools, spec string) (*blueprint.Blueprint, diag.List) {
 	if info, err := os.Stat(spec); err == nil && info.IsDir() {
-		return t.loader.LoadDir(ctx, spec, factory.LoadOptions{})
+		return t.loader.LoadDir(ctx, spec, blueprint.LoadOptions{})
 	}
 	gitSpec, ref := spec, ""
 	if i := strings.LastIndex(spec, "@"); i > 0 && !strings.ContainsAny(spec[i+1:], ":/") {
 		gitSpec, ref = spec[:i], spec[i+1:]
 	}
-	return loadFactoryRef(ctx, t, home.FactoryRef{Git: gitSpec, Ref: ref})
+	return loadBlueprintRef(ctx, t, home.BlueprintRef{Git: gitSpec, Ref: ref})
 }
 
-func loadFactoryRef(ctx context.Context, t *tools, ref home.FactoryRef) (*factory.Factory, diag.List) {
+func loadBlueprintRef(ctx context.Context, t *tools, ref home.BlueprintRef) (*blueprint.Blueprint, diag.List) {
 	remote := t.git.Remote(repourl.GitURL(ref.Git), gitx.Full)
 	var commit string
 	if ref.Ref == "" {
 		_, c, err := remote.DefaultBranch(ctx)
 		if err != nil {
-			return nil, diag.AsList(err, "factory.resolve", ref.Git)
+			return nil, diag.AsList(err, "blueprint.resolve", ref.Git)
 		}
 		commit = c
 	} else {
 		resolved, err := remote.Resolve(ctx, ref.Ref)
 		if err != nil {
-			return nil, diag.AsList(err, "factory.resolve", ref.Git)
+			return nil, diag.AsList(err, "blueprint.resolve", ref.Git)
 		}
 		commit = resolved.Commit
 	}

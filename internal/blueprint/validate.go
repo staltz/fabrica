@@ -1,4 +1,4 @@
-package factory
+package blueprint
 
 import (
 	"fmt"
@@ -10,10 +10,10 @@ import (
 	"github.com/staltz/fabrica/internal/names"
 )
 
-// validate checks the merged factory as a whole. Items are only checked
+// validate checks the merged blueprint as a whole. Items are only checked
 // here, at the top, because only here do we know which items survived
 // everyone's only: and exclude: filters.
-func (f *Factory) validate() diag.List {
+func (f *Blueprint) validate() diag.List {
 	var diags diag.List
 
 	// Broken items you actually use are errors.
@@ -34,21 +34,21 @@ func (f *Factory) validate() diag.List {
 		for _, s := range r.Skills {
 			if _, ok := f.Skills[s]; !ok {
 				ref := names.Ref{Kind: names.Skills, Name: s}
-				diags.Errorf("routine.missing-skill", r.Where(), "the routine lists skill %q in skills:, but this factory has no %s", s, ref).
+				diags.Errorf("routine.missing-skill", r.Where(), "the routine lists skill %q in skills:, but this blueprint has no %s", s, ref).
 					Hintf("%s", f.howToGet(ref))
 			}
 		}
 		for _, c := range r.Connectors {
 			if _, ok := f.Connectors[c.Name]; !ok {
 				ref := names.Ref{Kind: names.Connectors, Name: c.Name}
-				diags.Errorf("routine.missing-connector", r.Where(), "the routine needs connector %q, but this factory has no %s", c.Name, ref).
+				diags.Errorf("routine.missing-connector", r.Where(), "the routine needs connector %q, but this blueprint has no %s", c.Name, ref).
 					Hintf("%s", f.howToGet(ref))
 			}
 		}
 	}
 
 	// Each import's expects: list must be covered by ours: our list is the
-	// whole contract this factory presents to product repos.
+	// whole contract this blueprint presents to product repos.
 	ours := map[string]bool{}
 	for _, e := range f.Manifest.Expects {
 		ours[e.Name] = true
@@ -66,7 +66,7 @@ func (f *Factory) validate() diag.List {
 
 // howToGet explains how to bring in a missing item, by looking at what
 // each import offers before its filter.
-func (f *Factory) howToGet(ref names.Ref) string {
+func (f *Blueprint) howToGet(ref names.Ref) string {
 	for _, imp := range f.Imports {
 		if _, ok := imp.offered[ref]; !ok {
 			continue
@@ -78,7 +78,7 @@ func (f *Factory) howToGet(ref names.Ref) string {
 			return fmt.Sprintf("import %q has it, but its exclude: list leaves it out; take it out of exclude:, or define your own %s", imp.Spec.Alias, ref)
 		}
 	}
-	return fmt.Sprintf("create %s, or import a factory that has it", fileFor(ref))
+	return fmt.Sprintf("create %s, or import a blueprint that has it", fileFor(ref))
 }
 
 func fileFor(ref names.Ref) string {
@@ -101,15 +101,15 @@ func fileFor(ref names.Ref) string {
 //
 //   - A skill's text mentions a skill that one of your imports has, but that
 //     you didn't bring in.
-//   - A routine's prompt mentions a factory skill it doesn't list in
+//   - A routine's prompt mentions a blueprint skill it doesn't list in
 //     skills:.
 //
 // Skills mention each other in prose ("use the `test` skill", "/changelog")
 // and Fabrica doesn't make you declare those, so these are only warnings.
-func (f *Factory) Lint() diag.List {
+func (f *Blueprint) Lint() diag.List {
 	var diags diag.List
 
-	// Skills offered by imports that didn't make it into the factory.
+	// Skills offered by imports that didn't make it into the blueprint.
 	leftOut := map[string]string{} // skill name → import alias
 	for _, imp := range f.Imports {
 		for ref := range imp.offered {
@@ -167,8 +167,8 @@ func Mentions(text, name string) bool {
 	return re.MatchString(text)
 }
 
-// items lists every item in the factory.
-func (f *Factory) items() []item {
+// items lists every item in the blueprint.
+func (f *Blueprint) items() []item {
 	var out []item
 	for _, n := range sortedKeys(f.Skills) {
 		out = append(out, f.Skills[n])
@@ -188,8 +188,8 @@ func (f *Factory) items() []item {
 	return out
 }
 
-// Item returns one item's info by ref, if the factory has it.
-func (f *Factory) Item(ref names.Ref) (*ItemInfo, bool) {
+// Item returns one item's info by ref, if the blueprint has it.
+func (f *Blueprint) Item(ref names.Ref) (*ItemInfo, bool) {
 	var it item
 	var ok bool
 	switch ref.Kind {
@@ -215,9 +215,9 @@ func lookupItem[T item](m map[string]T, name string) (item, bool) {
 	return v, ok
 }
 
-// Usable reports whether the factory loaded without any problem in an item
-// it uses. Callers that serve a factory check the load's diagnostics too.
-func (f *Factory) Usable() bool {
+// Usable reports whether the blueprint loaded without any problem in an item
+// it uses. Callers that serve a blueprint check the load's diagnostics too.
+func (f *Blueprint) Usable() bool {
 	for _, it := range f.items() {
 		if len(it.info().Problems) > 0 {
 			return false
@@ -226,12 +226,12 @@ func (f *Factory) Usable() bool {
 	return true
 }
 
-// SkillNames lists the factory's skills, sorted.
-func (f *Factory) SkillNames() []string { return sortedKeys(f.Skills) }
+// SkillNames lists the blueprint's skills, sorted.
+func (f *Blueprint) SkillNames() []string { return sortedKeys(f.Skills) }
 
-// Expects reports whether the factory expects product repos to provide a
+// Expects reports whether the blueprint expects product repos to provide a
 // skill with this name.
-func (f *Factory) Expects(name string) bool {
+func (f *Blueprint) Expects(name string) bool {
 	for _, e := range f.Manifest.Expects {
 		if e.Name == name {
 			return true

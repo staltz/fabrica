@@ -1,6 +1,6 @@
-# Writing a factory
+# Writing a blueprint
 
-A factory is a git repo (or a folder inside one) that describes how agents should build software. This page is the full reference for the format. If you want a working example to copy, see [examples/starter-factory](../examples/starter-factory/), or run `fabrica new my-factory` to get your own copy of it (`fabrica new --empty my-factory` starts one from scratch).
+A blueprint is a git repo (or a folder inside one) that describes how agents should build software. This page is the full reference for the format. If you want a working example to copy, see [examples/starter-blueprint](../examples/starter-blueprint/), or run `fabrica new my-blueprint` to get your own copy of it (`fabrica new --empty my-blueprint` starts one from scratch).
 
 ## Layout
 
@@ -23,9 +23,9 @@ Fabrica reads its own files **strictly**: unknown keys are errors. That catches 
 
 An item's name comes from its file or folder name: `routines/pr-review.md` is the routine `pr-review`. Names use lowercase letters, digits and single hyphens, like `pr-review` (that's the Agent Skills naming rule, used for every kind of item so there's only one rule to remember).
 
-Files Fabrica doesn't recognize inside these folders (say, a `README.md` in `skills/`) get a warning and are ignored. Anything at the top level of the factory, like a `README.md` next to `fabrica.yaml`, is yours to do with as you like.
+Files Fabrica doesn't recognize inside these folders (say, a `README.md` in `skills/`) get a warning and are ignored. Anything at the top level of the blueprint, like a `README.md` next to `fabrica.yaml`, is yours to do with as you like.
 
-Run `fabrica check` inside the factory to see every problem at once.
+Run `fabrica check` inside the blueprint to see every problem at once.
 
 ## `fabrica.yaml`
 
@@ -34,11 +34,11 @@ description: Acme's way of building software      # optional
 
 imports:
   base:                                  # an alias you pick
-    git: github.com/acme/base-factory
+    git: github.com/acme/base-blueprint
     ref: v1.2
     exclude: [skills/pr-review]          # we ship our own pr-review
   community:
-    git: github.com/someone/skills       # a plain skills repo, not a factory
+    git: github.com/someone/skills       # a plain skills repo, not a blueprint
     ref: 3f2a1c9
     path: skills
     only: [skills/pdf, skills/changelog]
@@ -46,13 +46,13 @@ imports:
 expects: [test, deploy?]                 # skills product repos should provide
 ```
 
-All three keys are optional. An empty `fabrica.yaml` is a valid factory.
+All three keys are optional. An empty `fabrica.yaml` is a valid blueprint.
 
-A factory has no global name of its own. It's identified by where it lives (git URL and ref), as chosen by whoever uses it.
+A blueprint has no global name of its own. It's identified by where it lives (git URL and ref), as chosen by whoever uses it.
 
 ## Imports
 
-Factories can import other factories, in whole or in part. They can also import repos that aren't factories at all, like a collection of skills.
+Blueprints can import other blueprints, in whole or in part. They can also import repos that aren't blueprints at all, like a collection of skills.
 
 ### Where an import lives
 
@@ -60,14 +60,14 @@ Factories can import other factories, in whole or in part. They can also import 
 |---|---|---|
 | `git` | yes | Where the repo lives. |
 | `ref` | yes | A branch, tag or commit. `fabrica.lock` records the exact commit it pointed at. |
-| `path` | no | A folder inside the repo. For a factory, the folder holding its `fabrica.yaml`. For a plain repo, the folder holding its skills (default `skills`). |
+| `path` | no | A folder inside the repo. For a blueprint, the folder holding its `fabrica.yaml`. For a plain repo, the folder holding its skills (default `skills`). |
 | `only` | no | Take only these items. |
 | `exclude` | no | Take everything except these items. |
 
 `git` can be:
 
-- a short `host/owner/repo` like `github.com/acme/base-factory`, which Fabrica turns into `https://github.com/acme/base-factory.git`,
-- a full URL (`https://…`, `ssh://…`, `git@github.com:acme/base-factory.git`),
+- a short `host/owner/repo` like `github.com/acme/base-blueprint`, which Fabrica turns into `https://github.com/acme/base-blueprint.git`,
+- a full URL (`https://…`, `ssh://…`, `git@github.com:acme/base-blueprint.git`),
 - a local path, handy while you're trying things out.
 
 Fabrica runs your real `git`, so your credential helpers and SSH keys just work. If you'd rather use SSH for the short form, tell git to rewrite it, with no Fabrica setting needed:
@@ -82,7 +82,7 @@ Each import gets an alias that *you* choose (`base` and `community` above). Alia
 
 ### Names and namespaces
 
-After imports are resolved, a factory is one **flat** set of names, with a separate namespace for each kind of item. You refer to items by kind and name, just like their paths: `skills/pr-review`, `routines/pr-review`, `rules/tests-first`. A skill and a routine can both be called `pr-review`.
+After imports are resolved, a blueprint is one **flat** set of names, with a separate namespace for each kind of item. You refer to items by kind and name, just like their paths: `skills/pr-review`, `routines/pr-review`, `rules/tests-first`. A skill and a routine can both be called `pr-review`.
 
 ### Collisions are errors
 
@@ -95,7 +95,7 @@ Each import can use **either** `only:` (take just these) **or** `exclude:` (take
 `only:` is literal: it doesn't pull in what the listed items need. If you take `routines/pr-review` but not the `skills/pr-review` it uses, `fabrica check` and `fabrica lock` tell you exactly what to add:
 
 ```
-✗ routines/pr-review.md (from import base): the routine lists skill "pr-review" in skills:, but this factory has no skills/pr-review
+✗ routines/pr-review.md (from import base): the routine lists skill "pr-review" in skills:, but this blueprint has no skills/pr-review
   hint: import "base" has it: add skills/pr-review to its only: list (only: doesn't pull in what items need on its own)
 ```
 
@@ -109,7 +109,7 @@ To replace an imported item, `exclude:` it and define your own item with the **s
 
 Skills and routines refer to each other by name *in prose* ("run the `test` skill"), and Fabrica can't safely rewrite prose. So you can't rename items on import: it would silently break those references.
 
-### Importing repos that aren't factories
+### Importing repos that aren't blueprints
 
 Any repo without a `fabrica.yaml` can still be imported:
 
@@ -128,7 +128,7 @@ That makes the whole existing ecosystem of skill and rule collections usable, wi
 # It pins every import to an exact commit; `fabrica upgrade` moves the pins.
 imports:
   base:
-    git: github.com/acme/base-factory
+    git: github.com/acme/base-blueprint
     ref: v1.2
     commit: 9c1e4b2a7d3f…
 ```
@@ -137,8 +137,8 @@ A few rules:
 
 - Locking never moves a pin that's already there. Only `fabrica upgrade` does, and it shows you a diff first.
 - If you change an import's `git`, `ref` or `path`, its old pin no longer counts, and `fabrica check` says to run `fabrica lock`. Changing only `only:` or `exclude:` doesn't need a new pin.
-- An imported factory's own imports come from **its** `fabrica.lock`, at the commit you pinned. So your lock alone pins the whole tree.
-- `lock` only writes the file when the factory has no errors with the new pins.
+- An imported blueprint's own imports come from **its** `fabrica.lock`, at the commit you pinned. So your lock alone pins the whole tree.
+- `lock` only writes the file when the blueprint has no errors with the new pins.
 
 ### Upgrading
 
@@ -158,11 +158,11 @@ base (main): 9c1e4b2 → 1f0a3d7
   + skills/release
 ```
 
-It asks before writing the lock (or pass `--yes`). It refuses to write a lock that would leave the factory with errors, like a new collision.
+It asks before writing the lock (or pass `--yes`). It refuses to write a lock that would leave the blueprint with errors, like a new collision.
 
-### One factory per consumer
+### One blueprint per consumer
 
-Every routine and every session uses exactly one factory. To combine factories, you write a factory that imports them. Conflicts are resolved once, at lock time, never while an agent is running.
+Every routine and every session uses exactly one blueprint. To combine blueprints, you write a blueprint that imports them. Conflicts are resolved once, at lock time, never while an agent is running.
 
 ## Skills
 
@@ -203,7 +203,7 @@ A routine is **trigger + skills + connectors + side effects + params + a prompt*
 ---
 description: Review every new pull request          # optional
 trigger: { on: github.pull_request.opened }
-skills: [pr-review]                                 # must exist in this factory
+skills: [pr-review]                                 # must exist in this blueprint
 connectors: [github, slack?]                        # '?' means optional
 side_effects:
   - github.pr_comment
@@ -219,10 +219,10 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 |---|---|
 | `description` | Optional. A one-line summary. |
 | `trigger` | Required. `on:` is the event. A `schedule` trigger also needs `cron:` (five fields, UTC). |
-| `skills` | The factory skills the routine uses. They **must exist** in the factory. |
+| `skills` | The blueprint skills the routine uses. They **must exist** in the blueprint. |
 | `connectors` | The connectors the routine needs. `name?` marks one as optional. Don't list `fabrica`: it's added automatically. |
 | `side_effects` | What the routine may do to the outside world. Each is `connector.action`, optionally with settings. Its connector must be in `connectors:`. |
-| `params` | Values deployments can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
+| `params` | Values factories can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
 | `memory` | Optional. `true` if the routine keeps notes between runs; default `false`. See [Memory](#memory). |
 
 The Markdown body is the routine's prompt. It must not be empty.
@@ -250,7 +250,7 @@ Side effects are listed in what the agent sees as "allowed side effects", and it
 
 ### Params
 
-Deployments set params, and individual repos can override them (see [Home repos](home-repos.md#params)). Use `{{params.name}}` in the prompt and in side effect settings. Every placeholder must be declared under `params:`, and a deployment setting a param that no routine declares is an error, which catches typos on both sides.
+Factories set params, and individual repos can override them (see [Home repos](home-repos.md#params)). Use `{{params.name}}` in the prompt and in side effect settings. Every placeholder must be declared under `params:`, and a factory setting a param that no routine declares is an error, which catches typos on both sides.
 
 ### Memory
 
@@ -263,15 +263,15 @@ memory: true
 The routine file is the source of truth, and every runtime mirrors it:
 
 - **Runtimes with their own memory feature** (`memory: native` in the [capability matrix](providers.md#capability-matrices), like Cursor automations) get it turned **on** for routines with `memory: true` and **off** for every other routine, even where the runtime turns it on by default. The setting is part of the stub's [shape](concepts.md#stubs-and-shapes), so changing `memory:` means a re-apply there, and `plan` shows the stub as an update.
-- **Runtimes without one** (`memory: emulated`, like Claude routines, Codex and every local tool) get their memory from Fabrica. Fabrica keeps one Markdown memory per deployment, routine and repo, in its run-history database. `routine_get` shows the memory to each run, and the run replaces it with `memory_save` before it finishes. Their handoffs say to leave any memory setting of the runtime's own off. Nothing is baked into the stub, so changing `memory:` takes effect on the next run.
+- **Runtimes without one** (`memory: emulated`, like Claude routines, Codex and every local tool) get their memory from Fabrica. Fabrica keeps one Markdown memory per factory, routine and repo, in its run-history database. `routine_get` shows the memory to each run, and the run replaces it with `memory_save` before it finishes. Their handoffs say to leave any memory setting of the runtime's own off. Nothing is baked into the stub, so changing `memory:` takes effect on the next run.
 - A runtime whose matrix doesn't list `memory` can't run a routine with `memory: true`: that's an error in `check` and `plan`.
 
-Fabrica's memories are capped at 16 KiB each, since every run reads the whole thing. Agents are told to keep notes, not logs; never to keep secrets; and never to keep instructions that came from untrusted input. Your factory's own process (what to remember, and when) belongs in the routine's prompt.
+Fabrica's memories are capped at 16 KiB each, since every run reads the whole thing. Agents are told to keep notes, not logs; never to keep secrets; and never to keep instructions that came from untrusted input. Your blueprint's own process (what to remember, and when) belongs in the routine's prompt.
 
 ### Checks
 
 - A routine's `skills:` entry that doesn't exist is an error.
-- `fabrica check` warns when the prompt mentions a factory skill that's missing from `skills:`.
+- `fabrica check` warns when the prompt mentions a blueprint skill that's missing from `skills:`.
 
 ## Rules
 
@@ -339,27 +339,27 @@ env: [MY_TOOL_TOKEN]  # environment variables passed through, by name
 | `secret` | `mcp` | With `auth: bearer`, the **name** of the secret holding the token, like `LINEAR_API_KEY`. |
 | `command`, `args`, `env` | `mcp` | A local (stdio) server. `env` lists environment variable names to pass through. |
 
-**Secrets never live in factories** (or home repos). You reference them by name, and the value comes from each runtime's own secret store, your CI secrets or your environment.
+**Secrets never live in blueprints** (or home repos). You reference them by name, and the value comes from each runtime's own secret store, your CI secrets or your environment.
 
-The name `fabrica` is taken: Fabrica's own MCP server is added to every deployment automatically.
+The name `fabrica` is taken: Fabrica's own MCP server is added to every factory automatically.
 
 ## Expects
 
-Some factory skills need something only the product repo can provide. A `release` skill might need "how *this* repo runs its tests". The factory declares these once:
+Some blueprint skills need something only the product repo can provide. A `release` skill might need "how *this* repo runs its tests". The blueprint declares these once:
 
 ```yaml
 expects: [test, deploy?]     # '?' means optional
 ```
 
 - The product repo provides them as ordinary repo-local skills with matching names (like `.agents/skills/test/SKILL.md`), with no Fabrica syntax at all.
-- The factory may also ship its own skill with the same name, as a fallback default.
+- The blueprint may also ship its own skill with the same name, as a fallback default.
 - `fabrica check` in a product repo reports expectations the repo doesn't meet.
-- Expected names are the one exception to the skill-clash rule: a repo skill with an expected name is supposed to override the factory's default.
-- Imported factories' `expects:` lists are **not** inherited. Your list is the whole contract your factory presents, and Fabrica warns when an import expects something your list doesn't cover.
+- Expected names are the one exception to the skill-clash rule: a repo skill with an expected name is supposed to override the blueprint's default.
+- Imported blueprints' `expects:` lists are **not** inherited. Your list is the whole contract your blueprint presents, and Fabrica warns when an import expects something your list doesn't cover.
 
 ## Custom providers
 
-A factory can ship providers for runtimes Fabrica doesn't support out of the box, in `providers/<name>/`. They're imported like everything else. See [Providers](providers.md#folder-providers). In v0.1, a custom provider can't replace a built-in one.
+A blueprint can ship providers for runtimes Fabrica doesn't support out of the box, in `providers/<name>/`. They're imported like everything else. See [Providers](providers.md#folder-providers). In v0.1, a custom provider can't replace a built-in one.
 
 ## `evals/`
 

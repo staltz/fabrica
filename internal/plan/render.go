@@ -23,7 +23,7 @@ func (p *Plan) Render(w io.Writer) {
 		renderDiags(w, "  ", home)
 		fmt.Fprintln(w)
 	}
-	for _, d := range p.Deployments {
+	for _, d := range p.Factories {
 		d.Render(w)
 		fmt.Fprintln(w)
 	}
@@ -37,7 +37,7 @@ func (p *Plan) Render(w io.Writer) {
 // Summary is the last line of the plan.
 func (p *Plan) Summary() string {
 	changes, errors, pending := 0, len(p.Diags.Only(diag.Error)), 0
-	for _, d := range p.Deployments {
+	for _, d := range p.Factories {
 		changes += len(d.Changes)
 		errors += len(d.Diags.Only(diag.Error))
 		pending += len(d.Pending)
@@ -66,7 +66,7 @@ func (p *Plan) Summary() string {
 	case 2:
 		return "Plan: " + strings.Join(parts, ", ") + ". Run `fabrica apply` to make these changes."
 	}
-	return "Plan: " + strings.Join(parts, ", ") + ". Fix the errors before applying; apply skips any deployment that has them."
+	return "Plan: " + strings.Join(parts, ", ") + ". Fix the errors before applying; apply skips any factory that has them."
 }
 
 func (p *Plan) destroySummary(parts []string, pending int) string {
@@ -79,11 +79,11 @@ func (p *Plan) destroySummary(parts []string, pending int) string {
 	case 2:
 		return "Destroy plan: " + strings.Join(parts, ", ") + "."
 	}
-	return "Destroy plan: " + strings.Join(parts, ", ") + ". Fix the errors first; destroy skips any deployment that has them."
+	return "Destroy plan: " + strings.Join(parts, ", ") + ". Fix the errors first; destroy skips any factory that has them."
 }
 
-// Render writes one deployment's plan.
-func (d *Deployment) Render(w io.Writer) {
+// Render writes one factory's plan.
+func (d *Factory) Render(w io.Writer) {
 	kind := "cloud"
 	switch {
 	case d.Spec == nil:
@@ -93,7 +93,7 @@ func (d *Deployment) Render(w io.Writer) {
 	case d.Destroy:
 		kind = "cloud, destroying"
 	}
-	fmt.Fprintf(w, "Deployment %s (%s)\n", d.Name, kind)
+	fmt.Fprintf(w, "Factory %s (%s)\n", d.Name, kind)
 	if d.Spec != nil && d.Spec.Endpoint() != "" {
 		fmt.Fprintf(w, "  endpoint %s\n", d.Spec.Endpoint())
 	}
@@ -264,23 +264,23 @@ func plural(n int, word string) string {
 
 // JSON is a plain-data version of the plan, for `fabrica plan --json`.
 type JSON struct {
-	ExitCode    int              `json:"exit_code"`
-	Destroy     bool             `json:"destroy,omitempty"`
-	Diags       diag.List        `json:"diagnostics,omitempty"`
-	Deployments []DeploymentJSON `json:"deployments"`
-	Local       []LocalJSON      `json:"local,omitempty"`
+	ExitCode  int           `json:"exit_code"`
+	Destroy   bool          `json:"destroy,omitempty"`
+	Diags     diag.List     `json:"diagnostics,omitempty"`
+	Factories []FactoryJSON `json:"factories"`
+	Local     []LocalJSON   `json:"local,omitempty"`
 }
 
-// DeploymentJSON is one deployment in JSON output.
-type DeploymentJSON struct {
-	Name          string       `json:"name"`
-	Scope         string       `json:"scope"`
-	FactoryCommit string       `json:"factory_commit,omitempty"`
-	Follows       bool         `json:"follows"`
-	Changes       []ChangeJSON `json:"changes"`
-	Pending       []string     `json:"pending,omitempty"`
-	Diags         diag.List    `json:"diagnostics,omitempty"`
-	Notes         []string     `json:"notes,omitempty"`
+// FactoryJSON is one factory in JSON output.
+type FactoryJSON struct {
+	Name            string       `json:"name"`
+	Scope           string       `json:"scope"`
+	BlueprintCommit string       `json:"blueprint_commit,omitempty"`
+	Follows         bool         `json:"follows"`
+	Changes         []ChangeJSON `json:"changes"`
+	Pending         []string     `json:"pending,omitempty"`
+	Diags           diag.List    `json:"diagnostics,omitempty"`
+	Notes           []string     `json:"notes,omitempty"`
 }
 
 // ChangeJSON is one change in JSON output.
@@ -304,13 +304,13 @@ type LocalJSON struct {
 // ToJSON converts the plan to plain data.
 func (p *Plan) ToJSON() JSON {
 	out := JSON{ExitCode: p.ExitCode(), Destroy: p.Destroy, Diags: p.Diags}
-	for _, d := range p.Deployments {
-		dj := DeploymentJSON{Name: d.Name, Scope: "cloud", Diags: d.Diags, Notes: d.Notes, Changes: []ChangeJSON{}}
+	for _, d := range p.Factories {
+		dj := FactoryJSON{Name: d.Name, Scope: "cloud", Diags: d.Diags, Notes: d.Notes, Changes: []ChangeJSON{}}
 		if d.Local() {
 			dj.Scope = "local"
 		}
 		if d.Resolved.Commit != "" {
-			dj.FactoryCommit, dj.Follows = d.Resolved.Commit, d.Resolved.Kind == gitx.Branch
+			dj.BlueprintCommit, dj.Follows = d.Resolved.Commit, d.Resolved.Kind == gitx.Branch
 		}
 		for _, c := range d.Changes {
 			cj := ChangeJSON{Action: c.Action, Runtime: c.Key.Runtime, Identity: c.Key.ID, Routine: c.Routine, Repo: c.Repo, Mode: string(c.Mode), Reasons: c.Reasons}
@@ -322,7 +322,7 @@ func (p *Plan) ToJSON() JSON {
 		for _, pend := range d.Pending {
 			dj.Pending = append(dj.Pending, pend.ID)
 		}
-		out.Deployments = append(out.Deployments, dj)
+		out.Factories = append(out.Factories, dj)
 	}
 	if p.Local != nil {
 		for _, rt := range p.Local.Runtimes {

@@ -1,4 +1,4 @@
-// Package scaffold writes out new factories, for `fabrica new`.
+// Package scaffold writes out new blueprints, for `fabrica new`.
 //
 // It only writes files. Running git is up to the caller.
 package scaffold
@@ -14,17 +14,17 @@ import (
 	"strings"
 
 	"github.com/staltz/fabrica/examples"
-	"github.com/staltz/fabrica/internal/factory"
+	"github.com/staltz/fabrica/internal/blueprint"
 )
 
-// Template is what a new factory starts with.
+// Template is what a new blueprint starts with.
 type Template int
 
 const (
-	// Starter is Fabrica's starter factory, examples/starter-factory: a
-	// working factory with skills, routines, rules and connectors.
+	// Starter is Fabrica's starter blueprint, examples/starter-blueprint: a
+	// working blueprint with skills, routines, rules and connectors.
 	Starter Template = iota
-	// Empty is a factory with no items yet: a fabrica.yaml with every key
+	// Empty is a blueprint with no items yet: a fabrica.yaml with every key
 	// commented out, and a README.
 	Empty
 )
@@ -34,7 +34,7 @@ var empty embed.FS
 
 const readme = "README.md"
 
-// ConflictError means the folder already has files the new factory would
+// ConflictError means the folder already has files the new blueprint would
 // write. Nothing was written.
 type ConflictError struct {
 	Dir string
@@ -44,8 +44,8 @@ type ConflictError struct {
 
 func (e *ConflictError) Error() string {
 	for _, p := range e.Paths {
-		if p == factory.ManifestFile {
-			return fmt.Sprintf("%s is already a factory: it has a %s", e.Dir, factory.ManifestFile)
+		if p == blueprint.ManifestFile {
+			return fmt.Sprintf("%s is already a blueprint: it has a %s", e.Dir, blueprint.ManifestFile)
 		}
 	}
 	shown, more, them := e.Paths, "", "them"
@@ -59,13 +59,13 @@ func (e *ConflictError) Error() string {
 		e.Dir, strings.Join(shown, ", "), more, them)
 }
 
-// Factory writes a new factory from a template into dir, creating the
+// Blueprint writes a new blueprint from a template into dir, creating the
 // folder if needed. It never overwrites anything: when any file it would
 // write is already there, it writes nothing and returns a *ConflictError.
 // The one exception is a README.md, which it leaves as it is, since a
 // repo made on a git host often starts with one. It returns the files it
 // wrote, slash-separated and relative to dir, sorted.
-func Factory(dir string, tmpl Template) ([]string, error) {
+func Blueprint(dir string, tmpl Template) ([]string, error) {
 	files, err := templateFiles(dir, tmpl)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func templateFiles(dir string, tmpl Template) (map[string][]byte, error) {
 	var src fs.FS
 	switch tmpl {
 	case Starter:
-		src = examples.StarterFactory()
+		src = examples.StarterBlueprint()
 	case Empty:
 		sub, err := fs.Sub(empty, "empty")
 		if err != nil {

@@ -1,4 +1,4 @@
-// Package testkit helps tests build little git worlds: factory repos,
+// Package testkit helps tests build little git worlds: blueprint repos,
 // product repos and home repos, all on the local disk.
 //
 // The trick is git's own `url.<base>.insteadOf` setting. Tests point

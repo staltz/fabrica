@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/product"
 	"github.com/staltz/fabrica/internal/provider"
@@ -19,13 +19,13 @@ import (
 
 func gitURL(spec string) string { return repourl.GitURL(spec) }
 
-// PlanCloud plans one cloud deployment, including one whose file was
+// PlanCloud plans one cloud factory, including one whose file was
 // deleted (all its resources become deletes), or one being destroyed (the
 // same, though its file is still there). Apply calls it again once it holds
-// the deployment's lock.
-func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deployment {
-	d := h.Deployments[name]
-	dp := &Deployment{Name: name, Spec: d, Destroy: e.Destroy}
+// the factory's lock.
+func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory {
+	d := h.Factories[name]
+	dp := &Factory{Name: name, Spec: d, Destroy: e.Destroy}
 	state, err := home.ReadState(h.Dir, name)
 	if err != nil {
 		dp.Diags.Errorf("state.invalid", home.StatePath(name), "%v", err)
@@ -33,7 +33,7 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deploym
 	}
 	dp.State = state
 	if state.Lock != nil && (e.LockHolder == "" || state.Lock.Holder != e.LockHolder) {
-		dp.Diags.Errorf("deployment.locked", home.StatePath(name), "deployment %s is locked by %q since %s", name, state.Lock.Holder, state.Lock.Since.Format(time.RFC3339)).
+		dp.Diags.Errorf("factory.locked", home.StatePath(name), "factory %s is locked by %q since %s", name, state.Lock.Holder, state.Lock.Since.Format(time.RFC3339)).
 			Hintf("another apply is running; wait for it. If it crashed, run `fabrica unlock %s` (the next apply adopts whatever it created)", name)
 	}
 	seen := map[home.Key]bool{}
@@ -54,22 +54,22 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Deploym
 	return dp
 }
 
-// planDesired works out every stub the deployment should have, and every
+// planDesired works out every stub the factory should have, and every
 // error that stands in the way.
-func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deployment) {
-	e.loadFactory(ctx, dp, d.Factory)
-	f := dp.Factory
+func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
+	e.loadBlueprint(ctx, dp, d.Blueprint)
+	f := dp.Blueprint
 	if f == nil {
 		return
 	}
 	for _, rt := range d.Runtimes {
 		p, err := resolveProvider(rt, f)
 		if err != nil {
-			dp.Diags.Errorf("deployment.unknown-runtime", d.File, "%v", err)
+			dp.Diags.Errorf("factory.unknown-runtime", d.File, "%v", err)
 			continue
 		}
 		if p.Matrix.Scope != d.Scope {
-			dp.Diags.Errorf("deployment.runtime-scope", d.File, "runtime %s is a %s runtime, but this is a %s deployment", rt, p.Matrix.Scope, d.Scope)
+			dp.Diags.Errorf("factory.runtime-scope", d.File, "runtime %s is a %s runtime, but this is a %s factory", rt, p.Matrix.Scope, d.Scope)
 			continue
 		}
 		mode, err := p.Mode()
@@ -85,7 +85,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deploymen
 			if !d.Runs(r.Ref.Name, rt.Name) {
 				continue
 			}
-			ev := stub.Evaluate(f, r, stub.Target{Deployment: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint()})
+			ev := stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint()})
 			rt.Evaluations[r.Ref.Name] = ev
 			dp.Diags = append(dp.Diags, ev.Diags...)
 		}
@@ -106,10 +106,10 @@ func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deploymen
 				continue // the routine doesn't run on this runtime
 			}
 			fp := ev.Shape.Fingerprint()
-			for _, repo := range d.SpecificRepos() {
+			for _, repo := range d.SpecificTargets() {
 				id := stub.Identity(d.Endpoint(), r.Ref.Name, repo)
 				dp.Desired = append(dp.Desired, &Resource{
-					Key: home.Key{Runtime: rt.Name, ID: id}, Deployment: d.Name, Runtime: rt.Name,
+					Key: home.Key{Runtime: rt.Name, ID: id}, Factory: d.Name, Runtime: rt.Name,
 					Routine: r.Ref.Name, Repo: repo, Endpoint: d.Endpoint(), Eval: ev, Fingerprint: fp,
 					Prompt: stub.Prompt(id, r.Ref.Name, rt.Name, repo, fp), TokenHash: tokenHash,
 					Mode: rt.Mode, Provider: rt.Provider,
@@ -122,8 +122,8 @@ func (e *Env) planDesired(ctx context.Context, dp *Deployment, d *home.Deploymen
 // checkProductRepos reads each deployed repo's default branch and checks
 // it can be served: remote runs can't inspect the workspace, so this is
 // where a missing Fabrica line or a skill clash gets caught.
-func (e *Env) checkProductRepos(ctx context.Context, dp *Deployment, d *home.Deployment, f *factory.Factory) {
-	for _, repo := range d.SpecificRepos() {
+func (e *Env) checkProductRepos(ctx context.Context, dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
+	for _, repo := range d.SpecificTargets() {
 		ws, err := product.InspectRemote(ctx, e.Git, repo)
 		if err != nil {
 			dp.Diags.Errorf("product.unreadable", repo, "couldn't read the repo's default branch: %v", err)
@@ -139,8 +139,8 @@ func (e *Env) checkProductRepos(ctx context.Context, dp *Deployment, d *home.Dep
 }
 
 // providersForCleanup finds the provider of every runtime that has
-// something in state, including runtimes the deployment no longer uses.
-func (e *Env) providersForCleanup(ctx context.Context, dp *Deployment) map[string]*provider.Provider {
+// something in state, including runtimes the factory no longer uses.
+func (e *Env) providersForCleanup(ctx context.Context, dp *Factory) map[string]*provider.Provider {
 	out := map[string]*provider.Provider{}
 	for _, rt := range dp.Runtimes {
 		out[rt.Name] = rt.Provider
@@ -155,7 +155,7 @@ func (e *Env) providersForCleanup(ctx context.Context, dp *Deployment) map[strin
 	for _, p := range dp.State.Pending {
 		needed[p.Runtime] = true
 	}
-	var oldFactory *factory.Factory
+	var oldBlueprint *blueprint.Blueprint
 	for rt := range needed {
 		if out[rt] != nil {
 			continue
@@ -164,13 +164,13 @@ func (e *Env) providersForCleanup(ctx context.Context, dp *Deployment) map[strin
 			out[rt] = p
 			continue
 		}
-		// A folder provider the deployment no longer uses: load it from
-		// the factory the last apply used.
-		if oldFactory == nil && dp.State.Factory != nil {
-			sf := dp.State.Factory
-			oldFactory, _ = e.Loader.LoadGit(ctx, sf.Git, sf.Commit, sf.Path)
+		// A folder provider the factory no longer uses: load it from
+		// the blueprint the last apply used.
+		if oldBlueprint == nil && dp.State.Blueprint != nil {
+			sf := dp.State.Blueprint
+			oldBlueprint, _ = e.Loader.LoadGit(ctx, sf.Git, sf.Commit, sf.Path)
 		}
-		if p, err := resolveProvider(rt, oldFactory); err == nil {
+		if p, err := resolveProvider(rt, oldBlueprint); err == nil {
 			out[rt] = p
 		} else {
 			dp.Diags.Errorf("cleanup.unknown-runtime", home.StatePath(dp.Name), "can't clean up resources on runtime %s: %v", rt, err)
@@ -181,7 +181,7 @@ func (e *Env) providersForCleanup(ctx context.Context, dp *Deployment) map[strin
 
 // refresh returns what's installed. It starts from state and, for
 // runtimes whose API can find resources by identity, asks the runtime.
-func (e *Env) refresh(ctx context.Context, dp *Deployment, providers map[string]*provider.Provider) map[home.Key]home.Resource {
+func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*provider.Provider) map[home.Key]home.Resource {
 	current := map[home.Key]home.Resource{}
 	if dp.State != nil {
 		for _, r := range dp.State.Resources {
@@ -256,10 +256,10 @@ func (e *Env) refresh(ctx context.Context, dp *Deployment, providers map[string]
 	return current
 }
 
-// endpointsToList is every endpoint this deployment may own resources
+// endpointsToList is every endpoint this factory may own resources
 // under: its current one, plus any older ones still recorded in state (from
-// before a server: change, or for a deleted deployment).
-func endpointsToList(dp *Deployment) []string {
+// before a server: change, or for a deleted factory).
+func endpointsToList(dp *Factory) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(endpoint string) {
@@ -283,7 +283,7 @@ func endpointsToList(dp *Deployment) []string {
 }
 
 // diff compares what's wanted with what's there.
-func (e *Env) diff(dp *Deployment, current map[home.Key]home.Resource, providers map[string]*provider.Provider) {
+func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers map[string]*provider.Provider) {
 	pending := map[home.Key]home.Pending{}
 	if dp.State != nil {
 		for _, p := range dp.State.Pending {
@@ -310,7 +310,7 @@ func (e *Env) diff(dp *Deployment, current map[home.Key]home.Resource, providers
 				reasons = []string{fmt.Sprintf("its prompt still names runtime %s, which is now called %s", cur.RenamedFrom, cur.Runtime)}
 			}
 			if !tokenMatches(cur.TokenHash, want.TokenHash) {
-				reasons = append(reasons, "the deployment's token changed (the server secret was rotated)")
+				reasons = append(reasons, "the factory's token changed (the server secret was rotated)")
 			}
 			if len(reasons) == 0 && !hasPend {
 				continue // in sync
@@ -436,23 +436,23 @@ func describeTrigger(on, cron string) string {
 }
 
 // whyGone explains why an installed stub is no longer deployed.
-func (e *Env) whyGone(dp *Deployment, r home.Resource) string {
+func (e *Env) whyGone(dp *Factory, r home.Resource) string {
 	d := dp.Spec
 	switch {
 	case d == nil:
-		return "its deployment file was deleted"
+		return "its factory file was deleted"
 	case e.Destroy:
-		return "the deployment is being destroyed"
+		return "the factory is being destroyed"
 	case !d.HasRuntime(r.Runtime):
-		return fmt.Sprintf("runtime %s was removed from the deployment", r.Runtime)
+		return fmt.Sprintf("runtime %s was removed from the factory", r.Runtime)
 	case !d.HasRoutine(r.Routine):
-		return fmt.Sprintf("routine %s was removed from the deployment", r.Routine)
+		return fmt.Sprintf("routine %s was removed from the factory", r.Routine)
 	case !d.Runs(r.Routine, r.Runtime):
 		return fmt.Sprintf("routine %s no longer runs on runtime %s", r.Routine, r.Runtime)
 	case !d.Covers(r.Repo):
-		return fmt.Sprintf("repo %s was removed from the deployment", r.Repo)
+		return fmt.Sprintf("repo %s was removed from the factory", r.Repo)
 	case d.Endpoint() != "" && !strings.HasPrefix(r.ID, stub.EndpointID(d.Endpoint())+"#"):
-		return "the deployment's server address changed, so this stub belongs to the old one"
+		return "the factory's server address changed, so this stub belongs to the old one"
 	}
 	return "it's no longer deployed"
 }
@@ -483,7 +483,7 @@ func diffNames(before, after []string) (added, removed []string) {
 }
 
 // splitIdentity pulls the routine and repo out of an identity like
-// host/deployment#routine@repo.
+// host/factory#routine@repo.
 func splitIdentity(id string) (routine, repo string) {
 	_, rest, _ := strings.Cut(id, "#")
 	routine, repo, _ = strings.Cut(rest, "@")

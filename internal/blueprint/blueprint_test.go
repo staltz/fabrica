@@ -1,4 +1,4 @@
-package factory_test
+package blueprint_test
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
-	"github.com/staltz/fabrica/internal/factory"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/names"
 	"github.com/staltz/fabrica/internal/testkit"
@@ -32,21 +32,21 @@ params:
 Review the PR using the ` + "`pr-review`" + ` skill.
 `
 
-func newLoader(t *testing.T) *factory.Loader {
+func newLoader(t *testing.T) *blueprint.Loader {
 	t.Helper()
-	return factory.NewLoader(gitx.NewCache(t.TempDir()))
+	return blueprint.NewLoader(gitx.NewCache(t.TempDir()))
 }
 
-func writeFactory(t *testing.T, files map[string]string) string {
+func writeBlueprint(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	testkit.WriteFiles(t, dir, files)
 	return dir
 }
 
-func mustLoad(t *testing.T, l *factory.Loader, dir string) *factory.Factory {
+func mustLoad(t *testing.T, l *blueprint.Loader, dir string) *blueprint.Blueprint {
 	t.Helper()
-	f, diags := l.LoadDir(context.Background(), dir, factory.LoadOptions{})
+	f, diags := l.LoadDir(context.Background(), dir, blueprint.LoadOptions{})
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors:\n%s", diags.Only(diag.Error))
 	}
@@ -63,8 +63,8 @@ func expectError(t *testing.T, diags diag.List, code, contains string) {
 	t.Fatalf("want error %s containing %q, got:\n%s", code, contains, diags)
 }
 
-func TestLoadLocalFactory(t *testing.T) {
-	dir := writeFactory(t, map[string]string{
+func TestLoadLocalBlueprint(t *testing.T) {
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml":                    "description: Acme's way\nexpects: [test, deploy?]\n",
 		"skills/pr-review/SKILL.md":       skill("pr-review", "Look at the diff."),
 		"skills/pdf/SKILL.md":             skill("pdf", "Run scripts/extract.py."),
@@ -96,13 +96,13 @@ func TestLoadLocalFactory(t *testing.T) {
 		t.Errorf("slack? should be optional: %+v", r.Connectors)
 	}
 
-	if a := f.Rules["tests-first"].Activation(); a != factory.ActiveAlways {
+	if a := f.Rules["tests-first"].Activation(); a != blueprint.ActiveAlways {
 		t.Errorf("tests-first activation = %s", a)
 	}
-	if ts := f.Rules["typescript"]; ts.Activation() != factory.ActiveGlobs || strings.Join(ts.Globs, "|") != "*.ts|*.tsx" {
+	if ts := f.Rules["typescript"]; ts.Activation() != blueprint.ActiveGlobs || strings.Join(ts.Globs, "|") != "*.ts|*.tsx" {
 		t.Errorf("typescript rule = %+v (Cursor-style globs should parse even though they aren't valid YAML)", ts)
 	}
-	if a := f.Rules["by-name"].Activation(); a != factory.ActiveManual {
+	if a := f.Rules["by-name"].Activation(); a != blueprint.ActiveManual {
 		t.Errorf("by-name activation = %s", a)
 	}
 	if s := f.Connectors["slack"].Server; s.Transport != "http" || s.Auth != "bearer" || s.Secret != "SLACK_TOKEN" {
@@ -164,21 +164,21 @@ func TestStrictErrors(t *testing.T) {
 			for k, v := range c.files {
 				files[k] = v
 			}
-			_, diags := newLoader(t).LoadDir(context.Background(), writeFactory(t, files), factory.LoadOptions{})
+			_, diags := newLoader(t).LoadDir(context.Background(), writeBlueprint(t, files), blueprint.LoadOptions{})
 			expectError(t, diags, c.code, c.contains)
 		})
 	}
 }
 
 func TestEvalsFolderWarns(t *testing.T) {
-	dir := writeFactory(t, map[string]string{"fabrica.yaml": "", "evals/README.md": "later"})
-	_, diags := newLoader(t).LoadDir(context.Background(), dir, factory.LoadOptions{})
-	if !diags.HasCode("factory.evals") || diags.HasErrors() {
+	dir := writeBlueprint(t, map[string]string{"fabrica.yaml": "", "evals/README.md": "later"})
+	_, diags := newLoader(t).LoadDir(context.Background(), dir, blueprint.LoadOptions{})
+	if !diags.HasCode("blueprint.evals") || diags.HasErrors() {
 		t.Errorf("want only an evals warning, got:\n%s", diags)
 	}
 }
 
-// importWorld sets up a fake host with a base factory and a plain skills
+// importWorld sets up a fake host with a base blueprint and a plain skills
 // repo, the way the design's fabrica.yaml example does.
 type importWorld struct {
 	host      *testkit.Host
@@ -188,7 +188,7 @@ type importWorld struct {
 
 func newImportWorld(t *testing.T) *importWorld {
 	host := testkit.NewHost(t)
-	base := host.Repo("github.com/acme/base-factory")
+	base := host.Repo("github.com/acme/base-blueprint")
 	base.Write(map[string]string{
 		"fabrica.yaml":              "expects: [test]\n",
 		"skills/pr-review/SKILL.md": skill("pr-review", "Upstream review."),
@@ -211,24 +211,24 @@ func newImportWorld(t *testing.T) *importWorld {
 	return &importWorld{host: host, base: base, community: community}
 }
 
-func lockAndLoad(t *testing.T, l *factory.Loader, dir string) (*factory.Factory, diag.List) {
+func lockAndLoad(t *testing.T, l *blueprint.Loader, dir string) (*blueprint.Blueprint, diag.List) {
 	t.Helper()
 	lock, _, _, diags := l.Lock(context.Background(), dir)
 	if lock != nil && !diags.HasErrors() {
-		if err := factory.WriteLock(dir, lock); err != nil {
+		if err := blueprint.WriteLock(dir, lock); err != nil {
 			t.Fatal(err)
 		}
-		return l.LoadDir(context.Background(), dir, factory.LoadOptions{})
+		return l.LoadDir(context.Background(), dir, blueprint.LoadOptions{})
 	}
 	return nil, diags
 }
 
 func TestImportsWithFiltersAndPlainRepos(t *testing.T) {
 	newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml": `imports:
   base:
-    git: github.com/acme/base-factory
+    git: github.com/acme/base-blueprint
     ref: v1.2
     exclude: [skills/pr-review]
   community:
@@ -276,7 +276,7 @@ func TestImportCollisionsAreErrors(t *testing.T) {
 	other := w.host.Repo("github.com/acme/other")
 	other.Write(map[string]string{"skills/pdf/SKILL.md": skill("pdf", "Another pdf.")}).Commit("init")
 
-	dir := writeFactory(t, map[string]string{
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml": `imports:
   community: { git: github.com/someone/skills, ref: main }
   other: { git: github.com/acme/other, ref: main }
@@ -287,7 +287,7 @@ func TestImportCollisionsAreErrors(t *testing.T) {
 
 	// Defining an imported item yourself without excluding it is an error
 	// too, with a hint on how to override properly.
-	dir2 := writeFactory(t, map[string]string{
+	dir2 := writeBlueprint(t, map[string]string{
 		"fabrica.yaml":        "imports:\n  community: { git: github.com/someone/skills, ref: main }\n",
 		"skills/pdf/SKILL.md": skill("pdf", "Mine."),
 	})
@@ -297,8 +297,8 @@ func TestImportCollisionsAreErrors(t *testing.T) {
 
 func TestOnlyDoesNotPullInDependencies(t *testing.T) {
 	newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
-		"fabrica.yaml": "imports:\n  base: { git: github.com/acme/base-factory, ref: v1.2, only: [routines/pr-review, connectors/github, connectors/slack] }\nexpects: [test]\n",
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  base: { git: github.com/acme/base-blueprint, ref: v1.2, only: [routines/pr-review, connectors/github, connectors/slack] }\nexpects: [test]\n",
 	})
 	_, diags := lockAndLoad(t, newLoader(t), dir)
 	expectError(t, diags, "routine.missing-skill", `add skills/pr-review to its only: list`)
@@ -306,7 +306,7 @@ func TestOnlyDoesNotPullInDependencies(t *testing.T) {
 
 func TestFilterTyposAreErrors(t *testing.T) {
 	newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml": "imports:\n  community: { git: github.com/someone/skills, ref: main, exclude: [skills/pfd] }\n",
 	})
 	_, diags := lockAndLoad(t, newLoader(t), dir)
@@ -315,7 +315,7 @@ func TestFilterTyposAreErrors(t *testing.T) {
 
 func TestStaleLockIsAnError(t *testing.T) {
 	w := newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml": "imports:\n  community: { git: github.com/someone/skills, ref: main }\n",
 	})
 	l := newLoader(t)
@@ -326,14 +326,14 @@ func TestStaleLockIsAnError(t *testing.T) {
 	testkit.WriteFiles(t, dir, map[string]string{
 		"fabrica.yaml": "imports:\n  community: { git: github.com/someone/skills, ref: next }\n",
 	})
-	_, diags := l.LoadDir(context.Background(), dir, factory.LoadOptions{})
+	_, diags := l.LoadDir(context.Background(), dir, blueprint.LoadOptions{})
 	expectError(t, diags, "lock.stale", `import "community" changed`)
 }
 
 func TestImportExpectsWarning(t *testing.T) {
 	newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
-		"fabrica.yaml": "imports:\n  base: { git: github.com/acme/base-factory, ref: v1.2 }\n",
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  base: { git: github.com/acme/base-blueprint, ref: v1.2 }\n",
 	})
 	f, diags := lockAndLoad(t, newLoader(t), dir)
 	if diags.HasErrors() || f == nil {
@@ -353,35 +353,35 @@ func TestBrokenItemOnlyMattersIfUsed(t *testing.T) {
 		"skills/bad/SKILL.md":  "no frontmatter at all\n",
 	}).Commit("init")
 
-	use := writeFactory(t, map[string]string{"fabrica.yaml": "imports:\n  mixed: { git: github.com/acme/mixed, ref: main }\n"})
+	use := writeBlueprint(t, map[string]string{"fabrica.yaml": "imports:\n  mixed: { git: github.com/acme/mixed, ref: main }\n"})
 	_, diags := lockAndLoad(t, newLoader(t), use)
 	expectError(t, diags, "skill.invalid", "from import mixed")
 
-	skip := writeFactory(t, map[string]string{"fabrica.yaml": "imports:\n  mixed: { git: github.com/acme/mixed, ref: main, exclude: [skills/bad] }\n"})
+	skip := writeBlueprint(t, map[string]string{"fabrica.yaml": "imports:\n  mixed: { git: github.com/acme/mixed, ref: main, exclude: [skills/bad] }\n"})
 	if _, diags := lockAndLoad(t, newLoader(t), skip); diags.HasErrors() {
 		t.Errorf("excluding the broken skill should make it go away, got:\n%s", diags)
 	}
 }
 
-func TestNestedFactoryUsesItsOwnLock(t *testing.T) {
+func TestNestedBlueprintUsesItsOwnLock(t *testing.T) {
 	w := newImportWorld(t)
 	middle := w.host.Repo("github.com/acme/middle")
 	middle.Write(map[string]string{
 		"fabrica.yaml":     "imports:\n  community: { git: github.com/someone/skills, ref: main, only: [skills/pdf] }\n",
 		"rules/middle.mdc": "---\nalwaysApply: true\n---\nMiddle rule.\n",
 	})
-	// Lock the middle factory in its own repo, the way its author would.
+	// Lock the middle blueprint in its own repo, the way its author would.
 	l := newLoader(t)
 	lock, _, _, diags := l.Lock(context.Background(), middle.Dir)
 	if diags.HasErrors() {
 		t.Fatal(diags)
 	}
-	if err := factory.WriteLock(middle.Dir, lock); err != nil {
+	if err := blueprint.WriteLock(middle.Dir, lock); err != nil {
 		t.Fatal(err)
 	}
 	middle.Commit("init")
 
-	top := writeFactory(t, map[string]string{"fabrica.yaml": "imports:\n  middle: { git: github.com/acme/middle, ref: main }\n"})
+	top := writeBlueprint(t, map[string]string{"fabrica.yaml": "imports:\n  middle: { git: github.com/acme/middle, ref: main }\n"})
 	f, diags := lockAndLoad(t, newLoader(t), top)
 	if diags.HasErrors() {
 		t.Fatal(diags)
@@ -397,8 +397,8 @@ func TestNestedFactoryUsesItsOwnLock(t *testing.T) {
 
 func TestUpgradeShowsDiffIncludingOverrides(t *testing.T) {
 	w := newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
-		"fabrica.yaml":              "imports:\n  base: { git: github.com/acme/base-factory, ref: main, exclude: [skills/pr-review] }\nexpects: [test]\n",
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml":              "imports:\n  base: { git: github.com/acme/base-blueprint, ref: main, exclude: [skills/pr-review] }\nexpects: [test]\n",
 		"skills/pr-review/SKILL.md": skill("pr-review", "Ours."),
 	})
 	l := newLoader(t)
@@ -426,7 +426,7 @@ func TestUpgradeShowsDiffIncludingOverrides(t *testing.T) {
 		!refsEqual(d.Changed, "skills/pr-review") || !refsEqual(d.Overridden, "skills/pr-review") {
 		t.Errorf("diff = %+v", d)
 	}
-	out := factory.FormatChanges(changes)
+	out := blueprint.FormatChanges(changes)
 	if !strings.Contains(out, "~ skills/pr-review   (you override this") {
 		t.Errorf("formatted diff doesn't call out the override:\n%s", out)
 	}
@@ -441,7 +441,7 @@ func TestUpgradeShowsDiffIncludingOverrides(t *testing.T) {
 
 func TestLintMentions(t *testing.T) {
 	newImportWorld(t)
-	dir := writeFactory(t, map[string]string{
+	dir := writeBlueprint(t, map[string]string{
 		"fabrica.yaml":           "imports:\n  community: { git: github.com/someone/skills, ref: main, only: [skills/changelog] }\n",
 		"skills/review/SKILL.md": skill("review", "Then run the `changelog` skill."),
 		"routines/r.md":          "---\ntrigger: { on: github.push }\n---\nUse /review and then the changelog skill.\n",
@@ -474,21 +474,21 @@ func TestMentions(t *testing.T) {
 		if strings.Contains(text, "changelog") {
 			name = "changelog"
 		}
-		if got := factory.Mentions(text, name); got != want {
+		if got := blueprint.Mentions(text, name); got != want {
 			t.Errorf("Mentions(%q, %q) = %v, want %v", text, name, got, want)
 		}
 	}
 }
 
 func TestParamRefs(t *testing.T) {
-	refs, err := factory.ParamRefs("a {{params.x}} b {{ params.y }} {{params.x}}")
+	refs, err := blueprint.ParamRefs("a {{params.x}} b {{ params.y }} {{params.x}}")
 	if err != nil || strings.Join(refs, ",") != "x,y" {
 		t.Errorf("ParamRefs = %v, %v", refs, err)
 	}
-	if _, err := factory.ParamRefs("{{params.x}"); err == nil {
+	if _, err := blueprint.ParamRefs("{{params.x}"); err == nil {
 		t.Error("malformed placeholder should fail")
 	}
-	if got := factory.RenderParams("#{{params.c}}!", map[string]string{"c": "eng"}); got != "#eng!" {
+	if got := blueprint.RenderParams("#{{params.c}}!", map[string]string{"c": "eng"}); got != "#eng!" {
 		t.Errorf("RenderParams = %q", got)
 	}
 }

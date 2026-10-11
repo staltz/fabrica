@@ -1,8 +1,8 @@
-# Starter factory
+# Starter blueprint
 
-This is a small, ready-to-use [Fabrica](https://github.com/staltz/fabrica) factory for a team of a few developers. It writes down one sensible way of working with AI coding agents: write the test first, keep changes small, review every pull request, and write commits and changelogs that people can read.
+This is a small, ready-to-use [Fabrica](https://github.com/staltz/fabrica) blueprint for a team of a few developers. It writes down one sensible way of working with AI coding agents: write the test first, keep changes small, review every pull request, and write commits and changelogs that people can read.
 
-You can use it as it is, copy it and change it, or import the parts you like into your own factory.
+You can use it as it is, copy it and change it, or import the parts you like into your own blueprint.
 
 Everything here is about **process**: how we work. None of it knows anything about your product, like which language, test runner or database you use. That knowledge belongs in your product repos, and the [expects](#what-expects-test-deploy-means) section below explains how the two meet.
 
@@ -53,7 +53,7 @@ Every file in every skill is Markdown. There are no scripts. That matters becaus
 
 ## What `expects: [test, deploy?]` means
 
-Some things only the product repo knows. "Write a failing test first" is process, so it's in this factory. "Run `make test`, and start Postgres first" is product knowledge, so it's not.
+Some things only the product repo knows. "Write a failing test first" is process, so it's in this blueprint. "Run `make test`, and start Postgres first" is product knowledge, so it's not.
 
 The manifest says so:
 
@@ -79,7 +79,7 @@ The integration tests need Postgres. Start it first with `docker compose up -d d
 
 Fabrica also looks for repo skills in `.claude/skills/`, `.cursor/skills/`, `.codex/skills/` and `.github/skills/`, so use whichever folder your repo already has.
 
-Here's where the factory uses them:
+Here's where the blueprint uses them:
 
 - `test-first`, the `tests-first` rule and the `review-before-push` routine all load the repo's `test` skill to find out how to run tests.
 - `changelog` follows the repo's `deploy` skill as the last step of a release, if there is one. The `pr-review` checklist uses it too, for changes that affect deployment. The `?` makes it optional. A repo without a `deploy` skill works fine: at release time, the agent stops and tells you the release is ready.
@@ -92,21 +92,21 @@ There are two ways. Copy it if you want to change a lot. Import it if you want t
 
 ### Option 1: copy it
 
-This factory is built into `fabrica`, so one command writes a copy of it into a new repo:
+This blueprint is built into `fabrica`, so one command writes a copy of it into a new repo:
 
 ```bash
-fabrica new ~/code/my-factory
-cd ~/code/my-factory
-git add . && git commit -m "feat: start from the Fabrica starter factory"
+fabrica new ~/code/my-blueprint
+cd ~/code/my-blueprint
+git add . && git commit -m "feat: start from the Fabrica starter blueprint"
 ```
 
-`fabrica new` runs `git init` for you, unless the folder is already inside a git repo (a factory can live in a subfolder too). The copy is the version that came with your `fabrica` binary.
+`fabrica new` runs `git init` for you, unless the folder is already inside a git repo (a blueprint can live in a subfolder too). The copy is the version that came with your `fabrica` binary.
 
 Now it's yours. Edit anything you like, then run `fabrica check .` to catch mistakes. You won't get upstream improvements, but you won't get surprises either.
 
 ### Option 2: import it
 
-In your own factory's `fabrica.yaml`, import it and say which parts you want.
+In your own blueprint's `fabrica.yaml`, import it and say which parts you want.
 
 Take everything except one skill, and write your own version of that skill:
 
@@ -115,7 +115,7 @@ imports:
   starter:
     git: github.com/staltz/fabrica
     ref: main                     # better: a tag or a commit, so nothing changes under you
-    path: examples/starter-factory
+    path: examples/starter-blueprint
     exclude: [skills/pr-review]   # we have our own skills/pr-review/SKILL.md
 
 expects:
@@ -132,7 +132,7 @@ imports:
   starter:
     git: github.com/staltz/fabrica
     ref: main
-    path: examples/starter-factory
+    path: examples/starter-blueprint
     only:
       - skills/test-first
       - skills/commit-messages
@@ -150,28 +150,28 @@ A few things to know about imports:
 
 - **`only:` is literal.** It brings exactly what you list, nothing more. If you take `routines/pr-review`, you also need `skills/pr-review`, `connectors/github` and `connectors/slack`. Don't worry about getting it wrong: `fabrica lock` tells you exactly what's missing.
 - **Use `only:` or `exclude:`**, never both on one import.
-- **`expects:` isn't inherited.** Your `expects:` list is the whole promise your factory makes to product repos, so copy `test` and `deploy?` into it, like the first example does. `fabrica lock` warns you if you forget.
+- **`expects:` isn't inherited.** Your `expects:` list is the whole promise your blueprint makes to product repos, so copy `test` and `deploy?` into it, like the first example does. `fabrica lock` warns you if you forget.
 - **You can't rename on import.** Skills mention each other by name in their text, and renaming would quietly break those mentions. To change an item, `exclude:` it and write your own with the same name.
 
 ## Try it on your machine
 
-The quickest way to see it working is a **local deployment**. It serves this factory to Claude Code and Cursor on your laptop, for one product repo, and nothing leaves your machine.
+The quickest way to see it working is a **local factory**. It serves this blueprint to Claude Code and Cursor on your laptop, for one product repo, and nothing leaves your machine.
 
 You'll need the `fabrica` binary and a product repo of your own that you can push to. The steps below use `github.com/you/your-app`; change it to yours.
 
-**1. Add a deployment to your personal home repo** (`~/.fabrica`, unless you set `FABRICA_HOME`). Create `~/.fabrica/deployments/starter.yaml`:
+**1. Add a factory to your personal home repo** (`~/.fabrica`, unless you set `FABRICA_HOME`). Create `~/.fabrica/factories/starter.yaml`:
 
 ```yaml
-factory:
+blueprint:
   git: github.com/staltz/fabrica
   ref: main
-  path: examples/starter-factory
+  path: examples/starter-blueprint
 runtimes: [claude-code-local, cursor-local]
-repos: [github.com/you/your-app]
+targets: [github.com/you/your-app]
 routines: [review-before-push]
 ```
 
-To try your own copy instead, point `git:` at it. A local path works too, like `git: /home/you/code/my-factory`, but Fabrica reads committed files only, so commit your edits first.
+To try your own copy instead, point `git:` at it. A local path works too, like `git: /home/you/code/my-blueprint`, but Fabrica reads committed files only, so commit your edits first.
 
 Add `codex-cli` to `runtimes:` if you use Codex CLI too. Only `review-before-push` goes under `routines:`, because it's the only local routine. The other two fire on GitHub events and schedules, so they need a cloud runtime (see below). Skills and rules are served either way.
 
@@ -189,14 +189,14 @@ Before starting, load this repo's working rules from the Fabrica MCP server; if 
 
 Then add a `test` skill, like the example above, in `.agents/skills/test/SKILL.md`.
 
-**4. Check the product repo** against the factory:
+**4. Check the product repo** against the blueprint:
 
 ```bash
 cd ~/code/your-app
 fabrica check
 ```
 
-It should find the Fabrica line, and no missing `test` skill. If you're editing a copy of this factory and haven't committed it yet, check against the folder instead: `fabrica check --factory ~/code/my-factory`.
+It should find the Fabrica line, and no missing `test` skill. If you're editing a copy of this blueprint and haven't committed it yet, check against the folder instead: `fabrica check --blueprint ~/code/my-blueprint`.
 
 **5. Install it** in your local tools:
 
@@ -206,21 +206,21 @@ fabrica apply
 
 This adds a `fabrica` MCP server to Claude Code and Cursor, plus a hook that starts `review-before-push` whenever the agent runs `git push`. It never writes into your product repo. (The hook lives in the tool, not in git, so pushes you type in your own terminal aren't held back.)
 
-**6. Try it.** Open the product repo in Claude Code or Cursor and ask "what are your working rules?". The agent should describe the rules from this factory, like `tests-first` and `small-changes`. Then make a small change, commit it, and ask the agent to push. It'll review its own commits first, and only push if it finds no blockers.
+**6. Try it.** Open the product repo in Claude Code or Cursor and ask "what are your working rules?". The agent should describe the rules from this blueprint, like `tests-first` and `small-changes`. Then make a small change, commit it, and ask the agent to push. It'll review its own commits first, and only push if it finds no blockers.
 
 ## Running the cloud routines
 
-`pr-review` and `weekly-dependency-check` run in cloud runtimes, like Claude routines, Cursor automations or Codex. For those you need your own Fabrica server (`fabrica mcp --http`) and a cloud deployment in your home repo, for example `deployments/review.yaml`:
+`pr-review` and `weekly-dependency-check` run in cloud runtimes, like Claude routines, Cursor automations or Codex. For those you need your own Fabrica server (`fabrica mcp --http`) and a cloud factory in your home repo, for example `factories/review.yaml`:
 
 ```yaml
-factory:
+blueprint:
   git: github.com/staltz/fabrica
   ref: main
-  path: examples/starter-factory
+  path: examples/starter-blueprint
 server: https://fabrica.example.com
 runtimes: [claude-code-cloud, cursor-cloud]
 routines: [pr-review, weekly-dependency-check]
-repos:
+targets:
   - github.com/you/your-app
   - repo: github.com/you/your-api
     params: { slack_channel: "#api" }

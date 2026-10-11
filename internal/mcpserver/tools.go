@@ -389,6 +389,8 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *factory.Rout
 		return fmt.Errorf("this stub is no longer deployed: routine %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", r.Ref.Name, d.Name)
 	case !d.HasRuntime(run.Runtime):
 		return fmt.Errorf("this stub is no longer deployed: runtime %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", run.Runtime, d.Name)
+	case !d.Runs(r.Ref.Name, run.Runtime):
+		return fmt.Errorf("this stub is no longer deployed: routine %s doesn't run on runtime %s in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", r.Ref.Name, run.Runtime, d.Name)
 	case !d.Covers(run.Repo) && !(snap.Mode == runs.ServedLocal && d.IsWildcard()):
 		return fmt.Errorf("this stub is no longer deployed: repo %s isn't in deployment %s anymore. The deployment needs `fabrica apply` to remove the stub", run.Repo, d.Name)
 	}

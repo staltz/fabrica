@@ -24,11 +24,12 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A local deployment in a team home repo | ❌ error | — | — | `deployment.invalid` |
 | A cloud deployment without `server:` | ❌ error | — | — | `deployment.invalid` |
 | A deployment mixing cloud and local runtimes | ❌ error | — | — | `deployment.invalid` |
+| A routine's `runtimes` names one the deployment doesn't list, or a cloud runtime has no routines | ❌ error | — | — | `deployment.invalid` |
 | A param that no routine declares, or a required param that isn't set | ❌ error | — | — | `deployment.unknown-param`, `deployment.missing-param` |
 | A ref that's both a branch and a tag | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `factory.resolve` |
 | A trigger, connector or side effect a runtime doesn't support | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |
 | A routine's trigger, connectors or memory setting (on runtimes with their own memory) changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
-| A routine, repo or runtime was removed from a deployment, but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
+| A routine, repo or runtime was removed from a deployment (or a routine no longer runs on a runtime), but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | The server secret was rotated | 🔧 update in `plan` (when it has the secret) | — | ❌ old tokens get `401` | — |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses | `capability.skill` |
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |

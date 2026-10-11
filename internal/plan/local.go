@@ -74,6 +74,9 @@ func (e *Env) planLocalDeployment(ctx context.Context, d *home.Deployment) *Depl
 	}
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
+			if !d.Runs(r.Ref.Name, rt.Name) {
+				continue
+			}
 			ev := stub.Evaluate(f, r, stub.Target{Deployment: d.Name, Runtime: rt.Provider})
 			rt.Evaluations[r.Ref.Name] = ev
 			dp.Diags = append(dp.Diags, ev.Diags...)
@@ -214,7 +217,7 @@ func (e *Env) desiredLocal(rt string, deployments []*Deployment, current localto
 		if rtPlan == nil {
 			continue
 		}
-		for _, routine := range dp.Spec.Routines {
+		for _, routine := range dp.Spec.RoutinesOn(rt) {
 			ev := rtPlan.Evaluations[routine]
 			if ev == nil || !ev.OK() {
 				continue

@@ -7,9 +7,9 @@
 //	state/<name>.yaml         what's installed (only Fabrica writes these)
 //
 // The file name is the factory's ID. A factory with cloud runtimes
-// (Claude routines, Cursor automations, Codex) is a cloud factory; one
-// with local runtimes (Claude Code, Cursor IDE, Codex CLI, Copilot CLI) is a local
-// factory.
+// (Claude routines, Cursor automations, Codex, Copilot automations) is a
+// cloud factory; one with local runtimes (Claude Code, Cursor IDE, Codex
+// CLI, Copilot CLI) is a local factory.
 package home
 
 import (

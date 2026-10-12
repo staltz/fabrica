@@ -54,7 +54,11 @@ func For(runtime, homeDir string) (Tool, error) {
 	case "codex-cli":
 		return &codexCLI{home: homeDir}, nil
 	case "copilot-local":
-		return &copilotCLI{home: homeDir}, nil
+		dir := os.Getenv("COPILOT_HOME")
+		if dir == "" {
+			dir = filepath.Join(homeDir, ".copilot")
+		}
+		return &copilotCLI{dir: dir}, nil
 	}
 	return nil, fmt.Errorf("Fabrica doesn't know how to configure local runtime %q", runtime)
 }
@@ -176,7 +180,7 @@ func (c *cursorIDE) Write(cfg Config) error {
 	if err := writeMCPServers(c.mcpFile(), cfg.MCP, cursorEntryToJSON); err != nil {
 		return err
 	}
-	return writeFlatHooks(c.hooksFile(), cfg.Hooks, cursorEntry, true)
+	return writeFlatHooks(c.hooksFile(), cfg.Hooks, cursorEntry)
 }
 
 func cursorEntryToJSON(e MCPEntry) (*object, error) {
@@ -267,20 +271,20 @@ func (c *codexCLI) Write(cfg Config) error {
 }
 
 // GitHub Copilot CLI: MCP servers in ~/.copilot/mcp-config.json, hooks in
-// the hooks field of ~/.copilot/settings.json. VS Code also loads
-// ~/.copilot/hooks/*.json, but not settings.json, so these hooks only run
-// in the CLI, where the fabrica MCP server is.
+// ~/.copilot/hooks/fabrica.json. COPILOT_HOME moves the whole ~/.copilot
+// folder. The hooks get a file of their own, rather than the hooks field
+// of settings.json, because settings.json may have comments (Copilot reads
+// it as JSONC) and Fabrica would lose them. VS Code also runs the hooks in
+// that folder, so `fabrica hook` stays quiet when VS Code calls it.
 
-type copilotCLI struct{ home string }
+type copilotCLI struct{ dir string }
 
 func (c *copilotCLI) Runtime() string { return "copilot-local" }
 
-func (c *copilotCLI) mcpFile() string { return filepath.Join(c.home, ".copilot", "mcp-config.json") }
-func (c *copilotCLI) settingsFile() string {
-	return filepath.Join(c.home, ".copilot", "settings.json")
-}
+func (c *copilotCLI) mcpFile() string   { return filepath.Join(c.dir, "mcp-config.json") }
+func (c *copilotCLI) hooksFile() string { return filepath.Join(c.dir, "hooks", "fabrica.json") }
 
-func (c *copilotCLI) Files() []string { return []string{c.mcpFile(), c.settingsFile()} }
+func (c *copilotCLI) Files() []string { return []string{c.mcpFile(), c.hooksFile()} }
 
 func (c *copilotCLI) Read() (Config, error) {
 	var cfg Config
@@ -288,7 +292,7 @@ func (c *copilotCLI) Read() (Config, error) {
 	if cfg.MCP, err = readMCPServers(c.mcpFile(), copilotEntryFromJSON); err != nil {
 		return cfg, err
 	}
-	cfg.Hooks, err = readFlatHooks(c.settingsFile())
+	cfg.Hooks, err = readFlatHooks(c.hooksFile())
 	return cfg, err
 }
 
@@ -296,7 +300,14 @@ func (c *copilotCLI) Write(cfg Config) error {
 	if err := writeMCPServers(c.mcpFile(), cfg.MCP, copilotEntryToJSON); err != nil {
 		return err
 	}
-	return writeFlatHooks(c.settingsFile(), cfg.Hooks, copilotEntry, false)
+	if len(cfg.Hooks) == 0 {
+		// The hooks file is Fabrica's alone, so with no hooks it goes.
+		if err := os.Remove(c.hooksFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return writeFlatHooks(c.hooksFile(), cfg.Hooks, copilotEntry)
 }
 
 // copilotEntryToJSON writes a server the way `copilot mcp add` does: stdio
@@ -508,10 +519,9 @@ func writeClaudeHooks(file string, desired []Hook) error {
 	return writeJSONIfChanged(file, before, root)
 }
 
-// Flat hooks: {"hooks": {"event": [{"command": …}]}}, where each event
-// holds a plain list of entries. Cursor's ~/.cursor/hooks.json (which also
-// has "version": 1) and the hooks field of Copilot CLI's settings.json both
-// look like this.
+// Flat hooks: {"version": 1, "hooks": {"event": [{"command": …}]}}, where
+// each event holds a plain list of entries. Cursor's ~/.cursor/hooks.json
+// and Copilot CLI's ~/.copilot/hooks/*.json both look like this.
 
 // flatEntry returns the event and the entry for one of Fabrica's hooks.
 type flatEntry func(Hook) (event string, entry map[string]any, err error)
@@ -570,10 +580,8 @@ func readFlatHooks(file string) ([]Hook, error) {
 	return out, nil
 }
 
-// writeFlatHooks replaces Fabrica's hooks in file with desired. With
-// version set, it also adds "version": 1 when the file has hooks but no
-// version, as Cursor wants.
-func writeFlatHooks(file string, desired []Hook, entryFor flatEntry, version bool) error {
+// writeFlatHooks replaces Fabrica's hooks in file with desired.
+func writeFlatHooks(file string, desired []Hook, entryFor flatEntry) error {
 	root, before, err := readJSONFile(file)
 	if err != nil {
 		return err
@@ -611,7 +619,7 @@ func writeFlatHooks(file string, desired []Hook, entryFor flatEntry, version boo
 	}
 	_, hadHooks := root.get("hooks")
 	if hadHooks || hooks.len() > 0 {
-		if _, ok := root.get("version"); version && !ok {
+		if _, ok := root.get("version"); !ok {
 			_ = root.setValue("version", 1)
 		}
 		raw, _ := hooks.MarshalJSON()

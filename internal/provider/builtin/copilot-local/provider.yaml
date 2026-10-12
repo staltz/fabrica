@@ -1,10 +1,9 @@
 # GitHub Copilot CLI on your machine.
 #
 # `fabrica apply` adds a `fabrica` MCP server to ~/.copilot/mcp-config.json
-# and installs local routines as hooks in the top-level `hooks` field of
-# ~/.copilot/settings.json. VS Code also loads ~/.copilot/hooks/*.json, but
-# not settings.json, so these hooks only run in the CLI, where the fabrica
-# MCP server is registered.
+# and installs local routines as hooks in ~/.copilot/hooks/fabrica.json (or
+# under $COPILOT_HOME). VS Code also runs the hooks in that folder, but it
+# has no fabrica MCP server, so the hooks stay quiet there.
 kind: local
 description: GitHub Copilot CLI on your machine
 apply_modes: [api]

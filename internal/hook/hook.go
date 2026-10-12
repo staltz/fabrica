@@ -105,6 +105,12 @@ func Run(ctx context.Context, o Options) error {
 	if data, err := io.ReadAll(o.Stdin); err == nil && len(data) > 0 {
 		_ = json.Unmarshal(data, &in)
 	}
+	// VS Code also runs the hooks in ~/.copilot/hooks, but Fabrica's MCP
+	// server is only registered in Copilot CLI. Copilot CLI sends sessionId
+	// with every event; VS Code sends its own session_id instead.
+	if o.Runtime == "copilot-local" && in.CopilotSession == "" {
+		return nil
+	}
 
 	dir := in.Cwd
 	if len(in.WorkspaceRoots) > 0 {

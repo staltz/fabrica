@@ -42,7 +42,7 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
 
-   MCP servers can only read secrets from Agents secrets whose names start with `COPILOT_MCP_`, written as `$COPILOT_MCP_…` in `env` or `headers`. If a `fabrica` server with a different URL is already there, another factory deploys to this repository on Copilot too. A repository has only one MCP configuration, so only one of them can work here.
+   MCP servers can only read secrets from Agents secrets whose names start with `COPILOT_MCP_`, written as `$COPILOT_MCP_…` in `env` or `headers`. If a `fabrica` server with a different URL is already there, replace it: `fabrica check` makes sure only one factory deploys to this repository on Copilot, so it's left over from an earlier one.
 6. Memory: {{if .Memory.Needed}}this routine keeps notes between runs, and Fabrica keeps them for it (they come with `routine_get`), so it doesn't need Copilot Memory.{{else}}this routine doesn't use memory.{{end}} Copilot Memory is a per-repository setting, so if it's on for this repository, notes from other work may reach this automation too. Turn it off if nothing else here relies on it.
 7. Prompt. Replace the whole prompt with this, exactly:
 

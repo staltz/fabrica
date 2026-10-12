@@ -46,7 +46,6 @@ var userFiles = map[string]string{
 	".codex/config.toml":       "# my codex config\nmodel = \"o5\"\n\n[mcp_servers.mine]\ncommand = \"mine\" # keep me\n",
 	".codex/hooks.json":        `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}]}}`,
 	".copilot/mcp-config.json": `{"mcpServers": {"mine": {"type": "local", "command": "mine", "args": [], "tools": ["*"]}}}`,
-	".copilot/settings.json":   `{"model": "x", "trusted_folders": ["/src"], "hooks": {"sessionEnd": [{"type": "command", "bash": "notify-me"}]}}`,
 	// The user's own scheduled tasks, including one whose name happens to
 	// start with fabrica- but that Fabrica didn't write.
 	".claude/scheduled-tasks/morning/SKILL.md":       "---\nname: morning\ndescription: my morning brief\n---\n\nBrief me.\n",
@@ -86,6 +85,10 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 					if strings.Contains(userFiles[rel], keep) && !strings.Contains(string(data), keep) {
 						t.Errorf("%s lost the user's %q:\n%s", rel, keep, data)
 					}
+				}
+				rel, _ := filepath.Rel(home, f)
+				if _, mine := userFiles[rel]; !mine {
+					continue // a file Fabrica made, like Copilot's hooks/fabrica.json
 				}
 				if info, err := os.Stat(f); err == nil && !info.IsDir() && info.Mode().Perm() != 0o600 {
 					t.Errorf("%s permissions changed to %v", f, info.Mode().Perm())
@@ -177,9 +180,10 @@ func TestCopilotShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(filepath.Join(home, ".copilot", "settings.json"))
+	data, _ := os.ReadFile(filepath.Join(home, ".copilot", "hooks", "fabrica.json"))
 	var v struct {
-		Hooks map[string][]struct {
+		Version int `json:"version"`
+		Hooks   map[string][]struct {
 			Type       string `json:"type"`
 			Command    string `json:"command"`
 			Matcher    string `json:"matcher"`
@@ -190,12 +194,9 @@ func TestCopilotShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := v.Hooks["preToolUse"]
-	if len(e) != 1 || e[0].Type != "command" || e[0].Matcher != "bash" || e[0].TimeoutSec != 30 ||
+	if v.Version != 1 || len(e) != 1 || e[0].Type != "command" || e[0].Matcher != "bash" || e[0].TimeoutSec != 30 ||
 		e[0].Command != "/usr/bin/fabrica hook --runtime copilot-local --factory d --routine r --stub f --event git.pre_push" {
 		t.Errorf("unexpected hooks:\n%s", data)
-	}
-	if strings.Contains(string(data), "version") {
-		t.Errorf("settings.json's hooks field has no version:\n%s", data)
 	}
 	data, _ = os.ReadFile(filepath.Join(home, ".copilot", "mcp-config.json"))
 	if want := `"fabrica": {
@@ -214,6 +215,22 @@ func TestCopilotShape(t *testing.T) {
 	}
 	if err := tool.Write(Config{Hooks: []Hook{{Binary: "fabrica", Event: PromptSubmit, Factory: "d", Routine: "r", Fingerprint: "f"}}}); err == nil {
 		t.Error("Copilot CLI drops a prompt hook's output, so writing one should fail")
+	}
+	// The hooks file is Fabrica's, so removing the last hook removes it.
+	if err := tool.Write(Config{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".copilot", "hooks", "fabrica.json")); !os.IsNotExist(err) {
+		t.Errorf("hooks/fabrica.json should be gone, got %v", err)
+	}
+}
+
+func TestCopilotHome(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "copilot")
+	t.Setenv("COPILOT_HOME", dir)
+	tool, _ := For("copilot-local", t.TempDir())
+	if want := []string{filepath.Join(dir, "mcp-config.json"), filepath.Join(dir, "hooks", "fabrica.json")}; !reflect.DeepEqual(tool.Files(), want) {
+		t.Errorf("with COPILOT_HOME set, files are %v, want %v", tool.Files(), want)
 	}
 }
 

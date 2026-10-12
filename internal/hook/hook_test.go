@@ -114,6 +114,11 @@ func TestCopilotFormats(t *testing.T) {
 	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "toolName": "bash", "toolArgs": "{\"command\":\"ls\"}"}`); out != nil {
 		t.Errorf("ls shouldn't be held back: %v", out)
 	}
+	// VS Code runs ~/.copilot/hooks too, with its own payload, but it has
+	// no Fabrica MCP server.
+	if out := run(t, o, `{"session_id": "v1", "hook_event_name": "PreToolUse", "cwd": "`+ws+`", "tool_name": "runInTerminal", "tool_input": {"command": "git push"}}`); out != nil {
+		t.Errorf("Copilot hooks must stay quiet inside VS Code, got %v", out)
+	}
 	o.Event = "session.start"
 	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "source": "startup"}`); !strings.Contains(fmt.Sprint(out["additionalContext"]), "run_begin") {
 		t.Errorf("sessionStart should add context, got %v", out)

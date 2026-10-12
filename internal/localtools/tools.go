@@ -1,5 +1,5 @@
 // Package localtools installs Fabrica into the AI coding tools on your
-// machine: Claude Code, Cursor IDE and Codex CLI.
+// machine: Claude Code, Cursor IDE, Codex CLI and GitHub Copilot CLI.
 //
 // `fabrica apply` writes three kinds of things, all at user level and never
 // into a product repo:
@@ -53,12 +53,20 @@ func For(runtime, homeDir string) (Tool, error) {
 		return &cursorIDE{home: homeDir}, nil
 	case "codex-cli":
 		return &codexCLI{home: homeDir}, nil
+	case "copilot-local":
+		dir := os.Getenv("COPILOT_HOME")
+		if dir == "" {
+			dir = filepath.Join(homeDir, ".copilot")
+		}
+		return &copilotCLI{dir: dir}, nil
 	}
 	return nil, fmt.Errorf("Fabrica doesn't know how to configure local runtime %q", runtime)
 }
 
 // Runtimes lists the local runtimes this package can configure.
-func Runtimes() []string { return []string{"claude-code-local", "codex-cli", "cursor-local"} }
+func Runtimes() []string {
+	return []string{"claude-code-local", "codex-cli", "copilot-local", "cursor-local"}
+}
 
 // hookTimeoutSeconds is how long a tool should wait for `fabrica hook`.
 const hookTimeoutSeconds = 30
@@ -164,7 +172,7 @@ func (c *cursorIDE) Read() (Config, error) {
 	if cfg.MCP, err = readMCPServers(c.mcpFile(), cursorEntryFromJSON); err != nil {
 		return cfg, err
 	}
-	cfg.Hooks, err = readCursorHooks(c.hooksFile())
+	cfg.Hooks, err = readFlatHooks(c.hooksFile())
 	return cfg, err
 }
 
@@ -172,7 +180,7 @@ func (c *cursorIDE) Write(cfg Config) error {
 	if err := writeMCPServers(c.mcpFile(), cfg.MCP, cursorEntryToJSON); err != nil {
 		return err
 	}
-	return writeCursorHooks(c.hooksFile(), cfg.Hooks)
+	return writeFlatHooks(c.hooksFile(), cfg.Hooks, cursorEntry)
 }
 
 func cursorEntryToJSON(e MCPEntry) (*object, error) {
@@ -260,6 +268,82 @@ func (c *codexCLI) Write(cfg Config) error {
 		return err
 	}
 	return writeClaudeHooks(c.hooksFile(), cfg.Hooks)
+}
+
+// GitHub Copilot CLI: MCP servers in ~/.copilot/mcp-config.json, hooks in
+// ~/.copilot/hooks/fabrica.json. COPILOT_HOME moves the whole ~/.copilot
+// folder. The hooks get a file of their own, rather than the hooks field
+// of settings.json, because settings.json may have comments (Copilot reads
+// it as JSONC) and Fabrica would lose them. VS Code also runs the hooks in
+// that folder, so `fabrica hook` stays quiet when VS Code calls it.
+
+type copilotCLI struct{ dir string }
+
+func (c *copilotCLI) Runtime() string { return "copilot-local" }
+
+func (c *copilotCLI) mcpFile() string   { return filepath.Join(c.dir, "mcp-config.json") }
+func (c *copilotCLI) hooksFile() string { return filepath.Join(c.dir, "hooks", "fabrica.json") }
+
+func (c *copilotCLI) Files() []string { return []string{c.mcpFile(), c.hooksFile()} }
+
+func (c *copilotCLI) Read() (Config, error) {
+	var cfg Config
+	var err error
+	if cfg.MCP, err = readMCPServers(c.mcpFile(), copilotEntryFromJSON); err != nil {
+		return cfg, err
+	}
+	cfg.Hooks, err = readFlatHooks(c.hooksFile())
+	return cfg, err
+}
+
+func (c *copilotCLI) Write(cfg Config) error {
+	if err := writeMCPServers(c.mcpFile(), cfg.MCP, copilotEntryToJSON); err != nil {
+		return err
+	}
+	if len(cfg.Hooks) == 0 {
+		// The hooks file is Fabrica's alone, so with no hooks it goes.
+		if err := os.Remove(c.hooksFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return writeFlatHooks(c.hooksFile(), cfg.Hooks, copilotEntry)
+}
+
+// copilotEntryToJSON writes a server the way `copilot mcp add` does: stdio
+// servers are type "local", and every server lists the tools it may use.
+func copilotEntryToJSON(e MCPEntry) (*object, error) {
+	o := newObject()
+	switch e.Transport {
+	case "stdio":
+		_ = o.setValue("type", "local")
+		_ = o.setValue("command", e.Command)
+		_ = o.setValue("args", nonNil(e.Args))
+		if len(e.EnvNames) > 0 {
+			env := newObject()
+			for _, name := range e.EnvNames {
+				_ = env.setValue(name, "${"+name+"}")
+			}
+			raw, _ := env.MarshalJSON()
+			o.set("env", raw)
+		}
+	default:
+		_ = o.setValue("type", e.Transport)
+		_ = o.setValue("url", e.URL)
+		if e.BearerEnv != "" {
+			_ = o.setValue("headers", map[string]string{"Authorization": "Bearer ${" + e.BearerEnv + "}"})
+		}
+	}
+	_ = o.setValue("tools", []string{"*"})
+	return o, nil
+}
+
+func copilotEntryFromJSON(name string, raw json.RawMessage) (MCPEntry, error) {
+	e, err := claudeEntryFromJSON(name, raw)
+	if e.Transport == "local" {
+		e.Transport = "stdio"
+	}
+	return e, err
 }
 
 // Shared helpers for JSON files with an "mcpServers" object.
@@ -435,9 +519,44 @@ func writeClaudeHooks(file string, desired []Hook) error {
 	return writeJSONIfChanged(file, before, root)
 }
 
-// Cursor hooks: {"version": 1, "hooks": {"event": [{"command": …}]}}.
+// Flat hooks: {"version": 1, "hooks": {"event": [{"command": …}]}}, where
+// each event holds a plain list of entries. Cursor's ~/.cursor/hooks.json
+// and Copilot CLI's ~/.copilot/hooks/*.json both look like this.
 
-func readCursorHooks(file string) ([]Hook, error) {
+// flatEntry returns the event and the entry for one of Fabrica's hooks.
+type flatEntry func(Hook) (event string, entry map[string]any, err error)
+
+func cursorEntry(h Hook) (string, map[string]any, error) {
+	event, err := cursorEvent(h.Event)
+	return event, map[string]any{"command": HookCommand(h), "timeout": hookTimeoutSeconds}, err
+}
+
+func copilotEntry(h Hook) (string, map[string]any, error) {
+	event, matcher, err := copilotEvent(h.Event)
+	entry := map[string]any{"type": "command", "command": HookCommand(h), "timeoutSec": hookTimeoutSeconds}
+	if matcher != "" {
+		entry["matcher"] = matcher
+	}
+	return event, entry, err
+}
+
+// flatCommand is a flat hook entry's command line. Copilot CLI entries can
+// have it under "bash" instead of "command".
+func flatCommand(raw json.RawMessage) string {
+	var v struct {
+		Command string `json:"command"`
+		Bash    string `json:"bash"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return ""
+	}
+	if v.Command != "" {
+		return v.Command
+	}
+	return v.Bash
+}
+
+func readFlatHooks(file string) ([]Hook, error) {
 	root, _, err := readJSONFile(file)
 	if err != nil {
 		return nil, err
@@ -453,20 +572,16 @@ func readCursorHooks(file string) ([]Hook, error) {
 			return nil, fmt.Errorf("%s: hooks.%s: %w", file, event, err)
 		}
 		for _, e := range entries {
-			var v struct {
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(e, &v) == nil {
-				if h, ok := ParseHookCommand(v.Command); ok {
-					out = append(out, h)
-				}
+			if h, ok := ParseHookCommand(flatCommand(e)); ok {
+				out = append(out, h)
 			}
 		}
 	}
 	return out, nil
 }
 
-func writeCursorHooks(file string, desired []Hook) error {
+// writeFlatHooks replaces Fabrica's hooks in file with desired.
+func writeFlatHooks(file string, desired []Hook, entryFor flatEntry) error {
 	root, before, err := readJSONFile(file)
 	if err != nil {
 		return err
@@ -482,13 +597,8 @@ func writeCursorHooks(file string, desired []Hook) error {
 		}
 		var kept []json.RawMessage
 		for _, e := range entries {
-			var v struct {
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(e, &v) == nil {
-				if _, ours := ParseHookCommand(v.Command); ours {
-					continue
-				}
+			if _, ours := ParseHookCommand(flatCommand(e)); ours {
+				continue
 			}
 			kept = append(kept, e)
 		}
@@ -499,11 +609,11 @@ func writeCursorHooks(file string, desired []Hook) error {
 		}
 	}
 	for _, h := range sortHooks(desired) {
-		event, err := cursorEvent(h.Event)
+		event, e, err := entryFor(h)
 		if err != nil {
 			return err
 		}
-		entry, _ := json.Marshal(map[string]any{"command": HookCommand(h), "timeout": hookTimeoutSeconds})
+		entry, _ := json.Marshal(e)
 		entries, _ := rawArray(hooks.vals[event])
 		_ = hooks.setValue(event, append(entries, entry))
 	}

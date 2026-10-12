@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -95,6 +96,7 @@ func Open(dir string) (*Home, error) {
 	}
 	sort.Strings(h.StateNames)
 	h.Diags = append(h.Diags, h.checkLocalOverlap()...)
+	h.Diags = append(h.Diags, h.checkCopilotOverlap()...)
 	return h, nil
 }
 
@@ -133,6 +135,31 @@ func (h *Home) checkLocalOverlap() diag.List {
 		if len(ds) > 1 {
 			diags.Errorf("home.local-overlap", FactoriesDir, "factories %s both cover %s on %s; a session must get exactly one blueprint", strings.Join(ds, " and "), key[0], key[1]).
 				Hintf("remove the repo from all but one of them")
+		}
+	}
+	return diags.Sorted()
+}
+
+// checkCopilotOverlap enforces that at most one factory deploys to each
+// repo on copilot-cloud. Copilot reads MCP servers from the repo's
+// settings, not from each automation, so a repo has room for only one
+// factory's fabrica server.
+func (h *Home) checkCopilotOverlap() diag.List {
+	var diags diag.List
+	byRepo := map[string][]string{}
+	for _, name := range h.Names() {
+		d := h.Factories[name]
+		if d.Scope != provider.Cloud || !slices.Contains(d.Runtimes, "copilot-cloud") {
+			continue
+		}
+		for _, repo := range d.SpecificTargets() {
+			byRepo[repo] = append(byRepo[repo], name)
+		}
+	}
+	for repo, ds := range byRepo {
+		if len(ds) > 1 {
+			diags.Errorf("home.copilot-overlap", FactoriesDir, "factories %s both deploy to %s on copilot-cloud, but Copilot keeps one set of MCP servers per repo, so only one of them can reach its Fabrica server", strings.Join(ds, " and "), repo).
+				Hintf("remove copilot-cloud, or the repo, from all but one of them")
 		}
 	}
 	return diags.Sorted()

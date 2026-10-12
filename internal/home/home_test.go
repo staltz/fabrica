@@ -182,6 +182,28 @@ func TestLocalOverlapIsAnError(t *testing.T) {
 	}
 }
 
+func TestCopilotCloudOverlapIsAnError(t *testing.T) {
+	cloud := func(blueprint, runtimes, targets string) string {
+		return "blueprint: { git: github.com/me/" + blueprint + ", ref: main }\nserver: https://x.dev\nruntimes: " + runtimes + "\nroutines: [r]\ntargets: " + targets + "\n"
+	}
+	h := openHome(t, false, map[string]string{
+		"factories/a.yaml": cloud("a", "[copilot-cloud, claude-code-cloud]", "[github.com/x/y, github.com/x/z]"),
+		"factories/b.yaml": cloud("b", "[copilot-cloud]", "[github.com/x/y]"),
+		// Other cloud runtimes keep their MCP servers per routine, so
+		// overlapping there is fine.
+		"factories/c.yaml": cloud("c", "[claude-code-cloud]", "[github.com/x/z]"),
+	})
+	var overlaps []string
+	for _, d := range h.Diags {
+		if d.Code == "home.copilot-overlap" {
+			overlaps = append(overlaps, d.Message)
+		}
+	}
+	if len(overlaps) != 1 || !strings.Contains(overlaps[0], "factories a and b both deploy to github.com/x/y on copilot-cloud") {
+		t.Errorf("want one copilot-cloud overlap error for github.com/x/y, got:\n%s", h.Diags)
+	}
+}
+
 func TestBrokenFileBlocksLocalMatching(t *testing.T) {
 	h := openHome(t, true, map[string]string{
 		"factories/a.yaml": "blueprint: { git: github.com/me/a, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",

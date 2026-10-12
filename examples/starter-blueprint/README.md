@@ -173,7 +173,7 @@ routines: [review-before-push]
 
 To try your own copy instead, point `git:` at it. A local path works too, like `git: /home/you/code/my-blueprint`, but Fabrica reads committed files only, so commit your edits first.
 
-Add `codex-cli` to `runtimes:` if you use Codex CLI too. Only `review-before-push` goes under `routines:`, because it's the only local routine. The other two fire on GitHub events and schedules, so they need a cloud runtime (see below). Skills and rules are served either way.
+Add `codex-cli` or `copilot-local` to `runtimes:` if you use Codex CLI or Copilot CLI too. Only `review-before-push` goes under `routines:`, because it's the only local routine. The other two fire on GitHub events and schedules, so they need a cloud runtime (see below). Skills and rules are served either way.
 
 **2. Check the home repo:**
 

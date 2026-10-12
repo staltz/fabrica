@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuiltinsLoad(t *testing.T) {
-	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "cursor-cloud", "cursor-local"}
+	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-cloud", "cursor-local"}
 	got := BuiltinNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("BuiltinNames = %v, want %v", got, want)
@@ -188,7 +188,7 @@ esac
 }
 
 func TestRenderBuiltinHandoffs(t *testing.T) {
-	for _, name := range []string{"claude-code-cloud", "cursor-cloud", "codex"} {
+	for _, name := range []string{"claude-code-cloud", "cursor-cloud", "codex", "copilot-cloud"} {
 		p, _ := Builtin(name)
 		for _, action := range []string{"create", "update", "delete"} {
 			out, err := p.RenderHandoff(HandoffData{
@@ -213,6 +213,32 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			if action != "delete" && !strings.Contains(out, "6. Memory: ") {
 				t.Errorf("%s %s: handoff doesn't say what to do with the runtime's memory:\n%s", name, action, out)
 			}
+		}
+	}
+}
+
+func TestCopilotHandoffKeepsTheTokenInASecret(t *testing.T) {
+	p, _ := Builtin("copilot-cloud")
+	if p.Matrix.TokenPlacement() != TokenInHeader {
+		t.Fatalf("copilot-cloud should send the token in a header, not %s", p.Matrix.TokenPlacement())
+	}
+	out, err := p.RenderHandoff(HandoffData{
+		ID: "h_abc", Action: "create", Runtime: "copilot-cloud", Factory: "nightly",
+		Identity: "fabrica.acme.dev/nightly#nightly@github.com/acme/app", Routine: "nightly", Repo: "github.com/acme/app",
+		Trigger: HandoffTrigger{On: "schedule", Cron: "0 3 * * *", Description: "on a schedule, cron `0 3 * * *` (UTC)"},
+		Fabrica: HandoffFabrica{URL: "https://fabrica.acme.dev/nightly", Header: "Bearer tok"},
+		Prompt:  "x", ConfirmCommand: "fabrica confirm h_abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"named `COPILOT_MCP_FABRICA_AUTHORIZATION`, with the value `Bearer tok`",
+		`"headers": {"Authorization": "$COPILOT_MCP_FABRICA_AUTHORIZATION"}`,
+		"hourly, daily or weekly",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
 		}
 	}
 }

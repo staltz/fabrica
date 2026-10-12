@@ -15,7 +15,7 @@ func sampleConfig(runtime string) Config {
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: GitPrePush, Factory: "oss-work", Routine: "review-before-push", Fingerprint: "7f3a9c7f3a9c"},
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: SessionStop, Factory: "oss-work", Routine: "tidy", Fingerprint: "abcdefabcdef"},
 	}
-	if runtime == "claude-code-local" || runtime == "codex-cli" {
+	if runtime == "claude-code-local" || runtime == "codex-cli" || runtime == "copilot-local" {
 		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Factory: "d", Routine: "hello", Fingerprint: "111111111111"})
 	}
 	var tasks []Task
@@ -39,12 +39,13 @@ func sampleConfig(runtime string) Config {
 // userFiles are config files with the user's own settings, which must
 // survive Fabrica's edits untouched.
 var userFiles = map[string]string{
-	".claude.json":          `{"numStartups": 7, "mcpServers": {"github": {"type": "http", "url": "https://gh.example"}}, "zzz": true}`,
-	".claude/settings.json": `{"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}]}}`,
-	".cursor/mcp.json":      `{"mcpServers": {"mine": {"command": "mine"}}}`,
-	".cursor/hooks.json":    `{"version": 1, "hooks": {"afterFileEdit": [{"command": "./format.sh"}]}}`,
-	".codex/config.toml":    "# my codex config\nmodel = \"o5\"\n\n[mcp_servers.mine]\ncommand = \"mine\" # keep me\n",
-	".codex/hooks.json":     `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}]}}`,
+	".claude.json":             `{"numStartups": 7, "mcpServers": {"github": {"type": "http", "url": "https://gh.example"}}, "zzz": true}`,
+	".claude/settings.json":    `{"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}]}}`,
+	".cursor/mcp.json":         `{"mcpServers": {"mine": {"command": "mine"}}}`,
+	".cursor/hooks.json":       `{"version": 1, "hooks": {"afterFileEdit": [{"command": "./format.sh"}]}}`,
+	".codex/config.toml":       "# my codex config\nmodel = \"o5\"\n\n[mcp_servers.mine]\ncommand = \"mine\" # keep me\n",
+	".codex/hooks.json":        `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}]}}`,
+	".copilot/mcp-config.json": `{"mcpServers": {"mine": {"type": "local", "command": "mine", "args": [], "tools": ["*"]}}}`,
 	// The user's own scheduled tasks, including one whose name happens to
 	// start with fabrica- but that Fabrica didn't write.
 	".claude/scheduled-tasks/morning/SKILL.md":       "---\nname: morning\ndescription: my morning brief\n---\n\nBrief me.\n",
@@ -84,6 +85,10 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 					if strings.Contains(userFiles[rel], keep) && !strings.Contains(string(data), keep) {
 						t.Errorf("%s lost the user's %q:\n%s", rel, keep, data)
 					}
+				}
+				rel, _ := filepath.Rel(home, f)
+				if _, mine := userFiles[rel]; !mine {
+					continue // a file Fabrica made, like Copilot's hooks/fabrica.json
 				}
 				if info, err := os.Stat(f); err == nil && !info.IsDir() && info.Mode().Perm() != 0o600 {
 					t.Errorf("%s permissions changed to %v", f, info.Mode().Perm())
@@ -162,6 +167,70 @@ func TestClaudeHookShape(t *testing.T) {
 	if len(g) != 1 || g[0].Matcher != "Bash" || g[0].Hooks[0].Type != "command" || g[0].Hooks[0].Timeout != 30 ||
 		g[0].Hooks[0].Command != "/usr/bin/fabrica hook --runtime claude-code-local --factory d --routine r --stub f --event git.pre_push" {
 		t.Errorf("unexpected hooks:\n%s", data)
+	}
+}
+
+func TestCopilotShape(t *testing.T) {
+	home := t.TempDir()
+	tool, _ := For("copilot-local", home)
+	err := tool.Write(Config{
+		MCP:   []MCPEntry{{Name: "fabrica", Transport: "stdio", Command: "/usr/bin/fabrica", Args: []string{"mcp", "--runtime", "copilot-local"}}},
+		Hooks: []Hook{{Binary: "/usr/bin/fabrica", Runtime: "copilot-local", Event: GitPrePush, Factory: "d", Routine: "r", Fingerprint: "f"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(home, ".copilot", "hooks", "fabrica.json"))
+	var v struct {
+		Version int `json:"version"`
+		Hooks   map[string][]struct {
+			Type       string `json:"type"`
+			Command    string `json:"command"`
+			Matcher    string `json:"matcher"`
+			TimeoutSec int    `json:"timeoutSec"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	e := v.Hooks["preToolUse"]
+	if v.Version != 1 || len(e) != 1 || e[0].Type != "command" || e[0].Matcher != "bash" || e[0].TimeoutSec != 30 ||
+		e[0].Command != "/usr/bin/fabrica hook --runtime copilot-local --factory d --routine r --stub f --event git.pre_push" {
+		t.Errorf("unexpected hooks:\n%s", data)
+	}
+	data, _ = os.ReadFile(filepath.Join(home, ".copilot", "mcp-config.json"))
+	if want := `"fabrica": {
+      "type": "local",
+      "command": "/usr/bin/fabrica",
+      "args": [
+        "mcp",
+        "--runtime",
+        "copilot-local"
+      ],
+      "tools": [
+        "*"
+      ]
+    }`; !strings.Contains(string(data), want) {
+		t.Errorf("unexpected MCP config:\n%s", data)
+	}
+	if err := tool.Write(Config{Hooks: []Hook{{Binary: "fabrica", Event: PromptSubmit, Factory: "d", Routine: "r", Fingerprint: "f"}}}); err == nil {
+		t.Error("Copilot CLI drops a prompt hook's output, so writing one should fail")
+	}
+	// The hooks file is Fabrica's, so removing the last hook removes it.
+	if err := tool.Write(Config{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".copilot", "hooks", "fabrica.json")); !os.IsNotExist(err) {
+		t.Errorf("hooks/fabrica.json should be gone, got %v", err)
+	}
+}
+
+func TestCopilotHome(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "copilot")
+	t.Setenv("COPILOT_HOME", dir)
+	tool, _ := For("copilot-local", t.TempDir())
+	if want := []string{filepath.Join(dir, "mcp-config.json"), filepath.Join(dir, "hooks", "fabrica.json")}; !reflect.DeepEqual(tool.Files(), want) {
+		t.Errorf("with COPILOT_HOME set, files are %v, want %v", tool.Files(), want)
 	}
 }
 

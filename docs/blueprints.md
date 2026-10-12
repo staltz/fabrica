@@ -233,12 +233,12 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 
 | Trigger | Where |
 |---|---|
-| `github.pull_request.opened`, `.synchronize`, `.reopened`, … | Cloud runtimes (see [providers](providers.md) for each one's list) |
+| `github.pull_request.opened`, `.synchronize`, `.reopened`, …, `github.issues.opened` | Cloud runtimes (see [providers](providers.md) for each one's list) |
 | `schedule` (with `cron:`) | Cloud runtimes and Claude Code (desktop app scheduled tasks) |
-| `session.start` | Claude Code and Codex CLI |
+| `session.start` | Claude Code, Codex CLI and Copilot CLI |
 | `prompt.submit` | Claude Code and Codex CLI |
-| `session.stop` | Claude Code, Codex CLI and Cursor IDE |
-| `git.pre_commit`, `git.pre_push` | Claude Code, Codex CLI and Cursor IDE |
+| `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
+| `git.pre_commit`, `git.pre_push` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
 
 ### Side effects
 

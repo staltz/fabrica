@@ -21,7 +21,7 @@ Fabrica sits beside git. It never wraps it. Blueprints and home repos are plain 
 | **Blueprint** | A git repo (or a folder in one) that describes how agents should build software: skills, routines, rules and connectors. |
 | **Product repo** (or **workspace**) | The repo with your actual code, which agents work on. |
 | **Home repo** | Your (or your team's) git repo of factories, which say which blueprint runs on which product repos, in which tools. |
-| **Runtime** | A tool that runs agents. Cloud runtimes: Claude routines, Cursor automations, Codex. Local runtimes: Claude Code, Cursor IDE, Codex CLI. |
+| **Runtime** | A tool that runs agents. Cloud runtimes: Claude routines, Cursor automations, Codex, Copilot automations. Local runtimes: Claude Code, Cursor IDE, Codex CLI, Copilot CLI. |
 | **Skill** | A standard [Agent Skills](https://agentskills.io/specification) folder: a `SKILL.md` plus any other files. The agent loads it when it's relevant. |
 | **Routine** | Something an agent does automatically when a trigger fires, like "review every new PR". |
 | **Rule** | An instruction that's always on (or on for certain files), in Cursor's rule format. |

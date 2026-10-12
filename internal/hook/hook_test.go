@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func setup(t *testing.T) (ws string, opts Options) {
 	w := testkit.NewWorld(t)
 	w.MakePersonal(t)
 	w.Home.Write(map[string]string{
-		"factories/oss-work.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [review-before-push]\n",
+		"factories/oss-work.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, copilot-local, cursor-local]\ntargets: [github.com/acme/app]\nroutines: [review-before-push]\n",
 	})
 	ws = filepath.Join(t.TempDir(), "app")
 	testkit.Git(t, "", "clone", "--quiet", "https://github.com/acme/app.git", ws)
@@ -95,6 +96,39 @@ func TestCursorFormats(t *testing.T) {
 	}
 	if out := run(t, o, `{"conversation_id": "c1", "workspace_roots": ["`+ws+`"], "status": "completed", "loop_count": 1}`); out != nil {
 		t.Errorf("only follow up once, got %v", out)
+	}
+}
+
+func TestCopilotFormats(t *testing.T) {
+	ws, o := setup(t)
+	o.Runtime = "copilot-local"
+	// Copilot CLI sends the shell tool's arguments as a JSON-encoded string.
+	in := `{"sessionId": "s1", "timestamp": 1704614400000, "cwd": "` + ws + `", "toolName": "bash", "toolArgs": "{\"command\":\"git push origin main\"}"}`
+	out := run(t, o, in)
+	if out["permissionDecision"] != "deny" || !strings.Contains(out["permissionDecisionReason"].(string), "run_begin") {
+		t.Fatalf("Copilot should get permissionDecision/permissionDecisionReason, got %v", out)
+	}
+	if again := run(t, o, in); again != nil {
+		t.Errorf("after the routine ran, the push should go through, got %v", again)
+	}
+	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "toolName": "bash", "toolArgs": "{\"command\":\"ls\"}"}`); out != nil {
+		t.Errorf("ls shouldn't be held back: %v", out)
+	}
+	// VS Code runs ~/.copilot/hooks too, with its own payload, but it has
+	// no Fabrica MCP server.
+	if out := run(t, o, `{"session_id": "v1", "hook_event_name": "PreToolUse", "cwd": "`+ws+`", "tool_name": "runInTerminal", "tool_input": {"command": "git push"}}`); out != nil {
+		t.Errorf("Copilot hooks must stay quiet inside VS Code, got %v", out)
+	}
+	o.Event = "session.start"
+	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "source": "startup"}`); !strings.Contains(fmt.Sprint(out["additionalContext"]), "run_begin") {
+		t.Errorf("sessionStart should add context, got %v", out)
+	}
+	o.Event = "session.stop"
+	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "stopReason": "end_turn"}`); out["decision"] != "block" {
+		t.Errorf("agentStop should block once, got %v", out)
+	}
+	if out := run(t, o, `{"sessionId": "s1", "cwd": "`+ws+`", "stop_hook_active": true}`); out != nil {
+		t.Errorf("agentStop must not loop, got %v", out)
 	}
 }
 

@@ -4,7 +4,7 @@ MCP is the **only** way blueprint content reaches agents. There's no copying fil
 
 | | `fabrica mcp` (local) | `fabrica mcp --http` (remote) |
 |---|---|---|
-| Used by | Claude Code, Cursor IDE and Codex CLI on your machine | Cloud runtimes: Claude routines, Cursor automations, Codex |
+| Used by | Claude Code, Cursor IDE, Codex CLI and Copilot CLI on your machine | Cloud runtimes: Claude routines, Cursor automations, Codex, Copilot automations |
 | Transport | stdio | Streamable HTTP |
 | Picks the blueprint from | Your personal home repo's local factories | One home repo's cloud factories |
 | Run history and memories in | `runs.db` in your personal home repo (`~/.fabrica/runs.db`) | Its own SQLite database (`--db`) |

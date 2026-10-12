@@ -2,7 +2,7 @@
 
 A **provider** maps Fabrica's ideas onto one runtime. Blueprints describe *what* should happen, and providers translate that for each specific tool.
 
-- **Built-in providers** are compiled into the `fabrica` binary. v0.1 has three cloud ones (Claude routines, Cursor automations and Codex) and three local ones (Claude Code, Cursor IDE and Codex CLI).
+- **Built-in providers** are compiled into the `fabrica` binary. v0.1 has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
 - **Folder providers** ship inside any blueprint, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
 
 ## Capability matrices
@@ -25,50 +25,54 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 **Cloud runtimes**
 
-| | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) |
-|---|---|---|---|
-| Apply mode | handoff | handoff | handoff |
-| Skills | text-only | text-only | text-only |
-| Fabrica token | in the URL | in a header | in the URL |
-| `schedule` | native | native | native |
-| `github.pull_request.opened` | native | native | native |
-| `github.pull_request.synchronize` | native | native | — |
-| `github.pull_request.reopened` | native | native | — |
-| `github.pull_request.ready_for_review` | native | — | — |
-| `github.pull_request.closed` | native | — | — |
-| `github.pull_request.labeled` | — | native | — |
-| `github.push` | — | native | — |
-| `github.release.published` | native | — | — |
-| Built-in connectors | github, slack, linear, notion | github, slack, linear | github |
-| MCP servers | http, sse | http | http |
-| Side effects | all emulated | all emulated | all emulated |
-| Memory | emulated | native (the automation's memory tool) | emulated |
+| | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) | `copilot-cloud` (Copilot automations) |
+|---|---|---|---|---|
+| Apply mode | handoff | handoff | handoff | handoff |
+| Skills | text-only | text-only | text-only | text-only |
+| Fabrica token | in the URL | in a header | in the URL | in a header, from an Agents secret |
+| `schedule` | native | native | native | native (hourly, daily or weekly) |
+| `github.pull_request.opened` | native | native | native | native |
+| `github.pull_request.synchronize` | native | native | — | native |
+| `github.pull_request.reopened` | native | native | — | — |
+| `github.pull_request.ready_for_review` | native | — | — | — |
+| `github.pull_request.closed` | native | — | — | — |
+| `github.pull_request.labeled` | — | native | — | — |
+| `github.issues.opened` | — | — | — | native |
+| `github.push` | — | native | — | — |
+| `github.release.published` | native | — | — | — |
+| Built-in connectors | github, slack, linear, notion | github, slack, linear | github | github |
+| MCP servers | http, sse | http | http | http, sse, stdio |
+| Side effects | all emulated | all emulated | all emulated | all emulated |
+| Memory | emulated | native (the automation's memory tool) | emulated | emulated |
 
-Cursor's memory tool is on by default, so every Cursor handoff says whether to turn it on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and Codex's memory works per project rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
+Cursor's memory tool is on by default, so every Cursor handoff says whether to turn it on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
-None of these three has a public API for creating and listing triggered automations yet, so the built-in cloud providers use **handoff** mode. Claude routines can only be fired through their API; Cursor's Cloud Agents API can launch agents but not create automations; Codex has no automation API. When an API appears, a provider can switch to `api` mode without changing anything else.
+None of these four has a public API for creating and listing triggered automations yet, so the built-in cloud providers use **handoff** mode. Claude routines can only be fired through their API; Cursor's Cloud Agents API can launch agents but not create automations; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. When an API appears, a provider can switch to `api` mode without changing anything else.
+
+Copilot reads MCP servers from the repository's settings (**Settings → Copilot → MCP servers**), not from each automation, so every Copilot automation in a repository shares one `fabrica` server, and only one factory can deploy to a repository on `copilot-cloud` (`fabrica check` says so when two do). The handoff puts the Fabrica token in an Agents secret called `COPILOT_MCP_FABRICA_AUTHORIZATION`, so it never shows in the configuration. Copilot automations only run in private and internal repositories for now, and their schedules recur hourly, daily or weekly, so the handoff asks you to pick the one closest to the routine's cron.
 
 **Local runtimes**
 
-| | `claude-code-local` | `cursor-local` | `codex-cli` |
-|---|---|---|---|
-| Apply mode | api (writes config files) | api | api |
-| Skills | unpacked on disk | unpacked on disk | unpacked on disk |
-| MCP server config | `~/.claude.json` | `~/.cursor/mcp.json` | `~/.codex/config.toml` |
-| Hooks config | `~/.claude/settings.json` | `~/.cursor/hooks.json` | `~/.codex/hooks.json` |
-| `session.start` | native (SessionStart) | — | native (SessionStart) |
-| `prompt.submit` | native (UserPromptSubmit) | — | native (UserPromptSubmit) |
-| `session.stop` | native (Stop) | native (stop) | native (Stop) |
-| `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) |
-| `schedule` | native (desktop app scheduled task) | — | — |
-| Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks |
-| Memory | emulated (in `runs.db`) | emulated | emulated |
+| | `claude-code-local` | `cursor-local` | `codex-cli` | `copilot-local` |
+|---|---|---|---|---|
+| Apply mode | api (writes config files) | api | api | api |
+| Skills | unpacked on disk | unpacked on disk | unpacked on disk | unpacked on disk |
+| MCP server config | `~/.claude.json` | `~/.cursor/mcp.json` | `~/.codex/config.toml` | `~/.copilot/mcp-config.json` |
+| Hooks config | `~/.claude/settings.json` | `~/.cursor/hooks.json` | `~/.codex/hooks.json` | `~/.copilot/hooks/fabrica.json` |
+| `session.start` | native (SessionStart) | — | native (SessionStart) | native (sessionStart) |
+| `prompt.submit` | native (UserPromptSubmit) | — | native (UserPromptSubmit) | — |
+| `session.stop` | native (Stop) | native (stop) | native (Stop) | native (agentStop) |
+| `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) | native (preToolUse on bash) |
+| `schedule` | native (desktop app scheduled task) | — | — | — |
+| Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks | same as Claude Code |
+| Memory | emulated (in `runs.db`) | emulated | emulated | emulated |
 
 A few things worth knowing about local hooks:
 
 - Cursor's `sessionStart` hook is fire-and-forget and `beforeSubmitPrompt` can't add context, so `session.start` and `prompt.submit` aren't supported in Cursor.
 - Cursor also runs the hooks in `~/.claude/settings.json`. Fabrica's Claude Code hooks stay quiet when they notice they're running inside Cursor, so nothing runs twice.
 - Codex skips new or changed hooks until you trust them in its `/hooks` screen. After an apply that changes a hook, open Codex and approve it.
+- Copilot CLI drops the output of `userPromptSubmitted` hooks that come from config files, so `prompt.submit` isn't supported there. Its hooks get a file of their own, `~/.copilot/hooks/fabrica.json`, rather than the `hooks` field of `~/.copilot/settings.json`, which can have comments that Fabrica would lose. VS Code also runs the hooks in that folder, so Fabrica's Copilot hooks stay quiet when VS Code calls them, since its MCP server isn't registered there. `COPILOT_HOME`, if set, moves all of `~/.copilot`, and Fabrica follows it.
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
 
 A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.

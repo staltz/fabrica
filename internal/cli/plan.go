@@ -151,6 +151,12 @@ your factory changes first.`,
 					fmt.Fprintf(out, "  %s\n", f)
 				}
 			}
+			if len(res.Setups) > 0 {
+				fmt.Fprintf(out, "\nSome of what Fabrica made through runtime APIs relies on things those APIs can't set up, so check them by hand (once, or when the file changes). They contain the factory's token, so keep them private:\n")
+				for _, f := range res.Setups {
+					fmt.Fprintf(out, "  %s\n", f)
+				}
+			}
 			if res.ExitCode() != 0 {
 				return &ExitError{Code: res.ExitCode()}
 			}

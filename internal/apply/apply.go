@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,6 +48,9 @@ type Result struct {
 	Failed []string
 	// Handoffs are the handoff files written.
 	Handoffs []string
+	// Setups are files saying what to set up by hand for resources an API
+	// made, because the API can't set it up itself.
+	Setups []string
 }
 
 // ExitCode is 0 when everything was applied and 1 when something failed
@@ -122,8 +126,9 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		if len(dp.Changes) == 0 {
 			continue // nothing to do, and nothing to commit
 		}
-		files, err := applyCloud(ctx, opts, &env, repo, dp.Name)
+		files, setups, err := applyCloud(ctx, opts, &env, repo, dp.Name)
 		res.Handoffs = append(res.Handoffs, files...)
+		res.Setups = append(res.Setups, setups...)
 		if err != nil {
 			fmt.Fprintf(out, "Factory %s: %v\n", dp.Name, err)
 			res.Failed = append(res.Failed, dp.Name)
@@ -184,14 +189,14 @@ func printErrors(out io.Writer, diags diag.List) {
 // applyCloud applies one cloud factory, following the steps in the
 // design: take the lock, refresh, re-plan, apply, then record the results
 // and release the lock in one commit.
-func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, name string) (handoffs []string, err error) {
+func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, name string) (handoffs, setups []string, err error) {
 	out := opts.Out
 	if out == nil {
 		out = io.Discard
 	}
 	// Deleting a stub needs no token, so destroy works without the secret.
 	if env.Secret == "" && !env.Destroy {
-		return nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the factory's token", token.EnvVar)
+		return nil, nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the factory's token", token.EnvVar)
 	}
 	holder := opts.Holder
 	if holder == "" {
@@ -207,9 +212,9 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if err := repo.takeLock(ctx, name, holder, verb(env), now); err != nil {
 		var locked *ErrLocked
 		if errors.As(err, &locked) {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, fmt.Errorf("couldn't take the lock: %w", err)
+		return nil, nil, fmt.Errorf("couldn't take the lock: %w", err)
 	}
 	fmt.Fprintf(out, "Factory %s: took the lock.\n", name)
 
@@ -219,12 +224,12 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	locked.Refresh = true
 	h, err := home.Open(repo.Dir)
 	if err != nil {
-		return nil, releaseAfter(ctx, repo, name, verb(env), err)
+		return nil, nil, releaseAfter(ctx, repo, name, verb(env), err)
 	}
 	dp := locked.PlanCloud(ctx, h, name)
 	if dp.Diags.HasErrors() {
 		printErrors(out, dp.Diags)
-		return nil, releaseAfter(ctx, repo, name, verb(env), errors.New("the re-plan inside the lock found errors, so nothing was touched"))
+		return nil, nil, releaseAfter(ctx, repo, name, verb(env), errors.New("the re-plan inside the lock found errors, so nothing was touched"))
 	}
 
 	// 4. Apply each change, recording as we go.
@@ -233,9 +238,14 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		state.Blueprint = &home.StateBlueprint{Git: dp.Spec.Blueprint.Git, Path: dp.Spec.Blueprint.Path, Commit: dp.Blueprint.Source.Commit}
 	}
 	tok := token.For(env.Secret, name)
+	apis := apiClients{}
+	touched := map[*provider.Provider]bool{} // runtimes with creates or updates through their API
 	var failures []string
 	for _, c := range dp.Changes {
-		file, err := applyChange(ctx, opts, dp, state, c, tok, now)
+		if c.Mode == provider.API && c.Desired != nil {
+			touched[c.Provider] = true
+		}
+		file, err := applyChange(ctx, opts, dp, state, c, tok, now, apis)
 		if file != "" {
 			handoffs = append(handoffs, file)
 		}
@@ -244,23 +254,33 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 			fmt.Fprintf(out, "  ✗ %s\n    %v\n", c.Describe(), err)
 			continue
 		}
-		verb := "done"
+		done := "done"
 		if file != "" {
-			verb = "handoff written to " + file
+			done = "handoff written to " + file
 		}
-		fmt.Fprintf(out, "  ✓ %s (%s)\n", c.Describe(), verb)
+		fmt.Fprintf(out, "  ✓ %s (%s)\n", c.Describe(), done)
+		// A runtime that can't list its resources can't help a later
+		// apply find this one if we crash before the end, so record it
+		// now. If that fails, it's recorded with everything else below.
+		if file == "" && c.Action == plan.Create && !c.Provider.Matrix.FindByIdentity {
+			msg := fmt.Sprintf("fabrica: %s %s (created %s @ %s on %s)", verb(env), name, c.Routine, c.Repo, c.Key.Runtime)
+			if err := repo.Checkpoint(ctx, name, msg, state); err != nil {
+				fmt.Fprintf(out, "    (couldn't record it in the home repo right away: %v)\n", err)
+			}
+		}
 	}
+	setups = writeSetups(out, opts, dp, tok, touched, apis)
 
 	// 5. Record and release.
 	msg := fmt.Sprintf("fabrica: %s %s (%s)", verb(env), name, plural(len(dp.Changes)-len(failures), "change"))
 	if err := repo.Release(ctx, name, msg, state); err != nil {
-		return handoffs, err
+		return handoffs, setups, err
 	}
 	fmt.Fprintf(out, "Factory %s: recorded the results and released the lock.\n", name)
 	if len(failures) > 0 {
-		return handoffs, fmt.Errorf("%s failed:\n  %s", plural(len(failures), "change"), strings.Join(failures, "\n  "))
+		return handoffs, setups, fmt.Errorf("%s failed:\n  %s", plural(len(failures), "change"), strings.Join(failures, "\n  "))
 	}
-	return handoffs, nil
+	return handoffs, setups, nil
 }
 
 // releaseAfter releases the lock after a problem, keeping the original
@@ -276,20 +296,75 @@ func releaseAfter(ctx context.Context, repo *Repo, name, verb string, cause erro
 	return cause
 }
 
+// apiClients holds one API client per runtime during an apply, so a
+// client that has to log in does it once.
+type apiClients map[*provider.Provider]provider.RuntimeAPI
+
+func (a apiClients) get(p *provider.Provider) (provider.RuntimeAPI, error) {
+	if api, ok := a[p]; ok {
+		return api, nil
+	}
+	api, err := p.API()
+	if err != nil {
+		return nil, err
+	}
+	a[p] = api
+	return api, nil
+}
+
+// writeSetups writes down, for each runtime whose API needs it, what to set
+// up by hand for the factory's resources there: all of them, not only the
+// ones this apply touched, so the file is always complete. It's written
+// even when the API calls failed, since a missing setup can be why. The
+// files hold the factory's token, so they're private, like handoffs.
+func writeSetups(out io.Writer, opts Options, dp *plan.Factory, tok string, touched map[*provider.Provider]bool, apis apiClients) []string {
+	var files []string
+	for p := range touched {
+		ms, ok := apis[p].(provider.ManualSetup)
+		if !ok {
+			continue
+		}
+		var resources []provider.Resource
+		for _, r := range dp.Desired {
+			if r.Provider == p {
+				resources = append(resources, resourceFor(r, p, tok))
+			}
+		}
+		text := ms.Setup(dp.Name, resources)
+		if text == "" {
+			continue
+		}
+		dir := filepath.Join(opts.HandoffDir, dp.Name)
+		file := filepath.Join(dir, p.Name()+"-setup.md")
+		err := os.MkdirAll(dir, 0o700)
+		if err == nil {
+			err = os.WriteFile(file, []byte(text), 0o600)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "Factory %s: couldn't write what to set up by hand for %s: %v\n", dp.Name, p.Name(), err)
+			continue
+		}
+		fmt.Fprintf(out, "Factory %s: %s's API can't set up everything its resources rely on; see %s\n", dp.Name, p.Name(), file)
+		files = append(files, file)
+	}
+	sort.Strings(files)
+	return files
+}
+
 // applyChange carries out one change and updates state to match.
-func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time) (string, error) {
+func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time, apis apiClients) (string, error) {
 	switch c.Action {
 	case plan.Adopt:
 		upsertResource(state, *c.Current)
 		return "", nil
 	}
 	// Unverifiable resources have no remote ID, so even on an API runtime a
-	// person has to delete them.
-	if c.Mode == provider.Handoff || c.Action == plan.Delete && c.Current.RemoteID == "" {
+	// person has to update or delete them.
+	if c.Mode == provider.Handoff || c.Action != plan.Create && c.Current.RemoteID == "" {
 		return writeHandoff(opts, dp, state, c, tok, now)
 	}
 
-	api, err := c.Provider.API()
+	api, err := apis.get(c.Provider)
 	if err != nil {
 		return "", err
 	}
@@ -301,9 +376,6 @@ func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *hom
 		}
 		upsertResource(state, recordFor(c.Desired, remoteID, dp, now))
 	case plan.Update:
-		if c.Current.RemoteID == "" {
-			return "", errors.New("Fabrica doesn't know this resource's remote ID, so it can't update it through the API")
-		}
 		if err := api.Update(ctx, c.Current.RemoteID, resourceFor(c.Desired, c.Provider, tok)); err != nil {
 			return "", err
 		}
@@ -324,7 +396,7 @@ func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Re
 	res := provider.Resource{
 		Identity: r.Key.ID, Factory: r.Factory, Routine: r.Routine, Repo: r.Repo,
 		Trigger: provider.ResourceTrigger{On: shape.Trigger, Cron: shape.Cron},
-		Prompt:  r.Prompt, Fingerprint: r.Fingerprint,
+		Memory:  shape.Memory, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
 	}
 	for _, c := range shape.Connectors {

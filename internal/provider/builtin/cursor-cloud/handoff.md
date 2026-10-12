@@ -24,7 +24,7 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 3. Repository: `{{.Repo}}`
 4. Trigger: {{.Trigger.Description}}
 5. MCP servers and integrations. Make sure the automation has exactly these:
-   - **fabrica** (custom MCP server, HTTP): URL `{{.Fabrica.URL}}`{{if .Fabrica.Header}}, header `Authorization: {{.Fabrica.Header}}`{{end}}
+   - **fabrica-{{.Factory}}** (custom MCP server, HTTP): URL `{{.Fabrica.URL}}`{{if .Fabrica.Header}}, header `Authorization: {{.Fabrica.Header}}`{{end}}. Use exactly this name, the one Fabrica uses when it manages Cursor automations through Cursor's API.
 {{- range .Connectors}}
    - **{{.Name}}**: {{.Setup}}
 {{- end}}

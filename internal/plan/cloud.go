@@ -77,6 +77,9 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			dp.Diags.Errorf("provider.no-mode", d.File, "%v", err)
 			continue
 		}
+		if why := p.APIUnavailable(); why != nil && mode != provider.API {
+			dp.Notes = append(dp.Notes, fmt.Sprintf("%s uses %s mode because %v; set it, and Fabrica manages %s through its API instead", rt, mode, why, rt))
+		}
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
@@ -180,7 +183,8 @@ func (e *Env) providersForCleanup(ctx context.Context, dp *Factory) map[string]*
 }
 
 // refresh returns what's installed. It starts from state and, for
-// runtimes whose API can find resources by identity, asks the runtime.
+// runtimes whose API can find resources, asks the runtime: by listing
+// what it has, or else by looking up each remote ID that state records.
 func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*provider.Provider) map[home.Key]home.Resource {
 	current := map[home.Key]home.Resource{}
 	if dp.State != nil {
@@ -191,7 +195,6 @@ func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*pr
 	if !e.Refresh || dp.Diags.HasErrors() {
 		return current
 	}
-	endpoints := endpointsToList(dp)
 	for _, rt := range sortedProviderNames(providers) {
 		p := providers[rt]
 		if mode, _ := p.Mode(); mode != provider.API || p.IsLocal() {
@@ -201,59 +204,102 @@ func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*pr
 		if err != nil {
 			continue
 		}
-		var found []provider.RemoteResource
-		failed := false
-		for _, endpoint := range endpoints {
-			list, err := api.List(ctx, dp.Name, endpoint)
-			if err != nil {
-				dp.Diags.Errorf("refresh.failed", rt, "couldn't list resources: %v", err)
-				failed = true
-				break
-			}
-			found = append(found, list...)
-		}
-		if failed {
-			continue
-		}
-		byID := map[string][]provider.RemoteResource{}
-		for _, r := range found {
-			byID[r.Identity] = append(byID[r.Identity], r)
-		}
-		for _, id := range sortedRemoteIDs(byID) {
-			list := byID[id]
-			if len(list) > 1 {
-				var ids []string
-				for _, r := range list {
-					ids = append(ids, r.RemoteID)
-				}
-				dp.Diags.Errorf("refresh.duplicate", rt, "two or more resources share the identity %s: %s", id, strings.Join(ids, ", ")).
-					Hintf("Fabrica won't pick one to delete; remove the extra ones by hand, then plan again")
-				continue
-			}
-			key := home.Key{Runtime: rt, ID: id}
-			r, inState := current[key]
-			if !inState {
-				r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API)}
-				r.Routine, r.Repo = splitIdentity(id)
-				dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
-					Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
-					Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
-			}
-			r.RemoteID = list[0].RemoteID
-			if list[0].Fingerprint != "" {
-				r.Shape.Fingerprint = list[0].Fingerprint
-			}
-			current[key] = r
-		}
-		// Resources state remembers but the runtime no longer has.
-		for key, r := range current {
-			if key.Runtime == rt && r.RemoteID != "" && len(byID[key.ID]) == 0 {
-				delete(current, key)
-				dp.Notes = append(dp.Notes, fmt.Sprintf("%s on %s is in state but gone from the runtime (deleted by hand?)", key.ID, rt))
-			}
+		switch api := api.(type) {
+		case provider.Lister:
+			e.refreshByListing(ctx, dp, rt, p, api, current)
+		case provider.Getter:
+			e.refreshByRemoteID(ctx, dp, rt, api, current)
 		}
 	}
 	return current
+}
+
+// refreshByListing asks a runtime for everything under the factory's
+// endpoints. Anything it has that state doesn't is adopted.
+func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *provider.Provider, api provider.Lister, current map[home.Key]home.Resource) {
+	var found []provider.RemoteResource
+	for _, endpoint := range endpointsToList(dp) {
+		list, err := api.List(ctx, dp.Name, endpoint)
+		if err != nil {
+			dp.Diags.Errorf("refresh.failed", rt, "couldn't list resources: %v", err)
+			return
+		}
+		found = append(found, list...)
+	}
+	byID := map[string][]provider.RemoteResource{}
+	for _, r := range found {
+		byID[r.Identity] = append(byID[r.Identity], r)
+	}
+	for _, id := range sortedRemoteIDs(byID) {
+		list := byID[id]
+		if len(list) > 1 {
+			var ids []string
+			for _, r := range list {
+				ids = append(ids, r.RemoteID)
+			}
+			dp.Diags.Errorf("refresh.duplicate", rt, "two or more resources share the identity %s: %s", id, strings.Join(ids, ", ")).
+				Hintf("Fabrica won't pick one to delete; remove the extra ones by hand, then plan again")
+			continue
+		}
+		key := home.Key{Runtime: rt, ID: id}
+		r, inState := current[key]
+		if !inState {
+			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API)}
+			r.Routine, r.Repo = splitIdentity(id)
+			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
+				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
+				Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
+		}
+		r.RemoteID = list[0].RemoteID
+		if list[0].Fingerprint != "" {
+			r.Shape.Fingerprint = list[0].Fingerprint
+		}
+		current[key] = r
+	}
+	// Resources state remembers but the runtime no longer has.
+	for key, r := range current {
+		if key.Runtime == rt && r.RemoteID != "" && len(byID[key.ID]) == 0 {
+			delete(current, key)
+			dp.Notes = append(dp.Notes, fmt.Sprintf("%s on %s is in state but gone from the runtime (deleted by hand?)", key.ID, rt))
+		}
+	}
+}
+
+// refreshByRemoteID looks up, one by one, the resources state records on
+// a runtime that can't list them. It can't find resources missing from
+// state, which is why apply records each create right away on such
+// runtimes.
+func (e *Env) refreshByRemoteID(ctx context.Context, dp *Factory, rt string, api provider.Getter, current map[home.Key]home.Resource) {
+	for _, key := range sortedKeysOf(current) {
+		r := current[key]
+		if key.Runtime != rt || r.RemoteID == "" {
+			continue // unverifiable resources have nothing to look up
+		}
+		remote, err := api.Get(ctx, r.RemoteID)
+		if err != nil {
+			dp.Diags.Errorf("refresh.failed", rt, "couldn't look up %s (%s): %v", key.ID, r.RemoteID, err)
+			return
+		}
+		if remote == nil {
+			delete(current, key)
+			note := fmt.Sprintf("%s on %s is in state but gone from the runtime (deleted by hand?)", key.ID, rt)
+			if r.Mode == string(provider.Handoff) {
+				// Fabrica can't search for it, so say what a mistyped ID
+				// at `fabrica confirm` would mean.
+				note += fmt.Sprintf("; it was set up by hand, so if %s isn't its real ID, it's still there, and apply's new one would run next to it: delete the old one in the runtime", r.RemoteID)
+			}
+			dp.Notes = append(dp.Notes, note)
+			continue
+		}
+		// The installed stub is whatever its prompt says, and a stub that
+		// lost its name or fingerprint needs putting back.
+		r.Shape.Fingerprint = remote.Fingerprint
+		if remote.Identity != key.ID {
+			r.Shape.Fingerprint = ""
+			dp.Notes = append(dp.Notes, fmt.Sprintf("%s on %s (%s) is named %q in the runtime; apply names it back", key.ID, rt, r.RemoteID, remote.Identity))
+		}
+		current[key] = r
+	}
 }
 
 // endpointsToList is every endpoint this factory may own resources

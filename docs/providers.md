@@ -27,27 +27,48 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 | | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) | `copilot-cloud` (Copilot automations) |
 |---|---|---|---|---|
-| Apply mode | handoff | handoff | handoff | handoff |
+| Apply mode | handoff | api, with `CURSOR_API_KEY` set ([below](#cursor-automations-through-cursors-api)); handoff without | handoff | handoff |
 | Skills | text-only | text-only | text-only | text-only |
 | Fabrica token | in the URL | in a header | in the URL | in a header, from an Agents secret |
 | `schedule` | native | native | native | native (hourly, daily or weekly) |
 | `github.pull_request.opened` | native | native | native | native |
 | `github.pull_request.synchronize` | native | native | — | native |
-| `github.pull_request.reopened` | native | native | — | — |
+| `github.pull_request.reopened` | native | — | — | — |
 | `github.pull_request.ready_for_review` | native | — | — | — |
 | `github.pull_request.closed` | native | — | — | — |
 | `github.pull_request.labeled` | — | native | — | — |
 | `github.issues.opened` | — | — | — | native |
 | `github.push` | — | native | — | — |
 | `github.release.published` | native | — | — | — |
-| Built-in connectors | github, slack, linear, notion | github, slack, linear | github | github |
+| Built-in connectors | github, slack, linear, notion | github, slack (linear through its fallback) | github | github |
 | MCP servers | http, sse | http | http | http, sse, stdio |
 | Side effects | all emulated | all emulated | all emulated | all emulated |
 | Memory | emulated | native (the automation's memory tool) | emulated | emulated |
 
-Cursor's memory tool is on by default, so every Cursor handoff says whether to turn it on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
+Cursor's memory tool is on by default, so every Cursor automation gets it turned on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
-None of these four has a public API for creating and listing triggered automations yet, so the built-in cloud providers use **handoff** mode. Claude routines can only be fired through their API; Cursor's Cloud Agents API can launch agents but not create automations; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. When an API appears, a provider can switch to `api` mode without changing anything else.
+Three of these four have no API for creating triggered automations yet, so they use **handoff** mode: Claude routines can only be fired through their API; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. Cursor's automations do have one, the API behind Cursor's [Terraform provider](https://github.com/cursor/terraform-provider-cursor), so `cursor-cloud` uses `api` mode whenever it has a Cursor API key.
+
+### Cursor automations through Cursor's API
+
+Set `CURSOR_API_KEY` to a [Cursor API key](https://cursor.com/dashboard) wherever you run `fabrica apply` (your laptop, or CI as a secret), and Fabrica creates, updates and deletes Cursor automations itself. Without it, `cursor-cloud` falls back to handoffs, and `plan` says why. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too, and `CURSOR_ENDPOINT` overrides the API's address (`https://api2.cursor.sh`).
+
+Fabrica doesn't run Terraform. Cursor doesn't publish docs for this API, but its Terraform provider is a client for it: Fabrica makes the same calls (Connect RPC to `aiserver.v1.AutomationsService`, after exchanging the API key for a session token, like the provider does), in the protocol's JSON encoding, with no extra dependencies.
+
+Each stub becomes one automation:
+
+- **Name:** the stub's identity. **Description:** says Fabrica manages it.
+- **Trigger** on the stub's repo: `github.pull_request.opened` is Cursor's *Pull request opened* (which also fires when a draft is marked ready for review), `synchronize` is *Pull request pushed*, `labeled` is *Pull request label changed* (when any label is added), `github.push` is *Push to branch*, and `schedule` is a cron schedule. Cursor has no trigger for a reopened pull request.
+- **Tools:** the Fabrica MCP server, plus one tool per connector: `github` turns on *Comment on pull request*, `slack` turns on *Send to Slack* for any channel (routines name their channels in params, which are served live), and every MCP connector, including `linear` through its fallback, adds its MCP server.
+- **Memory:** the automation's memory tool is on for routines with `memory: true` and off for the rest.
+- **Prompt:** the stub prompt. **Repository:** the stub's repo.
+
+Automations keep Cursor's default sharing setting, so they belong to whoever owns the API key. In CI, use a key that isn't tied to one person's account if you can.
+
+Two things work differently from runtimes whose API can list resources:
+
+- **Cursor's API can't list automations**, only read one back by its ID. So the matrix says `find_by_remote_id: true` instead of `find_by_identity: true`: `plan` and `apply` look up each automation that state records, by ID, to spot ones deleted or renamed by hand (a rename gets put back) and ones whose prompt no longer carries the stub's fingerprint (they get updated). To make sure no automation is ever left out of state, apply commits state to the home repo right after each create, while it still holds the lock, instead of only at the end.
+- **Cursor's API can't set up MCP servers.** An automation only *names* its MCP servers, and Cursor looks them up in the MCP settings of the automation's owner. So each factory's Fabrica server is named `fabrica-<factory>` (each factory has its own address and token), and when an apply creates or updates Cursor automations, it writes `~/.cache/fabrica/handoffs/<factory>/cursor-cloud-setup.md`, listing each MCP server to have in Cursor's settings, with its URL and the `Authorization` header that carries the factory's token. You set them up once, and again when the file changes, like after the server secret is rotated. The file holds the token, so it's readable only by you, like a handoff.
 
 Copilot reads MCP servers from the repository's settings (**Settings → Copilot → MCP servers**), not from each automation, so every Copilot automation in a repository shares one `fabrica` server, and only one factory can deploy to a repository on `copilot-cloud` (`fabrica check` says so when two do). The handoff puts the Fabrica token in an Agents secret called `COPILOT_MCP_FABRICA_AUTHORIZATION`, so it never shows in the configuration. Copilot automations only run in private and internal repositories for now, and their schedules recur hourly, daily or weekly, so the handoff asks you to pick the one closest to the routine's cron.
 
@@ -81,7 +102,7 @@ A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app sche
 
 Each provider supports one or more of these, tried in order:
 
-1. **`api`**: Fabrica creates, updates and deletes resources through the runtime's API. This is the goal for every runtime. Local runtimes count as `api`, since Fabrica writes their config files directly. `api` mode is only allowed when the API can list resources and read their identity back (`find_by_identity: true`), because without that Fabrica couldn't find, or avoid duplicating, what it made.
+1. **`api`**: Fabrica creates, updates and deletes resources through the runtime's API. This is the goal for every runtime. Local runtimes count as `api`, since Fabrica writes their config files directly. `api` mode is only allowed when Fabrica can find what it made, so it never duplicates it: either the API can list resources and read their identity back (`find_by_identity: true`), or it can at least read one back by its ID (`find_by_remote_id: true`, like Cursor's), in which case apply records each new resource in the home repo as soon as it exists. A built-in cloud provider uses `api` mode only when its API's credentials are set, and falls back to its next mode otherwise.
 2. **`handoff`**: Fabrica writes step-by-step instructions that a person, or an AI with computer use, can follow. **Fabrica never does computer use itself.** The handoff ends with `fabrica confirm <id> [--remote-id …]`, and until then the change is pending in state. See [Handoffs](home-repos.md#handoffs).
 3. **unsupported**: when a provider has no mode Fabrica can use, `plan` and `apply` fail loudly and say why.
 
@@ -108,7 +129,7 @@ There's a complete, runnable example in [examples/custom-provider](../examples/c
 kind: cloud                          # cloud (local is reserved for built-ins in v0.1)
 description: Acme's in-house agent runner
 apply_modes: [api, handoff]          # tried in order
-find_by_identity: true               # the API can list resources and read their identity back
+find_by_identity: true               # the API can list resources and read their identity back (folder providers need this for api)
 skill_transport: text                # text (read file by file); cloud runtimes can't use directory
 mcp_auth:
   header: native                     # can send Authorization: Bearer …
@@ -125,7 +146,7 @@ side_effects:
 memory: emulated                     # native, emulated or unsupported (the default)
 ```
 
-Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it; if it lists `handoff`, there must be a `handoff.md`.
+Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`.
 
 ### The `api` protocol
 
@@ -158,6 +179,8 @@ A `resource` looks like this:
   "fingerprint": "e128f7aa2995"
 }
 ```
+
+On runtimes with `memory: native`, a resource also has `"memory": "on"` or `"off"`: what to set the runtime's own memory feature to, mirroring the routine's `memory:` key.
 
 Your program must store the `identity` somewhere it can read back (a name or a metadata field), so `list` can return it. If it can also store the `fingerprint`, return it from `list`, which helps `plan` spot drift. The `fabrica.token` is a secret: never log it. When `placement` is `url`, the token is already in `fabrica.url`.
 

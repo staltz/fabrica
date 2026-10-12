@@ -133,7 +133,7 @@ Examples live in [examples/](examples/): a [starter blueprint](examples/starter-
 
 Fabrica is honest about its limits. Here's what v0.1 can't do yet:
 
-- **Built-in cloud providers use handoffs.** As of October 2026, none of Claude routines, Cursor automations, Codex or Copilot automations has a public API for creating and listing triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
+- **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with `CURSOR_API_KEY` set, Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
 - **No hosted service, ever.** You run the remote server yourself.

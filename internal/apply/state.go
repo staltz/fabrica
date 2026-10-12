@@ -121,6 +121,22 @@ func (r *Repo) Update(ctx context.Context, name, message string, mutate func(*ho
 // state, say), and rebasing on top of them is safe.
 func (r *Repo) Release(ctx context.Context, name, message string, state *home.State) error {
 	state.Lock = nil
+	if err := r.commitHeld(ctx, name, message, state); err != nil {
+		return fmt.Errorf("couldn't record the final state of %s in the home repo (the lock is still held; fix the problem, then run `fabrica unlock %s`): %w", name, name, err)
+	}
+	return nil
+}
+
+// Checkpoint records state partway through an apply, keeping the lock.
+// Apply does it after creating a resource in a runtime that can't list its
+// resources, so a crash can't make Fabrica lose track of it. Even when the
+// push fails, the commit stays, and the next push takes it along.
+func (r *Repo) Checkpoint(ctx context.Context, name, message string, state *home.State) error {
+	return r.commitHeld(ctx, name, message, state)
+}
+
+// commitHeld commits and pushes a state file while we hold its lock.
+func (r *Repo) commitHeld(ctx context.Context, name, message string, state *home.State) error {
 	if err := r.write(name, state); err != nil {
 		return err
 	}
@@ -140,7 +156,7 @@ func (r *Repo) Release(ctx context.Context, name, message string, state *home.St
 			return err
 		}
 	}
-	return fmt.Errorf("couldn't push the final state of %s (the lock is still held; fix the problem, then run `fabrica unlock %s`): %w", name, name, lastErr)
+	return lastErr
 }
 
 // write saves a state file, or removes it when a deleted factory has

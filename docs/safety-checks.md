@@ -35,6 +35,8 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |
 | Another apply holds the factory's lock | ❌ `apply` stops, names the holder | — | — | `factory.locked` |
 | Two remote resources share one identity | ❌ error in `plan` | — | — | `refresh.duplicate` |
+| A resource was deleted, renamed or had its prompt edited by hand in a runtime that can't list resources (like Cursor) | 🔧 create or update in `plan`, with a note | — | — | — |
+| An apply crashes right after creating a resource in a runtime that can't list resources | 🔧 nothing to find: apply records each create in the home repo before it moves on | — | — | — |
 | An intent or summary longer than 20 words | — | ❌ asks for a shorter one | ❌ asks for a shorter one | — |
 | Product repo doesn't provide something in `expects:` | ⚠️ reported | — | — | `product.unmet-expects` |
 | Prose mentions a skill you forgot to import | ⚠️ warning | — | — | `skill.mentions-missing` |

@@ -25,6 +25,10 @@ type Provider struct {
 	Dir string
 	// APIPath is a folder provider's `api` program, if it has one.
 	APIPath string
+	// builtinAPI makes the API client of a built-in cloud runtime that
+	// Fabrica drives itself. It fails when the client can't be made, like
+	// when its credentials aren't set.
+	builtinAPI func() (RuntimeAPI, error)
 	// handoff is the parsed handoff.md template, if the provider has one.
 	handoff *template.Template
 }
@@ -37,6 +41,12 @@ func (p *Provider) IsLocal() bool { return p.Matrix.Scope == Local }
 
 //go:embed builtin
 var builtinFS embed.FS
+
+// builtinAPIs are the built-in cloud runtimes Fabrica can drive through
+// their own API, when the API's credentials are set.
+var builtinAPIs = map[string]func() (RuntimeAPI, error){
+	"cursor-cloud": newCursorAPI,
+}
 
 var builtins = mustLoadBuiltins()
 
@@ -56,7 +66,10 @@ func mustLoadBuiltins() map[string]*Provider {
 		if err != nil {
 			panic(fmt.Sprintf("built-in provider %s: %v", name, err))
 		}
-		p := &Provider{Matrix: m, Builtin: true}
+		p := &Provider{Matrix: m, Builtin: true, builtinAPI: builtinAPIs[name]}
+		if m.Scope == Cloud && m.HasMode(API) != (p.builtinAPI != nil) {
+			panic(fmt.Sprintf("built-in provider %s: apply_modes and its Go API client disagree", name))
+		}
 		if tmpl, err := fs.ReadFile(builtinFS, path.Join("builtin", name, "handoff.md")); err == nil {
 			p.handoff, err = parseHandoff(name, string(tmpl))
 			if err != nil {
@@ -135,6 +148,9 @@ func LoadFolder(name, dir string) (*Provider, error) {
 		return nil, fmt.Errorf("providers/%s/provider.yaml: folder providers for local runtimes aren't supported in v0.1; use kind: cloud", name)
 	}
 	p := &Provider{Matrix: m, Dir: dir}
+	if m.HasMode(API) && !m.FindByIdentity {
+		return nil, fmt.Errorf("providers/%s/provider.yaml: a folder provider's api program can't look a resource up by its ID (there's no get operation), so api mode needs find_by_identity: true", name)
+	}
 	if m.HasMode(API) {
 		apiPath := filepath.Join(dir, "api")
 		info, err := os.Stat(apiPath)
@@ -259,12 +275,12 @@ func (p *Provider) RenderHandoff(data HandoffData) (string, error) {
 // Mode picks the apply mode to use: the first listed mode that this
 // provider can actually do. For api that means it has a way to talk to the
 // runtime (local built-ins write config files; folder providers need their
-// api program).
+// api program; built-in cloud runtimes need their API's credentials).
 func (p *Provider) Mode() (ApplyMode, error) {
 	for _, mode := range p.Matrix.ApplyModes {
 		switch mode {
 		case API:
-			if p.IsLocal() || p.APIPath != "" {
+			if p.IsLocal() || p.APIPath != "" || p.builtinAPI != nil && p.APIUnavailable() == nil {
 				return API, nil
 			}
 		case Handoff:
@@ -274,4 +290,15 @@ func (p *Provider) Mode() (ApplyMode, error) {
 		}
 	}
 	return "", fmt.Errorf("runtime %s has no apply mode Fabrica can use (it supports %v)", p.Name(), p.Matrix.ApplyModes)
+}
+
+// APIUnavailable says why a built-in cloud runtime that has an API can't
+// use it right now, like when its credentials aren't set. It's nil
+// otherwise, including for runtimes without an API.
+func (p *Provider) APIUnavailable() error {
+	if p.builtinAPI == nil {
+		return nil
+	}
+	_, err := p.builtinAPI()
+	return err
 }

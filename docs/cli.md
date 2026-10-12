@@ -19,6 +19,8 @@ Every command has `--help`.
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
+| `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
+| `CURSOR_ENDPOINT` | The address of Cursor's API. Default `https://api2.cursor.sh`. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
 | `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
 
@@ -87,13 +89,13 @@ It reads the home repo as it is on disk, and never changes anything.
 
 ## `fabrica apply [factory…]`
 
-Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. For your personal home repo, it also writes the local tools' configs.
+Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it also commits state after each create. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. For your personal home repo, it also writes the local tools' configs.
 
 | Flag | What it does |
 |---|---|
 | `--handoff-dir <folder>` | Where to write handoff instructions. Default `$FABRICA_CACHE/handoffs`. |
 
-Cloud factories need `FABRICA_SERVER_SECRET`. Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
+Cloud factories need `FABRICA_SERVER_SECRET`, and Cursor automations are only managed through Cursor's API with `CURSOR_API_KEY` (otherwise they get handoffs). Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
 
 ## `fabrica destroy [factory…]`
 

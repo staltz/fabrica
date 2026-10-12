@@ -166,8 +166,8 @@ The `token_hash` is a short one-way fingerprint of the token, never the token it
 
 1. **Plan** against the latest home repo. Apply fetches the remote and fast-forwards first, and refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed: it applies what's on the remote, never what's only on your machine. If the plan finds errors, apply lists them and skips that factory. If nothing needs to change, it stops without committing.
 2. **Take the lock.** Commit a `lock:` entry to the state file and push. Git only accepts a push on top of the latest commit, so when two applies race, exactly one push gets through. The other takes its commit back, pulls, sees the lock, and stops with a message naming who holds it. Nothing remote has been touched yet, so losing the race is always safe.
-3. **Refresh.** Look up all of this factory's resources in each runtime **by identity** (for runtimes with an API). A resource that exists but is missing from state gets adopted, like one created by an apply that crashed before recording it.
-4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change.
+3. **Refresh.** Look up all of this factory's resources in each runtime **by identity** (for runtimes with an API). A resource that exists but is missing from state gets adopted, like one created by an apply that crashed before recording it. A runtime whose API can't list resources (like Cursor's) is asked about each resource state records, by its remote ID, instead.
+4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change. In a runtime that can't list resources, each create is committed to the state file (and pushed) right away, lock still held, so a crash can never leave a resource that state doesn't know about.
 5. **Record and release.** Write the results and remove the lock in one commit, then push. If the push is rejected because of unrelated commits (like another factory's state), rebase and push again. While the lock is held, nobody else writes this file.
 
 ### Crashed applies
@@ -178,21 +178,23 @@ A crashed apply leaves its lock in place. Fabrica can't tell a crashed apply fro
 fabrica unlock pr-review
 ```
 
-The next apply's refresh adopts whatever the crashed one created.
+The next apply's refresh adopts whatever the crashed one created. (Runtimes that can't list resources have nothing to adopt: apply recorded each of their creates as it went.)
 
 ### Handoffs
 
-Some runtimes have no API Fabrica can use (as of v0.1, that's all three built-in cloud runtimes). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
+Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, Copilot automations, and Cursor automations when `CURSOR_API_KEY` isn't set). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
 
 - Handoffs are written to `~/.cache/fabrica/handoffs/<factory>/<id>.md` (or `--handoff-dir`), readable only by you, because they contain the factory's token. Don't commit them.
 - Each one ends with the `fabrica confirm` command to run when it's done. Until then, the change is **pending** in state, and a second apply never issues the same handoff twice. If what's wanted changes again before you confirm, apply replaces the pending handoff with a new one.
-- `fabrica confirm <id> --remote-id <id-from-the-runtime>` records the result. Without a remote ID, the resource is tracked as **unverifiable**: no drift detection and no automatic deletion. `plan` says so.
+- `fabrica confirm <id> --remote-id <id-from-the-runtime>` records the result. Without a remote ID, the resource is tracked as **unverifiable**: no drift detection, and updating or deleting it takes a handoff, even on a runtime with an API. `plan` says so.
 - Until an update or delete handoff is done, the old stub can still fire, but the server refuses its runs (see [stale stubs](concepts.md#stale-stubs)).
 - `confirm` takes the same lock as apply, since it also writes the state file.
 
 ### API mode
 
-For runtimes whose provider has an API (folder providers with an `api` program), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up by identity, so a retry never makes a duplicate. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
+For runtimes whose provider has an API (folder providers with an `api` program, and Cursor automations with `CURSOR_API_KEY` set), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up, so a retry never makes a duplicate. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
+
+Some APIs can't set up everything a resource relies on. Cursor automations, for one, only name their MCP servers. Then apply also writes what to set up by hand next to the handoffs (for Cursor, `~/.cache/fabrica/handoffs/<factory>/cursor-cloud-setup.md`), and lists it at the end. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
 
 ## Destroy
 
@@ -212,4 +214,4 @@ Run `fabrica plan` on a schedule too. Remote runs can't inspect the workspace, s
 
 ## Secrets
 
-Secrets never live in blueprint or home repos. The server secret comes from `FABRICA_SERVER_SECRET` (a CI secret, say). Connector secrets are referenced by name and come from each runtime's own secret store.
+Secrets never live in blueprint or home repos. The server secret comes from `FABRICA_SERVER_SECRET` (a CI secret, say), and so do runtime API keys, like `CURSOR_API_KEY`. Connector secrets are referenced by name and come from each runtime's own secret store.

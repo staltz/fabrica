@@ -15,7 +15,7 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `paths` | Where Fabrica keeps things: the personal home repo, the cache and local run history. |
 | `fabline` | The Fabrica line, and the list of every sentence ever accepted. |
 | `gitx` | A thin wrapper around the `git` binary: a cache of bare clones, unpacked commit trees, ref resolution, and the commit and push operations the apply lock is built on. |
-| `provider` | Capability matrices, the built-in providers (embedded YAML and handoff templates), folder providers, the `api` protocol client, and handoff rendering. |
+| `provider` | Capability matrices, the built-in providers (embedded YAML and handoff templates), folder providers, the `api` protocol client, the client for Cursor's Automations API, and handoff rendering. |
 | `blueprint` | The blueprint format: manifest, lock, every item kind, import resolution (blueprints and plain repos), filters, collisions, overrides, expects, lint warnings, and `lock`/`upgrade`. |
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
@@ -65,7 +65,7 @@ Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf
 
 **Supporting a new trigger on a built-in runtime:** add it to the runtime's `internal/provider/builtin/<name>/provider.yaml`. For a local runtime, also map it to a hook event in `internal/localtools/hookcmd.go` and teach `internal/hook` how to respond to it.
 
-**Giving a cloud provider an API:** when a runtime ships an API that can list resources and read their identity back, implement its create/list/update/delete against the same `provider.Resource` the folder-provider protocol uses, and add `api` to its `apply_modes`. The planner and apply already handle `api` mode, refresh and adoption.
+**Giving a cloud provider an API:** when a runtime ships an API, implement `provider.RuntimeAPI` (create, update, delete) against the same `provider.Resource` the folder-provider protocol uses, plus `provider.Lister` if the API can list resources and read their identity back (`find_by_identity: true`), or else `provider.Getter` if it can read one back by its ID (`find_by_remote_id: true`). Register the constructor in `builtinAPIs`, make it fail when its credentials aren't set (so the runtime falls back to handoffs), and add `api` to the front of its `apply_modes`. The planner and apply already handle `api` mode, refresh, adoption and checkpoints after creates. If the API can't set up everything its resources rely on, implement `provider.ManualSetup` too. `cursor.go` is the example, and `testkit.NewFakeCursor` shows how to test one with a fake server.
 
 **Changing the run-history schema:** bump `runs.SchemaVersion`, add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `docs/run-history.md`. The schema is a public interface.
 

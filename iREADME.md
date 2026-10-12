@@ -1,6 +1,6 @@
 # Fabrica
 
-Fabrica lets you write down *how your AI agents build software* (skills, routines and rules) **once**, in a git repo, and run that same setup on many AI coding tools: Claude, Cursor, Codex and more.
+Fabrica lets you write down *how your AI agents build software* (skills, routines and rules) **once**, in a git repo, and run that same setup on many AI coding tools: Claude, Cursor, Codex, GitHub Copilot and more.
 
 Agents fetch your setup live from a small Fabrica server, so improving your process is just a git merge. Every agent run gets recorded, so you can see what happened.
 
@@ -133,7 +133,7 @@ Examples live in [examples/](examples/): a [starter blueprint](examples/starter-
 
 Fabrica is honest about its limits. Here's what v0.1 can't do yet:
 
-- **Built-in cloud providers use handoffs.** As of October 2026, none of Claude routines, Cursor automations or Codex has a public API for creating and listing triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
+- **Built-in cloud providers use handoffs.** As of October 2026, none of Claude routines, Cursor automations, Codex or Copilot automations has a public API for creating and listing triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
 - **No hosted service, ever.** You run the remote server yourself.

@@ -133,7 +133,7 @@ Serves a blueprint over MCP.
 
 | Flag | What it does |
 |---|---|
-| `--runtime <name>` | Required. The tool this server runs in: `claude-code-local`, `cursor-local` or `codex-cli`. |
+| `--runtime <name>` | Required. The tool this server runs in: `claude-code-local`, `cursor-local`, `codex-cli` or `copilot-local`. |
 | `--workspace <folder>` | Serve this folder, instead of asking the tool for its workspace. |
 | `--home <folder>` | Your personal home repo. |
 

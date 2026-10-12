@@ -1,0 +1,31 @@
+# GitHub Copilot CLI on your machine.
+#
+# `fabrica apply` adds a `fabrica` MCP server to ~/.copilot/mcp-config.json
+# and installs local routines as hooks in the top-level `hooks` field of
+# ~/.copilot/settings.json. VS Code also loads ~/.copilot/hooks/*.json, but
+# not settings.json, so these hooks only run in the CLI, where the fabrica
+# MCP server is registered.
+kind: local
+description: GitHub Copilot CLI on your machine
+apply_modes: [api]
+find_by_identity: true
+skill_transport: directory
+triggers:
+  session.start: native    # sessionStart hook, with additionalContext
+  session.stop: native     # agentStop hook, with decision: block
+  git.pre_commit: native   # preToolUse hook on bash, for `git commit`
+  git.pre_push: native     # preToolUse hook on bash, for `git push`
+  # Copilot drops the output of userPromptSubmitted hooks from config
+  # files, so prompt.submit can't add anything to the conversation.
+connectors:
+  mcp.http: native
+  mcp.sse: native
+  mcp.stdio: native
+  github: emulated
+  slack: emulated
+  linear: emulated
+side_effects:
+  "*": emulated
+# Local tools' own memories are per project, not per routine, so a routine
+# that needs memory gets it from Fabrica, in runs.db.
+memory: emulated

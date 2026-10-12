@@ -92,7 +92,8 @@ func newRoot() *cobra.Command {
 		Short: "Write down how your AI agents build software, once, and run it on many AI tools",
 		Long: `Fabrica lets you write down how your AI agents build software (skills,
 routines, rules) once, in a git repo called a blueprint, and run that same
-setup on many AI coding tools: Claude, Cursor, Codex and more.
+setup on many AI coding tools: Claude, Cursor, Codex, GitHub Copilot and
+more.
 
 Deploying a blueprint makes a factory: a file in a home repo that says
 which product repos (its targets) and tools the blueprint runs on.

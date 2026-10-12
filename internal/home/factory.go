@@ -8,7 +8,7 @@
 //
 // The file name is the factory's ID. A factory with cloud runtimes
 // (Claude routines, Cursor automations, Codex) is a cloud factory; one
-// with local runtimes (Claude Code, Cursor IDE, Codex CLI) is a local
+// with local runtimes (Claude Code, Cursor IDE, Codex CLI, Copilot CLI) is a local
 // factory.
 package home
 

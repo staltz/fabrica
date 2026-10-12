@@ -1,0 +1,36 @@
+# GitHub Copilot cloud agent automations, running on github.com.
+#
+# Our best reading of the GitHub docs as of October 2026. Automations can
+# fire on a schedule (hourly, daily or weekly), when an issue is created,
+# and when a pull request is opened or synchronized. The Agent Tasks API can
+# start sessions, but there's no documented API to create or list
+# automations, so Fabrica uses handoff.
+kind: cloud
+description: GitHub Copilot cloud agent automations
+apply_modes: [handoff]
+find_by_identity: false
+skill_transport: text
+mcp_auth:
+  # MCP servers are configured per repository, and their headers can read
+  # Agents secrets (named COPILOT_MCP_…), which keeps the token out of the
+  # configuration itself.
+  header: native
+  url: native
+triggers:
+  schedule: native
+  github.issues.opened: native
+  github.pull_request.opened: native
+  github.pull_request.synchronize: native
+connectors:
+  # The GitHub MCP server is built in.
+  github: native
+  mcp.http: native
+  mcp.sse: native
+  # The agent runs in a GitHub Actions sandbox, which can start local
+  # servers like `npx some-mcp-server`.
+  mcp.stdio: native
+side_effects:
+  "*": emulated
+# Copilot Memory is per repository, with no per-automation setting, so a
+# routine that needs memory gets it from Fabrica.
+memory: emulated

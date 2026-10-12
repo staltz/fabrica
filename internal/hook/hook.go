@@ -49,10 +49,11 @@ type Options struct {
 }
 
 // input is what the tools send on stdin. Claude Code and Codex CLI use
-// the same fields; Cursor has its own.
+// the same fields; Cursor and Copilot CLI have their own.
 type input struct {
 	SessionID      string   `json:"session_id"`
 	ConversationID string   `json:"conversation_id"`
+	CopilotSession string   `json:"sessionId"`
 	Cwd            string   `json:"cwd"`
 	WorkspaceRoots []string `json:"workspace_roots"`
 	StopHookActive bool     `json:"stop_hook_active"`
@@ -62,6 +63,30 @@ type input struct {
 	ToolInput      struct {
 		Command string `json:"command"`
 	} `json:"tool_input"`
+	// ToolArgs is Copilot CLI's tool input: a JSON object, encoded as a
+	// string.
+	ToolArgs json.RawMessage `json:"toolArgs"`
+}
+
+// command is the shell command a pre-tool hook is about.
+func (in input) command() string {
+	if in.ToolInput.Command != "" {
+		return in.ToolInput.Command
+	}
+	if len(in.ToolArgs) > 0 {
+		args := []byte(in.ToolArgs)
+		var encoded string
+		if json.Unmarshal(args, &encoded) == nil {
+			args = []byte(encoded)
+		}
+		var v struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(args, &v) == nil && v.Command != "" {
+			return v.Command
+		}
+	}
+	return in.Command
 }
 
 // Run handles one hook firing.
@@ -107,6 +132,9 @@ func Run(ctx context.Context, o Options) error {
 
 	switch o.Event {
 	case localtools.SessionStart:
+		if o.Runtime == "copilot-local" {
+			return respond(o.Stdout, map[string]any{"additionalContext": prompt})
+		}
 		return respond(o.Stdout, claudeContext("SessionStart", prompt))
 	case localtools.PromptSubmit:
 		return respond(o.Stdout, claudeContext("UserPromptSubmit", prompt))
@@ -122,10 +150,7 @@ func Run(ctx context.Context, o Options) error {
 		}
 		return respond(o.Stdout, map[string]any{"decision": "block", "reason": prompt})
 	case localtools.GitPreCommit, localtools.GitPrePush:
-		cmd := in.ToolInput.Command
-		if cmd == "" {
-			cmd = in.Command
-		}
+		cmd := in.command()
 		want := "commit"
 		if o.Event == localtools.GitPrePush {
 			want = "push"
@@ -136,7 +161,7 @@ func Run(ctx context.Context, o Options) error {
 		// Hold the command back once per session and commit, so the agent
 		// runs the routine and then tries again. A new commit gets reviewed
 		// again.
-		session := in.SessionID + in.ConversationID
+		session := in.SessionID + in.ConversationID + in.CopilotSession
 		marker := filepath.Join(o.MarkerDir, markerKey(o, session, headCommit(ctx, top)))
 		if _, err := os.Stat(marker); err == nil {
 			return nil
@@ -151,6 +176,9 @@ func Run(ctx context.Context, o Options) error {
 				"user_message":  "Fabrica is running routine " + o.Routine + " first.",
 				"agent_message": reason,
 			})
+		}
+		if o.Runtime == "copilot-local" {
+			return respond(o.Stdout, map[string]any{"permissionDecision": "deny", "permissionDecisionReason": reason})
 		}
 		return respond(o.Stdout, map[string]any{"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",

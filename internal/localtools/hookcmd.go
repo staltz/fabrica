@@ -204,6 +204,20 @@ func claudeEvent(trigger string) (event, matcher string, err error) {
 	return "", "", fmt.Errorf("trigger %s has no hook event", trigger)
 }
 
+// copilotEvent maps a Fabrica trigger to a Copilot CLI hook event, and the
+// tool its matcher picks out, if any.
+func copilotEvent(trigger string) (event, matcher string, err error) {
+	switch trigger {
+	case SessionStart:
+		return "sessionStart", "", nil
+	case SessionStop:
+		return "agentStop", "", nil
+	case GitPreCommit, GitPrePush:
+		return "preToolUse", "bash", nil
+	}
+	return "", "", fmt.Errorf("Copilot CLI has no hook event for trigger %s", trigger)
+}
+
 // cursorEvent maps a Fabrica trigger to a Cursor hook event.
 func cursorEvent(trigger string) (string, error) {
 	switch trigger {

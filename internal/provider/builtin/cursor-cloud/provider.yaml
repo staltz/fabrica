@@ -45,6 +45,6 @@ memory: native
 credentials:
   CURSOR_API_KEY:
     description: a Cursor API key
-    url: https://cursor.com/dashboard?tab=integrations
-    instructions: Under User API Keys, click New User API Key, call it fabrica, and copy the key.
+    url: https://cursor.com/dashboard/api
+    instructions: Create a new API key, call it fabrica, and copy it.
     aliases: [CURSOR_TOKEN] # what Cursor's Terraform provider calls it

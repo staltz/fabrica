@@ -129,7 +129,7 @@ func TestAuthCommands(t *testing.T) {
 		"✗ No: the server refuses tokens made with it (checked with factory pr-review), so it isn't the secret the server uses.",
 		"✓ Yes: the server accepts it (checked with factory pr-review).",
 		"Without it, cursor-cloud uses handoffs instead of its API.",
-		"Opened it in your browser.\n  Under User API Keys, click New User API Key",
+		"Opened it in your browser.\n  Create a new API key, call it fabrica, and copy it.",
 		"✗ That didn't work: Cursor refused to exchange CURSOR_API_KEY",
 		"✓ Cursor accepted it.",
 		"✓ TOY_API_KEY: a toy API key, for keyed (factory pr-review)\n  saved in ",
@@ -140,7 +140,7 @@ func TestAuthCommands(t *testing.T) {
 			t.Errorf("auth login is missing %q:\n%s", want, out)
 		}
 	}
-	if got, _ := os.ReadFile(opened); strings.Count(string(got), "https://cursor.com/dashboard?tab=integrations\n") != 2 {
+	if got, _ := os.ReadFile(opened); strings.Count(string(got), "https://cursor.com/dashboard/api\n") != 2 {
 		t.Errorf("the browser should have opened Cursor's dashboard twice, got %q", got)
 	}
 	if strings.Contains(out, testkit.Secret) || strings.Contains(out, testkit.FakeCursorKey) {

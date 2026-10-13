@@ -73,9 +73,9 @@ https://fabrica.acme.dev: the server secret, for factory pr-review
 CURSOR_API_KEY: a Cursor API key, for cursor-cloud (factory pr-review)
   Without it, cursor-cloud uses handoffs instead of its API.
   Set it up now? [Y/n]
-  Paste it, or press Enter to open https://cursor.com/dashboard?tab=integrations and make one there:
+  Paste it, or press Enter to open https://cursor.com/dashboard/api and make one there:
   Opened it in your browser.
-  Under User API Keys, click New User API Key, call it fabrica, and copy the key.
+  Create a new API key, call it fabrica, and copy it.
   Then paste it here (or press Enter to skip):
   ✓ Cursor accepted it.
   ✓ Saved in your macOS Keychain.

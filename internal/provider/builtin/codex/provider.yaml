@@ -24,3 +24,11 @@ side_effects:
 # Codex's memory (a preview) is per project, with no per-task setting, so a
 # routine that needs memory gets it from Fabrica.
 memory: emulated
+# Each task has its own model and reasoning effort setting. These are the
+# OpenAI models we know Codex offers as of October 2026; corrections welcome.
+models:
+  gpt-5.6-sol: [low, medium, high, xhigh]
+  gpt-5.6-terra: [low, medium, high, xhigh]
+  gpt-5.6-luna: [low, medium, high, xhigh]
+  gpt-5.5: [low, medium, high, xhigh]
+  gpt-5.3-codex: [low, medium, high, xhigh]

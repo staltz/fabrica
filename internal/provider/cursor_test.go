@@ -72,10 +72,37 @@ func TestCursorWorkflowJSON(t *testing.T) {
 	if _, err := cursorWorkflowFor(res); err == nil {
 		t.Error("Cursor has no built-in notion tool, so that should be an error")
 	}
+	for model, want := range map[ResourceModel]string{
+		{Name: "claude-opus-5-5", Effort: "high"}:  `{"modelId":"claude-opus-5-5","parameters":[{"id":"effort","value":"high"}]}`,
+		{Name: "gpt-5.5", Effort: "xhigh"}:         `{"modelId":"gpt-5.5","parameters":[{"id":"reasoning","value":"extra-high"}]}`,
+		{Name: "claude-sonnet-5-5", Effort: "low"}: `{"modelId":"claude-sonnet-5-5","parameters":[{"id":"reasoning_effort","value":"low"}]}`,
+		{Name: "composer-2.5"}:                     `{"modelId":"composer-2.5"}`,
+	} {
+		res := cursorResource()
+		res.Model = &model
+		wf, _ := cursorWorkflowFor(res)
+		if got, _ := json.Marshal(wf.ModelSelection); string(got) != want {
+			t.Errorf("%s: modelSelection = %s, want %s", model.Name, got, want)
+		}
+	}
 	res = cursorResource()
 	res.Memory = "on"
 	if wf, _ := cursorWorkflowFor(res); wf.MemoryEnabled == nil || !*wf.MemoryEnabled {
 		t.Error("memory on should turn the automation's memory tool on")
+	}
+}
+
+func TestCursorEffortParamsAreForItsModels(t *testing.T) {
+	p, _ := Builtin("cursor-cloud")
+	for model := range cursorEffortParams {
+		if len(p.Matrix.Models[model]) == 0 {
+			t.Errorf("cursorEffortParams has %s, which cursor-cloud's matrix doesn't list with efforts", model)
+		}
+	}
+	for model := range cursorExtraHigh {
+		if !p.Matrix.HasModel(model, "xhigh") {
+			t.Errorf("cursorExtraHigh has %s, which cursor-cloud's matrix doesn't list with xhigh", model)
+		}
 	}
 }
 

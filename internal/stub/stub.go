@@ -10,7 +10,8 @@
 // What a stub bakes into the runtime is its shape: the trigger, plus the
 // connectors and their definitions (including connectors that emulated side
 // effects need), plus the runtime's memory setting where it has its own
-// memory feature, plus the address of the Fabrica server. A short
+// memory feature, plus the model the routine runs on where the runtime lets
+// a stub pick one, plus the address of the Fabrica server. A short
 // fingerprint of the shape goes into the stub, and the server compares it
 // on every run to catch stubs that went stale.
 package stub
@@ -49,6 +50,13 @@ type Shape struct {
 	// with a native memory feature: elsewhere Fabrica keeps the memory, and
 	// nothing about it is baked into the runtime.
 	Memory string `json:"memory,omitempty"`
+	// Model and Effort are the model the runtime runs the routine on, the
+	// first of the routine's models: that the runtime has, and the effort
+	// to run it at. Both are empty when the runtime picks (the routine
+	// lists no models, or the runtime matched its default entry); Effort
+	// alone is empty for the model's default effort.
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
 	// Endpoint and TokenPlacement describe the connection to the Fabrica
 	// server (cloud only).
 	Endpoint       string `json:"endpoint,omitempty"`
@@ -111,7 +119,11 @@ type Evaluation struct {
 	// Memory is how the runtime gives the routine its memory. Its Support
 	// is empty when the routine doesn't use memory.
 	Memory Use
-	Shape  Shape
+	// Model is the entry of the routine's models: the runtime runs it on.
+	// Its Name is empty when the routine lists no models, and
+	// provider.DefaultModel when the runtime picks one itself.
+	Model blueprint.Model
+	Shape Shape
 	// Diags holds an error for everything the runtime can't do.
 	Diags diag.List
 }
@@ -219,6 +231,18 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		}
 	}
 
+	if len(r.Models) > 0 {
+		if pick, ok := PickModel(r.Models, m); ok {
+			e.Model = pick
+			if !pick.IsDefault() {
+				shape.Model, shape.Effort = pick.Name, pick.Effort
+			}
+		} else {
+			e.Diags.Errorf("capability.model", where, "runtime %s has none of the models routine %s lists (%s)", rt, r.Ref.Name, describeModels(r.Models)).
+				Hintf("%s", modelHint(r.Models, m))
+		}
+	}
+
 	if m.SkillTransport == provider.Text {
 		for _, name := range r.Skills {
 			s := f.Skills[name]
@@ -231,6 +255,47 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 
 	e.Shape = shape
 	return e
+}
+
+// PickModel picks the first of a routine's models that the runtime has:
+// the model at that effort, or default, which every runtime has.
+func PickModel(models []blueprint.Model, m *provider.Matrix) (blueprint.Model, bool) {
+	for _, want := range models {
+		if want.IsDefault() || m.HasModel(want.Name, want.Effort) {
+			return want, true
+		}
+	}
+	return blueprint.Model{}, false
+}
+
+func describeModels(models []blueprint.Model) string {
+	out := make([]string, len(models))
+	for i, m := range models {
+		out[i] = m.String()
+	}
+	return strings.Join(out, ", ")
+}
+
+// modelHint says what the runtime has instead, when none of a routine's
+// models match.
+func modelHint(models []blueprint.Model, m *provider.Matrix) string {
+	const end = "or end models: with default, to run on the runtime's own default model where none of the others are there"
+	for _, want := range models {
+		if efforts, ok := m.Models[want.Name]; ok {
+			if len(efforts) == 0 {
+				return fmt.Sprintf("the runtime has %s, but no effort setting for it; list it without an effort, %s", want.Name, end)
+			}
+			return fmt.Sprintf("the runtime has %s, at effort %s; pick one of those, %s", want.Name, strings.Join(efforts, ", "), end)
+		}
+	}
+	names := m.ModelNames()
+	switch {
+	case len(names) == 0:
+		return "this runtime picks its model itself; end models: with default to let it"
+	case len(names) > 8:
+		names = append(names[:8:8], fmt.Sprintf("and %d more in its capability matrix", len(names)-8))
+	}
+	return fmt.Sprintf("add one it has (%s), %s", strings.Join(names, ", "), end)
 }
 
 func connectorDesc(c *blueprint.Connector) string {
@@ -312,6 +377,17 @@ func DescribeMemory(needed bool, support provider.Support) string {
 	default:
 		return "leave the runtime's own memory **off**, if it has one: this routine doesn't use memory"
 	}
+}
+
+// DescribeModel says which model to pick, for handoff instructions.
+func DescribeModel(shape Shape) string {
+	switch {
+	case shape.Model == "":
+		return "leave it at the runtime's default"
+	case shape.Effort == "":
+		return fmt.Sprintf("pick model `%s`, and leave its effort at the default", shape.Model)
+	}
+	return fmt.Sprintf("pick model `%s`, with effort `%s`", shape.Model, shape.Effort)
 }
 
 // DescribeConnector says how to set up one installed connector, for

@@ -16,7 +16,7 @@ Until you do, the old task can still fire, but the Fabrica server refuses its ru
 {{- else -}}
 # {{if eq .Action "create"}}Create{{else}}Update{{end}} Codex task for `{{.Routine}}` on `{{.Repo}}`
 
-{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors or memory setting), so the Codex task needs updating. Until it is, the Fabrica server refuses its runs.
+{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting or model), so the Codex task needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
 1. Open Codex on the web (chatgpt.com/codex){{if eq .Action "update"}} and find the task named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and set up a new task{{end}}.
@@ -29,13 +29,14 @@ Until you do, the old task can still fire, but the Fabrica server refuses its ru
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
 6. Memory: {{if .Memory.Needed}}this task keeps notes between runs, and Fabrica keeps them for it (they come with `routine_get`), so it doesn't need Codex's memory.{{else}}this task doesn't use memory.{{end}} If Codex's memory is on for this environment, turn it **off** if you can, so notes from other work don't steer this task.
-7. Prompt. Replace the whole prompt with this, exactly:
+7. Model: {{.Model.Setup}}.
+8. Prompt. Replace the whole prompt with this, exactly:
 
    ```
 {{indent 3 .Prompt}}
    ```
 
-8. Save it and tell Fabrica you're done, including the task's ID if Codex shows one:
+9. Save it and tell Fabrica you're done, including the task's ID if Codex shows one:
 
    ```
    {{.ConfirmCommand}}

@@ -229,6 +229,58 @@ func TestFullCloudLifecycle(t *testing.T) {
 	}
 }
 
+func TestRoutineModelsReachTheStubs(t *testing.T) {
+	h := newHarness(t)
+	withModels := func(effort string) string {
+		return strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nmodels: [{ model: claude-opus-5-5, effort: "+effort+" }, default]\n", 1)
+	}
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": withModels("high")})
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add pr-review")
+
+	// Claude routines have the model; the toy runtime doesn't, so it gets
+	// default and its own model.
+	p := h.plan()
+	if text := render(p); p.ExitCode() != 2 || !strings.Contains(text, "model claude-opus-5-5 (high)") || !strings.Contains(text, "model default") {
+		t.Fatalf("plan should show the model each runtime picked:\n%s", text)
+	}
+	res := h.apply()
+	if len(res.Handoffs) != 2 {
+		t.Fatalf("handoffs = %v, want 2", res.Handoffs)
+	}
+	handoff, _ := os.ReadFile(res.Handoffs[0])
+	if !strings.Contains(string(handoff), "7. Model: pick model `claude-opus-5-5`, with effort `high`.") {
+		t.Errorf("claude-code-cloud handoff should say which model to pick:\n%s", handoff)
+	}
+	s := h.state()
+	for _, pend := range s.Pending {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", false, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range h.state().Resources {
+		want := ""
+		if r.Runtime == "claude-code-cloud" {
+			want = "claude-opus-5-5"
+		}
+		if r.Shape.Model != want {
+			t.Errorf("%s stub records model %q, want %q", r.Runtime, r.Shape.Model, want)
+		}
+	}
+
+	// A new effort is a new shape for Claude routines only.
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": withModels("max")})
+	p = h.plan()
+	changes := p.Factory("pr-review").Changes
+	if p.ExitCode() != 2 || len(changes) != 2 || !strings.Contains(render(p), "the model should be claude-opus-5-5 (max)") {
+		t.Fatalf("after an effort change:\n%s", render(p))
+	}
+	for _, c := range changes {
+		if c.Action != plan.Update || c.Key.Runtime != "claude-code-cloud" {
+			t.Errorf("unexpected change %s on %s", c.Action, c.Key.Runtime)
+		}
+	}
+}
+
 func TestProductRepoProblemsBlockTheFactory(t *testing.T) {
 	h := newHarness(t)
 	h.w.API.Write(map[string]string{

@@ -39,3 +39,10 @@ side_effects:
 # that needs memory gets it from Fabrica (memory_save, and the memory that
 # routine_get shows).
 memory: emulated
+# The models a routine can pick (Opus, Sonnet, Haiku and Fable) and their
+# effort levels, as claude.ai shows them as of October 2026.
+models:
+  claude-fable-5-1: [low, medium, high, xhigh, max]
+  claude-opus-5-5: [low, medium, high, xhigh, max]
+  claude-sonnet-5-5: [low, medium, high, xhigh, max]
+  claude-haiku-5-5: [low, medium, high, xhigh, max]

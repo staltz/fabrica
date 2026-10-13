@@ -49,6 +49,8 @@ type Shape struct {
 	Cron        string   `yaml:"cron,omitempty"`
 	Connectors  []string `yaml:"connectors"`
 	Memory      string   `yaml:"memory,omitempty"`
+	Model       string   `yaml:"model,omitempty"`
+	Effort      string   `yaml:"effort,omitempty"`
 	Fingerprint string   `yaml:"fingerprint"`
 }
 

@@ -34,3 +34,6 @@ side_effects:
 # Copilot Memory is per repository, with no per-automation setting, so a
 # routine that needs memory gets it from Fabrica.
 memory: emulated
+# Automations always run on Copilot's Auto model selection (there's no
+# model picker for them), so there's no models: list, and only a routine's
+# `default` entry matches.

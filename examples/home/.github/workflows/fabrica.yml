@@ -9,8 +9,14 @@
 #
 # Set these repository secrets:
 #   FABRICA_SERVER_SECRET  the same secret your Fabrica server uses
+#   CURSOR_API_KEY         optional: a Cursor API key, so apply manages
+#                          Cursor automations through Cursor's API
 #   FABRICA_GIT_TOKEN      a token that can read the blueprints and product
 #                          repos (and push to this repo, for state)
+#
+# If you set up the first two on your machine with `fabrica auth login`,
+# one pipe copies them here (run it in your clone of this repo):
+#   fabrica auth env | gh secret set --env-file - --repo <owner>/<this repo>
 name: Fabrica
 
 on:
@@ -46,11 +52,13 @@ jobs:
         if: github.event_name != 'push'
         env:
           FABRICA_SERVER_SECRET: ${{ secrets.FABRICA_SERVER_SECRET }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: fabrica plan
       - name: Apply
         if: github.event_name == 'push'
         env:
           FABRICA_SERVER_SECRET: ${{ secrets.FABRICA_SERVER_SECRET }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
           git config user.name "Fabrica"
           git config user.email "fabrica@users.noreply.github.com"

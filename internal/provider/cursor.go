@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/staltz/fabrica/internal/credentials"
 )
 
 // In api mode, the cursor-cloud runtime talks to Cursor's Automations API:
@@ -65,19 +67,43 @@ type cursorAPI struct {
 	session string // the bearer token, once the key is exchanged
 }
 
+// newCursorAPI makes the client from the key in CURSOR_API_KEY (or
+// CURSOR_TOKEN), or else the one `fabrica auth login` saved.
 func newCursorAPI() (RuntimeAPI, error) {
-	key := strings.TrimSpace(os.Getenv(CursorKeyEnv))
-	if key == "" {
-		key = strings.TrimSpace(os.Getenv(CursorTokenEnv))
+	found, err := credentials.Lookup(CursorKeyEnv, CursorTokenEnv)
+	if err != nil {
+		return nil, err
 	}
-	if key == "" {
+	if found.Value == "" {
 		return nil, fmt.Errorf("%s isn't set", CursorKeyEnv)
 	}
+	return newCursorClient(found.Value), nil
+}
+
+func newCursorClient(key string) *cursorAPI {
 	endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv(CursorEndpointEnv)), "/")
 	if endpoint == "" {
 		endpoint = cursorDefaultEndpoint
 	}
-	return &cursorAPI{endpoint: endpoint, key: key, client: &http.Client{Timeout: 30 * time.Second}, wait: sleep}, nil
+	return &cursorAPI{endpoint: endpoint, key: key, client: &http.Client{Timeout: 30 * time.Second}, wait: sleep}
+}
+
+// verifyCursorKey checks a Cursor API key by exchanging it for a session
+// token, the first thing every apply does with it.
+func verifyCursorKey(ctx context.Context, key string) (string, error) {
+	if !isCursorAPIKey(key) {
+		return "", ErrUnverifiable // already a session token; there's nothing to exchange
+	}
+	if _, err := newCursorClient(key).sessionToken(ctx); err != nil {
+		return "", err
+	}
+	return "Cursor accepted it", nil
+}
+
+// isCursorAPIKey reports whether key is an API key (key_… or crsr_…),
+// rather than a session token.
+func isCursorAPIKey(key string) bool {
+	return strings.HasPrefix(key, "key_") || strings.HasPrefix(key, "crsr_")
 }
 
 func (c *cursorAPI) Create(ctx context.Context, res Resource) (string, error) {
@@ -442,7 +468,7 @@ func (c *cursorAPI) sessionToken(ctx context.Context) (string, error) {
 	if c.session != "" {
 		return c.session, nil
 	}
-	if !strings.HasPrefix(c.key, "key_") && !strings.HasPrefix(c.key, "crsr_") {
+	if !isCursorAPIKey(c.key) {
 		c.session = c.key
 		return c.session, nil
 	}

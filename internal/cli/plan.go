@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/staltz/fabrica/internal/apply"
+	"github.com/staltz/fabrica/internal/credentials"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/token"
@@ -27,12 +28,19 @@ func planEnv(t *tools, only []string) (*plan.Env, error) {
 		secret = s
 	}
 	return &plan.Env{
-		Loader: t.loader, Git: t.git, Secret: secret,
+		Loader: t.loader, Git: t.git, Secret: secret, ServerSecret: savedServerSecret,
 		Binary: fabricaBinary(), UserHome: userHome(),
 		SkipLocal: os.Getenv("CI") != "",
 		Refresh:   true,
 		Only:      only,
 	}, nil
+}
+
+// savedServerSecret finds a server's secret where `fabrica auth login`
+// saved it, unless FABRICA_SERVER_SECRET is set (even to nothing).
+func savedServerSecret(server string) (string, error) {
+	found, err := credentials.ServerSecret(server)
+	return found.Value, err
 }
 
 func newPlan(g *globals) *cobra.Command {
@@ -55,8 +63,9 @@ before you push them. Exit codes: 0 when everything is in sync, 2 when
 there are only changes, 1 when there are errors. Running it on a schedule
 in the home repo's CI catches problems that appear after an apply.
 
-Set FABRICA_SERVER_SECRET to also catch rotated tokens. In CI (when $CI is
-set), local factories are skipped.
+With the server secret (saved by ` + "`fabrica auth login`" + `, or in
+FABRICA_SERVER_SECRET), it also catches rotated tokens. In CI (when $CI
+is set), local factories are skipped.
 
 With --destroy, it shows what ` + "`fabrica destroy`" + ` would remove instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -115,7 +124,8 @@ looks up the factory's resources in each runtime by identity, re-plans,
 applies each change (through the runtime's API, or by writing handoff
 instructions for a person or a computer-use agent to follow), and then
 records the results and releases the lock in one commit. Cloud applies
-need FABRICA_SERVER_SECRET, to compute each factory's token.
+need the secret of each factory's server, to compute its token: run
+` + "`fabrica auth login`" + ` once to set that up, or set FABRICA_SERVER_SECRET.
 
 For local factories in your personal home repo, it installs the
 user-level fabrica MCP server and local routine hooks in each local tool.

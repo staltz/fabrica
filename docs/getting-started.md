@@ -178,20 +178,30 @@ Put the blueprint in a repo your team can reach, like `github.com/acme/blueprint
 
 Cloud runtimes can't run `fabrica mcp` on your laptop, so they talk to a Fabrica server you host. It's one small container. You need:
 
-- a long random **server secret**, for example from `openssl rand -hex 32`,
+- a long random **server secret**, which the server and `fabrica apply` share,
 - read access to your home repo and your blueprints,
 - a persistent folder for the run-history database.
 
+Pick the URL the server will have, like `https://fabrica.acme.dev`, and let Fabrica make the secret. Press Enter when it asks, and it saves a new secret in your keychain:
+
 ```sh
+fabrica auth login https://fabrica.acme.dev
+```
+
+Then hand the same secret to the server:
+
+```sh
+fabrica auth env https://fabrica.acme.dev > fabrica.env    # FABRICA_SERVER_SECRET=…
 docker build -t fabrica .          # from a checkout of this repo
 docker run -d --name fabrica \
-  -e FABRICA_SERVER_SECRET=… \
+  --env-file fabrica.env \
   -v fabrica-data:/data \
   -p 8080:8080 \
   fabrica mcp --http --home https://github.com/acme/home.git
+rm fabrica.env
 ```
 
-Put it behind HTTPS at a URL like `https://fabrica.acme.dev`. The details, including private repos, are in [The MCP server](mcp-server.md#running-the-remote-server).
+Put it behind HTTPS at that URL. The details, including private repos, are in [The MCP server](mcp-server.md#running-the-remote-server).
 
 ### 3. A team home repo with a cloud factory
 
@@ -224,7 +234,7 @@ cd home && fabrica plan
 Factory pr-review (cloud)
   endpoint https://fabrica.acme.dev/pr-review
   · blueprint github.com/acme/blueprint@stable → 72ef761 (branch stable; follows the branch: merges take effect on the next run, no apply needed)
-  · cursor-cloud uses handoff mode because CURSOR_API_KEY isn't set; set it, and Fabrica manages cursor-cloud through its API instead
+  · cursor-cloud uses handoff mode because CURSOR_API_KEY isn't set; run `fabrica auth login` to set it up, and Fabrica manages cursor-cloud through its API instead
   claude-code-cloud: handoff mode, text-only skills, token in the url
     routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub e128f7aa2995
   cursor-cloud: handoff mode, text-only skills, token in the header
@@ -242,10 +252,34 @@ It also reads `github.com/acme/app`'s default branch to check the Fabrica line a
 
 ### 5. Apply, then follow the handoffs
 
-`apply` needs the same server secret as the server, so it can compute each factory's token:
+`apply` needs the same server secret as the server, so it can compute each factory's token. You saved it in step 2, so check that apply has everything it needs:
 
 ```sh
-export FABRICA_SERVER_SECRET=…
+fabrica auth
+```
+
+```
+Home repo /home/you/home (team home repo)
+
+Server secrets
+  ✓ https://fabrica.acme.dev: the server secret, for factory pr-review
+    saved in your macOS Keychain; the server accepts it (checked with factory pr-review)
+
+Runtime credentials
+  · CURSOR_API_KEY: a Cursor API key, for cursor-cloud (factory pr-review)
+    not set, so cursor-cloud uses handoffs instead of its API
+
+Git access
+  ✓ github.com/acme/home: the home repo, where apply records state
+  ✓ github.com/acme/app: target of pr-review
+  ✓ github.com/acme/blueprint: blueprint of pr-review
+
+✓ Apply has everything it needs. `fabrica auth login` can also set up the optional credential above.
+```
+
+It doesn't just look for the secret: it asks your server whether it accepts tokens made with it, so a mismatched secret shows up now rather than as failed runs later. It checks git's access to every repo apply uses, too. (See [Credentials](auth.md) for how all this works, and where your credentials are kept.) Now apply:
+
+```sh
 fabrica apply
 ```
 
@@ -274,7 +308,7 @@ fabrica confirm h_19345343ec --remote-id trig_01Hx…
 
 If you can't find an ID, leave `--remote-id` out. Fabrica then tracks the resource as **unverifiable**, and `plan` says so.
 
-Cursor can skip most of this. Set `CURSOR_API_KEY` to a Cursor API key (as a CI secret, if apply runs in CI), and `cursor-cloud` switches to **api** mode: apply creates, updates and deletes the Cursor automation itself, with nothing to confirm. The one thing Cursor's API can't do is set up the automation's MCP servers, so apply writes down which ones to add to Cursor's MCP settings (here, `fabrica-pr-review`, with this factory's token), once. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
+Cursor can skip most of this. Run `fabrica auth login cursor-cloud`: it opens the page in Cursor's dashboard where you make an API key, checks the key you paste with Cursor, and saves it in your keychain. (In CI, set `CURSOR_API_KEY` as a secret instead.) Then `cursor-cloud` switches to **api** mode: apply creates, updates and deletes the Cursor automation itself, with nothing to confirm. The one thing Cursor's API can't do is set up the automation's MCP servers, so apply writes down which ones to add to Cursor's MCP settings (here, `fabrica-pr-review`, with this factory's token), once. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
 
 ### 6. Improving the process is a merge
 
@@ -289,7 +323,11 @@ Two jobs work well in the home repo's CI:
 - **On every merge to `main`:** `fabrica apply`, so factory changes roll out after review. Use your CI's concurrency setting so applies wait in line.
 - **Every night:** `fabrica plan`. It fails (exits non-zero) on errors and on stubs that went stale, like a product repo that lost its Fabrica line, or a trigger change nobody applied yet.
 
-There's a ready-made GitHub Actions workflow in [examples/home/.github/workflows/fabrica.yml](../examples/home/.github/workflows/fabrica.yml).
+There's a ready-made GitHub Actions workflow in [examples/home/.github/workflows/fabrica.yml](../examples/home/.github/workflows/fabrica.yml). It reads the same credentials from the repo's secrets, and one pipe copies yours there:
+
+```sh
+fabrica auth env | gh secret set --env-file - --repo acme/home
+```
 
 ## Where to next
 

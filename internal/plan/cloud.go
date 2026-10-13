@@ -78,7 +78,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			continue
 		}
 		if why := p.APIUnavailable(); why != nil && mode != provider.API {
-			dp.Notes = append(dp.Notes, fmt.Sprintf("%s uses %s mode because %v; set it, and Fabrica manages %s through its API instead", rt, mode, why, rt))
+			dp.Notes = append(dp.Notes, fmt.Sprintf("%s uses %s mode because %v; run `fabrica auth login` to set it up, and Fabrica manages %s through its API instead", rt, mode, why, rt))
 		}
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
@@ -99,8 +99,10 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 		return // no point working out stubs that can't be installed
 	}
 	tokenHash := ""
-	if e.Secret != "" {
-		tokenHash = token.Hash(token.For(e.Secret, d.Name))
+	if secret, err := e.SecretFor(d.Server); err != nil {
+		dp.Notes = append(dp.Notes, fmt.Sprintf("couldn't read the server secret, so rotated tokens go unnoticed: %v", err))
+	} else if secret != "" {
+		tokenHash = token.Hash(token.For(secret, d.Name))
 	}
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {

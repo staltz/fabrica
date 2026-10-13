@@ -103,6 +103,7 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 | `fabrica check [folder]` | Lints a blueprint, validates a home repo's factories, or checks a product repo. It works out which one the folder is. |
 | `fabrica lock` | Pins a blueprint's imports to exact commits, in `fabrica.lock`. |
 | `fabrica upgrade [alias…]` | Moves imports to newer commits, showing a diff first. |
+| `fabrica auth` | Shows the credentials `apply` needs (server secrets, runtime API keys, git access) and checks that each one works. `fabrica auth login` sets up what's missing, and saves it in your keychain. |
 | `fabrica plan` | Shows what `apply` would do and what's blocking it. Exits `0` when in sync, `2` with changes, `1` with errors. |
 | `fabrica apply` | Installs and updates stubs in runtimes, and sets up your local tools. |
 | `fabrica destroy [factory…]` | The opposite of `apply`: removes everything it installed, and leaves your factory files alone. Asks first. |
@@ -122,6 +123,7 @@ Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 - [Product repos](docs/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
 - [The MCP server](docs/mcp-server.md): the tools agents use, and how to run the remote server.
 - [Providers](docs/providers.md): what each runtime supports, and how to write your own provider.
+- [Credentials](docs/auth.md): what `apply` needs access to, and how `fabrica auth` sets it up and keeps it safe.
 - [Run history](docs/run-history.md): the SQLite schema and some handy queries.
 - [Safety checks](docs/safety-checks.md): every way Fabrica fails closed, and where it catches each problem.
 - [CLI reference](docs/cli.md): every command and flag.
@@ -133,7 +135,7 @@ Examples live in [examples/](examples/): a [starter blueprint](examples/starter-
 
 Fabrica is honest about its limits. Here's what v0.1 can't do yet:
 
-- **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with `CURSOR_API_KEY` set, Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
+- **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
 - **No hosted service, ever.** You run the remote server yourself.

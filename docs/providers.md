@@ -27,7 +27,7 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 | | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) | `copilot-cloud` (Copilot automations) |
 |---|---|---|---|---|
-| Apply mode | handoff | api, with `CURSOR_API_KEY` set ([below](#cursor-automations-through-cursors-api)); handoff without | handoff | handoff |
+| Apply mode | handoff | api, with a Cursor API key ([below](#cursor-automations-through-cursors-api)); handoff without | handoff | handoff |
 | Skills | text-only | text-only | text-only | text-only |
 | Fabrica token | in the URL | in a header | in the URL | in a header, from an Agents secret |
 | `schedule` | native | native | native | native (hourly, daily or weekly) |
@@ -51,7 +51,7 @@ Three of these four have no API for creating triggered automations yet, so they 
 
 ### Cursor automations through Cursor's API
 
-Set `CURSOR_API_KEY` to a [Cursor API key](https://cursor.com/dashboard) wherever you run `fabrica apply` (your laptop, or CI as a secret), and Fabrica creates, updates and deletes Cursor automations itself. Without it, `cursor-cloud` falls back to handoffs, and `plan` says why. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too, and `CURSOR_ENDPOINT` overrides the API's address (`https://api2.cursor.sh`).
+Give Fabrica a [Cursor API key](https://cursor.com/dashboard/api) wherever you run `fabrica apply`, and it creates, updates and deletes Cursor automations itself. On your laptop, `fabrica auth login cursor-cloud` opens the dashboard page where you make one, checks the key you paste with Cursor, and saves it in your keychain. In CI, set `CURSOR_API_KEY` as a secret (`fabrica auth env CURSOR_API_KEY | gh secret set --env-file -` copies yours). Without a key, `cursor-cloud` falls back to handoffs, and `plan` says why. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too, and `CURSOR_ENDPOINT` overrides the API's address (`https://api2.cursor.sh`). See [Credentials](auth.md).
 
 Fabrica doesn't run Terraform. Cursor doesn't publish docs for this API, but its Terraform provider is a client for it: Fabrica makes the same calls (Connect RPC to `aiserver.v1.AutomationsService`, after exchanging the API key for a session token, like the provider does), in the protocol's JSON encoding, with no extra dependencies.
 
@@ -102,7 +102,7 @@ A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app sche
 
 Each provider supports one or more of these, tried in order:
 
-1. **`api`**: Fabrica creates, updates and deletes resources through the runtime's API. This is the goal for every runtime. Local runtimes count as `api`, since Fabrica writes their config files directly. `api` mode is only allowed when Fabrica can find what it made, so it never duplicates it: either the API can list resources and read their identity back (`find_by_identity: true`), or it can at least read one back by its ID (`find_by_remote_id: true`, like Cursor's). In that second case apply records each create in the home repo before the call and again once it has the new ID, and a create whose ID was never learned is not retried until `fabrica confirm` says whether the resource exists. A built-in cloud provider uses `api` mode only when its API's credentials are set, and falls back to its next mode otherwise.
+1. **`api`**: Fabrica creates, updates and deletes resources through the runtime's API. This is the goal for every runtime. Local runtimes count as `api`, since Fabrica writes their config files directly. `api` mode is only allowed when Fabrica can find what it made, so it never duplicates it: either the API can list resources and read their identity back (`find_by_identity: true`), or it can at least read one back by its ID (`find_by_remote_id: true`, like Cursor's). In that second case apply records each create in the home repo before the call and again once it has the new ID, and a create whose ID was never learned is not retried until `fabrica confirm` says whether the resource exists. A cloud provider uses `api` mode only when every credential its matrix declares (under [`credentials:`](#provideryaml)) is set, in its environment variable or saved by `fabrica auth login`, and falls back to its next mode otherwise.
 2. **`handoff`**: Fabrica writes step-by-step instructions that a person, or an AI with computer use, can follow. **Fabrica never does computer use itself.** The handoff ends with `fabrica confirm <id> [--remote-id …]`, and until then the change is pending in state. See [Handoffs](home-repos.md#handoffs).
 3. **unsupported**: when a provider has no mode Fabrica can use, `plan` and `apply` fail loudly and say why.
 
@@ -144,13 +144,20 @@ side_effects:
   github.pr_comment: native
   "*": emulated
 memory: emulated                     # native, emulated or unsupported (the default)
+credentials:                         # optional: what the api program needs
+  ACME_API_KEY:
+    description: an Acme API key
+    url: https://acme.dev/settings/api-keys   # optional: where you make one
+    instructions: Click New key, and copy it. # optional: what to do there
 ```
 
 Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`.
 
+`credentials:` lists what the `api` program needs, keyed by environment variable (not `FABRICA_…`). `fabrica auth` lists them, and `fabrica auth login` asks for them, opening `url` when there is one. Fabrica only uses `api` mode when they're all set; otherwise the runtime falls back to `handoff`, or, without it, `plan` reports an error that names what's missing. An entry can also list `aliases:`, other variables that work too. See [Credentials](auth.md#for-provider-authors).
+
 ### The `api` protocol
 
-The protocol is deliberately boring, so you can write a provider in any language. Fabrica runs `api <op>`, writes one JSON request to its stdin, and reads one JSON response from its stdout. A non-zero exit, or an `"error"` field in the response, means the operation failed, and whatever the program printed on stderr is shown to the user. The environment is passed through, so the program can read its credentials from environment variables. Each call times out after two minutes.
+The protocol is deliberately boring, so you can write a provider in any language. Fabrica runs `api <op>`, writes one JSON request to its stdin, and reads one JSON response from its stdout. A non-zero exit, or an `"error"` field in the response, means the operation failed, and whatever the program printed on stderr is shown to the user. The environment is passed through, so the program can read its credentials from environment variables, and Fabrica adds the ones it declares under `credentials:` that `fabrica auth login` saved. Each call times out after two minutes.
 
 Every request has `"version": 1` and `"op"`. The operations are:
 

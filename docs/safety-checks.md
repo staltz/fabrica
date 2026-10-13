@@ -31,6 +31,9 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A routine's trigger, connectors or memory setting (on runtimes with their own memory) changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | A routine, repo or runtime was removed from a factory (or a routine no longer runs on a runtime), but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | The server secret was rotated | 🔧 update in `plan` (when it has the secret) | — | ❌ old tokens get `401` | — |
+| The server secret you have isn't the one the server uses | ❌ `fabrica auth` and `fabrica auth login` (the server refuses its tokens) | — | ❌ tokens get `401` | — |
+| A credential a runtime's API needs isn't set | `plan` notes it, and the runtime falls back to handoffs; ❌ error when it has no other apply mode | — | — | `provider.no-mode` |
+| The credentials file can be read by other users | ❌ Fabrica won't use it until you `chmod 600` it | — | — | — |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses | `capability.skill` |
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |
 | Another apply holds the factory's lock | ❌ `apply` stops, names the holder | — | — | `factory.locked` |

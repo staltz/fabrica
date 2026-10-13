@@ -1,10 +1,11 @@
 # Cursor automations (cloud agents that fire on a trigger).
 #
-# With CURSOR_API_KEY set, Fabrica manages automations through Cursor's
-# Automations API, the one Cursor's Terraform provider uses. That API can
-# create, read, update and delete an automation, but not list them, so
-# Fabrica finds what it made by the IDs in state (find_by_remote_id).
-# Without the key, it falls back to handoffs.
+# With a Cursor API key (in CURSOR_API_KEY, or saved by `fabrica auth
+# login`), Fabrica manages automations through Cursor's Automations API,
+# the one Cursor's Terraform provider uses. That API can create, read,
+# update and delete an automation, but not list them, so Fabrica finds
+# what it made by the IDs in state (find_by_remote_id). Without the key,
+# it falls back to handoffs.
 #
 # The triggers and tools are what that API offers as of October 2026: no
 # pull request "reopened" event, and no Linear tool (Linear only triggers
@@ -39,3 +40,11 @@ side_effects:
 # be turned off. The stub turns it on for routines that need memory and off
 # for the rest, so memory never steers a routine that didn't ask for it.
 memory: native
+# The API key the API needs. `fabrica auth login` opens the page that
+# makes one, checks the key with Cursor, and saves it in your keychain.
+credentials:
+  CURSOR_API_KEY:
+    description: a Cursor API key
+    url: https://cursor.com/dashboard/api
+    instructions: Create a new API key, call it fabrica, and copy it.
+    aliases: [CURSOR_TOKEN] # what Cursor's Terraform provider calls it

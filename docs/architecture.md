@@ -20,9 +20,11 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
 | `home` | Home repos: factories, local matching, state files, and creating your personal home repo when it's missing. |
-| `token` | Factory tokens: `HMAC(secret, factory name)`. |
+| `token` | Factory tokens: `HMAC(secret, factory name)`, and making new server secrets. |
+| `credentials` | Finding credentials (the environment first, then where `fabrica auth login` saved them) and saving them: the macOS Keychain through `security`, the Secret Service through `secret-tool`, or a file only you can read. |
 | `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries. |
 | `plan` | Compares what's wanted with what's installed, and sorts it into changes and errors. |
+| `auth` | Works out the credentials and git access a home repo needs for `fabrica auth`, and checks each with its service: a server by the tokens it accepts, a runtime by its provider's verifier, git with `ls-remote`. |
 | `scaffold` | Writes new blueprints for `fabrica new`: the starter blueprint (from `examples`) or an empty one, never overwriting a file. |
 | `apply` | Carries out plans, for `apply` and `destroy`: the git lock, API calls, handoffs, `confirm` and `unlock`. |
 | `runs` | The run-history database. |
@@ -37,6 +39,8 @@ The arrows only point down: `blueprint` never imports `plan`, `plan` never impor
 ## Decisions worth knowing
 
 **We run the real `git`.** Fabrica sits beside git, so instead of a Go git library we shell out to `git`. Users' credential helpers, SSH keys and `url.<base>.insteadOf` rewrites just work, and tests use that same `insteadOf` trick to point `https://github.com/…` at temp folders, with no test-only code paths in Fabrica.
+
+**Credentials come from the environment, then the keychain.** A credential's environment variable always wins, even when it's set to nothing, so CI and scripts behave exactly as they say. Otherwise Fabrica reads what `fabrica auth login` saved, and like with git, it runs the system's own keychain tool (`security`, `secret-tool`) rather than linking a keychain library, so the binary stays static. Secrets reach those tools on stdin, never on a command line. Server secrets are saved per server URL, so a factory only ever gets the secret of the server it names.
 
 **Commits are content-addressed caches.** A commit's content never changes, so each commit is unpacked once into `$FABRICA_CACHE/trees/<commit>/` and reused forever. Skills are unpacked into `skills/<content-hash>/<name>/`. Blueprints are loaded from those trees, and imports are memoized by URL, commit and path.
 
@@ -58,6 +62,7 @@ The arrows only point down: `blueprint` never imports `plan`, `plan` never impor
 - **The toy runtime** is a pretend cloud runtime whose "API" is a folder of JSON files. Its folder provider's `api` script runs the test binary itself: each test package's `TestMain` calls `testkit.MaybeRunToyProvider()`, which turns the binary into the provider when it's started that way.
 - **`testkit.NewWorld`** builds a complete setup: a blueprint (with the toy provider), two product repos with the Fabrica line, a home repo and the toy runtime.
 - **The CLI's end-to-end tests** run `cli.Main` in-process, and for stdio MCP they run the test binary as `fabrica` (`FABRICA_TEST_AS_CLI=1`). `TestSuccessTest` replays the v0.1 success test from the design doc, from `plan` all the way to run history.
+- **Credentials stay out of your keychain.** Test binaries call `testkit.IsolateCredentials` in `TestMain`, which turns the system keychain off and points the credentials file at a temporary folder, and `testkit.FreshCredentials` gives one test its own. Keychain backends are tested against small fake `security` and `secret-tool` scripts.
 
 Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf`). CI runs all three.
 
@@ -65,7 +70,7 @@ Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf
 
 **Supporting a new trigger on a built-in runtime:** add it to the runtime's `internal/provider/builtin/<name>/provider.yaml`. For a local runtime, also map it to a hook event in `internal/localtools/hookcmd.go` and teach `internal/hook` how to respond to it.
 
-**Giving a cloud provider an API:** when a runtime ships an API, implement `provider.RuntimeAPI` (create, update, delete) against the same `provider.Resource` the folder-provider protocol uses, plus `provider.Lister` if the API can list resources and read their identity back (`find_by_identity: true`), or else `provider.Getter` if it can read one back by its ID (`find_by_remote_id: true`). Register the constructor in `builtinAPIs`, make it fail when its credentials aren't set (so the runtime falls back to handoffs), and add `api` to the front of its `apply_modes`. The planner and apply already handle `api` mode, refresh, adoption and the checkpoints around creates. If the API can't set up everything its resources rely on, implement `provider.ManualSetup` too. `cursor.go` is the example, and `testkit.NewFakeCursor` shows how to test one with a fake server.
+**Giving a cloud provider an API:** when a runtime ships an API, implement `provider.RuntimeAPI` (create, update, delete) against the same `provider.Resource` the folder-provider protocol uses, plus `provider.Lister` if the API can list resources and read their identity back (`find_by_identity: true`), or else `provider.Getter` if it can read one back by its ID (`find_by_remote_id: true`). Register the constructor in `builtinAPIs`, declare its credentials under `credentials:` in its `provider.yaml` (so the runtime falls back to handoffs without them, and `fabrica auth login` can set them up), read them with `credentials.Lookup`, and add `api` to the front of its `apply_modes`. If the API can tell a good key from a bad one, add a verifier to `verifiers`, so `fabrica auth` can check it. The planner and apply already handle `api` mode, refresh, adoption and the checkpoints around creates. If the API can't set up everything its resources rely on, implement `provider.ManualSetup` too. `cursor.go` is the example, and `testkit.NewFakeCursor` shows how to test one with a fake server.
 
 **Changing the run-history schema:** bump `runs.SchemaVersion`, add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `docs/run-history.md`. The schema is a public interface.
 

@@ -20,7 +20,10 @@ import (
 
 func TestMain(m *testing.M) {
 	testkit.MaybeRunToyProvider()
-	os.Exit(m.Run())
+	cleanup := testkit.IsolateCredentials()
+	code := m.Run()
+	cleanup()
+	os.Exit(code)
 }
 
 type harness struct {

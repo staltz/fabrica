@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/staltz/fabrica/internal/credentials"
 )
 
 // Provider is one runtime Fabrica can deploy to: its capability matrix plus
@@ -275,12 +278,12 @@ func (p *Provider) RenderHandoff(data HandoffData) (string, error) {
 // Mode picks the apply mode to use: the first listed mode that this
 // provider can actually do. For api that means it has a way to talk to the
 // runtime (local built-ins write config files; folder providers need their
-// api program; built-in cloud runtimes need their API's credentials).
+// api program; cloud runtimes need every credential their API declares).
 func (p *Provider) Mode() (ApplyMode, error) {
 	for _, mode := range p.Matrix.ApplyModes {
 		switch mode {
 		case API:
-			if p.IsLocal() || p.APIPath != "" || p.builtinAPI != nil && p.APIUnavailable() == nil {
+			if p.IsLocal() || (p.APIPath != "" || p.builtinAPI != nil) && p.APIUnavailable() == nil {
 				return API, nil
 			}
 		case Handoff:
@@ -289,16 +292,67 @@ func (p *Provider) Mode() (ApplyMode, error) {
 			}
 		}
 	}
+	if why := p.APIUnavailable(); why != nil {
+		return "", fmt.Errorf("runtime %s can't use its API because %v, and it has no other apply mode; run `fabrica auth login` to set it up", p.Name(), why)
+	}
 	return "", fmt.Errorf("runtime %s has no apply mode Fabrica can use (it supports %v)", p.Name(), p.Matrix.ApplyModes)
 }
 
-// APIUnavailable says why a built-in cloud runtime that has an API can't
-// use it right now, like when its credentials aren't set. It's nil
+// APIUnavailable says why a cloud runtime that has an API can't use it
+// right now, like when a credential it needs isn't set. It's nil
 // otherwise, including for runtimes without an API.
 func (p *Provider) APIUnavailable() error {
+	if p.IsLocal() || !p.Matrix.HasMode(API) {
+		return nil
+	}
+	for _, c := range p.Matrix.Credentials {
+		found, err := credentials.Lookup(c.Names()...)
+		if err != nil {
+			return err
+		}
+		if found.Value == "" {
+			return fmt.Errorf("%s isn't set", c.Env)
+		}
+	}
 	if p.builtinAPI == nil {
 		return nil
 	}
 	_, err := p.builtinAPI()
 	return err
+}
+
+// credentialEnv is what a folder provider's api program gets on top of
+// Fabrica's own environment: each credential it declares that Fabrica
+// found in its store rather than in the environment.
+func (p *Provider) credentialEnv() ([]string, error) {
+	var env []string
+	for _, c := range p.Matrix.Credentials {
+		found, err := credentials.Lookup(c.Names()...)
+		if err != nil {
+			return nil, err
+		}
+		if !found.Env && found.Value != "" {
+			env = append(env, c.Env+"="+found.Value)
+		}
+	}
+	return env, nil
+}
+
+// ErrUnverifiable means Fabrica has no way to check a credential with
+// the service it's for, like any credential of a folder provider.
+var ErrUnverifiable = errors.New("Fabrica has no way to check it")
+
+// verifiers check credentials of built-in runtimes with their service.
+var verifiers = map[string]func(ctx context.Context, value string) (string, error){
+	CursorKeyEnv: verifyCursorKey,
+}
+
+// VerifyCredential asks the service whether a credential works, and
+// returns what it said. It returns ErrUnverifiable when Fabrica can't ask.
+func (p *Provider) VerifyCredential(ctx context.Context, env, value string) (string, error) {
+	verify := verifiers[env]
+	if !p.Builtin || verify == nil {
+		return "", ErrUnverifiable
+	}
+	return verify(ctx, value)
 }

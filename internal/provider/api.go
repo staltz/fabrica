@@ -169,6 +169,9 @@ type ManualSetup interface {
 type APIClient struct {
 	Path    string
 	Timeout time.Duration
+	// Env is added to Fabrica's own environment for the program: the
+	// credentials it declares that were saved with `fabrica auth login`.
+	Env []string
 }
 
 // API returns a client for the runtime's API: a folder provider's api
@@ -176,7 +179,11 @@ type APIClient struct {
 func (p *Provider) API() (RuntimeAPI, error) {
 	switch {
 	case p.APIPath != "":
-		return &APIClient{Path: p.APIPath, Timeout: 2 * time.Minute}, nil
+		env, err := p.credentialEnv()
+		if err != nil {
+			return nil, err
+		}
+		return &APIClient{Path: p.APIPath, Timeout: 2 * time.Minute, Env: env}, nil
 	case p.builtinAPI != nil:
 		return p.builtinAPI()
 	}
@@ -237,7 +244,7 @@ func (c *APIClient) call(ctx context.Context, req request) (*response, error) {
 
 	cmd := exec.CommandContext(ctx, c.Path, req.Op)
 	cmd.Stdin = bytes.NewReader(body)
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), c.Env...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

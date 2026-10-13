@@ -13,6 +13,7 @@ package provider
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -105,27 +106,61 @@ type Matrix struct {
 	// off to match the routine; Emulated means Fabrica keeps the memory
 	// itself and serves it over MCP. Not listed means unsupported.
 	Memory Support
+	// Credentials are what the runtime's API needs, like an API key, sorted
+	// by variable name. Without every one of them, api mode is unavailable
+	// and the runtime falls back to its next apply mode.
+	Credentials []Credential
 }
+
+// Credential is something a cloud runtime's API needs, like an API key.
+// Fabrica finds it in its environment variable, or else where `fabrica
+// auth login` saved it, and hands it to the API.
+type Credential struct {
+	// Env is the environment variable, like CURSOR_API_KEY.
+	Env string
+	// Aliases are other environment variables that work too, like
+	// CURSOR_TOKEN. Env wins when both are set.
+	Aliases []string
+	// Description says what it is, for people, in a few words.
+	Description string
+	// URL is the page where you make one. `fabrica auth login` opens it.
+	URL string
+	// Instructions say what to do on that page.
+	Instructions string
+}
+
+// Names are the credential's environment variables, Env first.
+func (c Credential) Names() []string { return append([]string{c.Env}, c.Aliases...) }
 
 // matrixFile is the on-disk shape of provider.yaml.
 type matrixFile struct {
-	Kind           string             `yaml:"kind"`
-	Description    string             `yaml:"description"`
-	ApplyModes     []string           `yaml:"apply_modes"`
-	FindByIdentity bool               `yaml:"find_by_identity"`
-	FindByRemoteID bool               `yaml:"find_by_remote_id"`
-	SkillTransport string             `yaml:"skill_transport"`
-	MCPAuth        map[string]Support `yaml:"mcp_auth"`
-	Triggers       map[string]Support `yaml:"triggers"`
-	Connectors     map[string]Support `yaml:"connectors"`
-	SideEffects    map[string]Support `yaml:"side_effects"`
-	Memory         Support            `yaml:"memory"`
+	Kind           string                    `yaml:"kind"`
+	Description    string                    `yaml:"description"`
+	ApplyModes     []string                  `yaml:"apply_modes"`
+	FindByIdentity bool                      `yaml:"find_by_identity"`
+	FindByRemoteID bool                      `yaml:"find_by_remote_id"`
+	SkillTransport string                    `yaml:"skill_transport"`
+	MCPAuth        map[string]Support        `yaml:"mcp_auth"`
+	Triggers       map[string]Support        `yaml:"triggers"`
+	Connectors     map[string]Support        `yaml:"connectors"`
+	SideEffects    map[string]Support        `yaml:"side_effects"`
+	Memory         Support                   `yaml:"memory"`
+	Credentials    map[string]credentialFile `yaml:"credentials"`
+}
+
+// credentialFile is one entry under credentials:, keyed by its variable.
+type credentialFile struct {
+	Description  string   `yaml:"description"`
+	URL          string   `yaml:"url"`
+	Instructions string   `yaml:"instructions"`
+	Aliases      []string `yaml:"aliases"`
 }
 
 var (
 	triggerKeyRe    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`)
 	connectorKeyRe  = regexp.MustCompile(`^([a-z0-9]+(-[a-z0-9]+)*|mcp\.(http|sse|stdio))$`)
 	sideEffectKeyRe = regexp.MustCompile(`^(\*|[a-z0-9]+(-[a-z0-9]+)*\.(\*|[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*))$`)
+	envNameRe       = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 )
 
 // ParseMatrix reads a provider.yaml. Unknown keys and unknown values are
@@ -240,6 +275,11 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		add("memory: is %q; use native, emulated or unsupported", f.Memory)
 	}
 
+	m.Credentials = parseCredentials(f.Credentials, add)
+	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API]) {
+		add("credentials: are only for a cloud runtime's API, so they need kind: cloud and api in apply_modes")
+	}
+
 	if len(problems) > 0 {
 		sort.Strings(problems)
 		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
@@ -248,6 +288,41 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 }
 
 func (s Support) valid() bool { return s == Native || s == Emulated || s == Unsupported }
+
+// parseCredentials checks the credentials: entries and sorts them.
+func parseCredentials(in map[string]credentialFile, add func(string, ...any)) []Credential {
+	var out []Credential
+	seen := map[string]string{} // variable → the credential it belongs to
+	claim := func(name, owner string) {
+		switch {
+		case !envNameRe.MatchString(name):
+			add("credentials: %q isn't an environment variable name (like ACME_API_KEY: uppercase letters, digits and underscores)", name)
+		case strings.HasPrefix(name, "FABRICA_"):
+			add("credentials: %s starts with FABRICA_, which is for Fabrica's own settings; pick another name", name)
+		case seen[name] != "":
+			add("credentials: %s is listed twice (in %s and %s)", name, seen[name], owner)
+		}
+		seen[name] = owner
+	}
+	for name, f := range in {
+		claim(name, name)
+		for _, alias := range f.Aliases {
+			claim(alias, name)
+		}
+		c := Credential{Env: name, Aliases: f.Aliases, Description: strings.TrimSpace(f.Description), URL: strings.TrimSpace(f.URL), Instructions: strings.TrimSpace(f.Instructions)}
+		if c.Description == "" {
+			add("credentials.%s: description: is missing; say what it is in a few words, like \"an Acme API key\"", name)
+		}
+		if c.URL != "" {
+			if u, err := url.Parse(c.URL); err != nil || u.Scheme != "https" || u.Host == "" {
+				add("credentials.%s: url: %q must be an https URL: the page where you make one", name, c.URL)
+			}
+		}
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Env < out[j].Env })
+	return out
+}
 
 func orEmpty(m map[string]Support) map[string]Support {
 	if m == nil {

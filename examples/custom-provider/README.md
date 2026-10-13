@@ -16,7 +16,7 @@ blueprint/
 
 ## The three files of a provider
 
-**`provider.yaml`** is the capability matrix. It says what Acme Runner can do: which triggers it has (`github.issues.opened`, which none of the built-in cloud runtimes support), which connectors, which side effects, and how it can pass the Fabrica token (in a header). Because it's plain data, `fabrica check` and `fabrica plan` read it without running anything.
+**`provider.yaml`** is the capability matrix. It says what Acme Runner can do: which triggers it has (`github.issues.opened`, which none of the built-in cloud runtimes support), which connectors, which side effects, and how it can pass the Fabrica token (in a header). Because it's plain data, `fabrica check` and `fabrica plan` read it without running anything. A provider whose `api` needs a key declares it under `credentials:` (there's a commented-out example at the end), and then `fabrica auth login` asks for it and Fabrica hands it to `api`.
 
 **`api`** is a program Fabrica runs during `apply`. It can be written in any language. Fabrica runs `api <op>`, sends one JSON request on stdin, and reads one JSON response from stdout. There are four operations: `list`, `create`, `update` and `delete`. The important rule is that the runtime must store each resource's Fabrica **identity** and give it back from `list`. That's how Fabrica finds what it made, adopts things a crashed apply left behind, and never creates duplicates. Read the comments in `api` to see the whole protocol in about 90 lines.
 
@@ -38,7 +38,7 @@ targets: [github.com/you/your-app]
 ```
 
 ```sh
-export FABRICA_SERVER_SECRET="$(openssl rand -hex 32)"
+fabrica auth login https://fabrica.example.com     # press Enter to make a server secret
 export ACME_RUNNER_DB=/tmp/acme-runner.json
 fabrica plan       # one create, in api mode
 fabrica apply      # runs `api create`

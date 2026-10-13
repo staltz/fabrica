@@ -34,9 +34,14 @@ import (
 type Env struct {
 	Loader *blueprint.Loader
 	Git    *gitx.Cache
-	// Secret is the server secret, when available. Without it the plan
-	// can't tell whether tokens were rotated, and apply can't run.
+	// Secret is the server secret from FABRICA_SERVER_SECRET, when it's
+	// set. It counts for every server. Without a secret, the plan can't
+	// tell whether tokens were rotated, and apply can't run.
 	Secret string
+	// ServerSecret, when Secret is empty, finds the secret of one server:
+	// the one `fabrica auth login` saved for it. It returns "" when there's
+	// none.
+	ServerSecret func(server string) (string, error)
 	// Binary is the absolute path of the fabrica binary, which local tools
 	// run as their MCP server and hooks.
 	Binary string
@@ -58,6 +63,15 @@ type Env struct {
 	LockHolder string
 	// Now is the clock, replaceable in tests.
 	Now func() time.Time
+}
+
+// SecretFor finds the secret of a factory's server: Secret when it's set,
+// otherwise the server's own. It returns "" when there's none.
+func (e *Env) SecretFor(server string) (string, error) {
+	if e.Secret != "" || e.ServerSecret == nil || server == "" {
+		return e.Secret, nil
+	}
+	return e.ServerSecret(server)
 }
 
 // Plan is the whole plan for a home repo.

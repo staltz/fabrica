@@ -35,3 +35,15 @@ side_effects:
 # Acme Runner can't remember anything between jobs, so routines that need
 # memory get it from Fabrica.
 memory: emulated
+
+# A real runner's api program would need a key to call its API. Declare it
+# here, and `fabrica auth login` asks for it (opening url), saves it in your
+# keychain, and Fabrica hands it to the api program in its environment.
+# Without it, Fabrica falls back to handoffs. This example's api program
+# keeps its "runtime" in a file, so it needs none.
+#
+# credentials:
+#   ACME_API_KEY:
+#     description: an Acme Runner API key
+#     url: https://acme-runner.example.com/settings/api-keys
+#     instructions: Click New key, and copy it.

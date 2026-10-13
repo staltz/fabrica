@@ -10,10 +10,12 @@ package token
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -36,10 +38,28 @@ func SecretFromEnv() (string, error) {
 	if s == "" {
 		return "", errors.New(EnvVar + " isn't set; set it to the same long random secret your Fabrica server uses (for example from `openssl rand -hex 32`)")
 	}
-	if len(s) < minSecretLen {
-		return "", errors.New(EnvVar + " is too short; use at least 32 characters of random text (for example from `openssl rand -hex 32`)")
+	if err := Check(s); err != nil {
+		return "", fmt.Errorf("%s %w", EnvVar, err)
 	}
 	return s, nil
+}
+
+// Check says whether s is long enough to be a server secret.
+func Check(s string) error {
+	if len(s) < minSecretLen {
+		return errors.New("is too short; use at least 32 characters of random text (for example from `openssl rand -hex 32`)")
+	}
+	return nil
+}
+
+// NewSecret makes a new server secret: 32 random bytes, as 64 hex
+// characters, just like `openssl rand -hex 32`.
+func NewSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // For computes the token of one factory.

@@ -126,7 +126,11 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		if len(dp.Changes) == 0 {
 			continue // nothing to do, and nothing to commit
 		}
-		files, setups, err := applyCloud(ctx, opts, &env, repo, dp.Name)
+		server := ""
+		if dp.Spec != nil {
+			server = dp.Spec.Server
+		}
+		files, setups, err := applyCloud(ctx, opts, &env, repo, dp.Name, server)
 		res.Handoffs = append(res.Handoffs, files...)
 		res.Setups = append(res.Setups, setups...)
 		if err != nil {
@@ -189,14 +193,21 @@ func printErrors(out io.Writer, diags diag.List) {
 // applyCloud applies one cloud factory, following the steps in the
 // design: take the lock, refresh, re-plan, apply, then record the results
 // and release the lock in one commit.
-func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, name string) (handoffs, setups []string, err error) {
+func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, name, server string) (handoffs, setups []string, err error) {
 	out := opts.Out
 	if out == nil {
 		out = io.Discard
 	}
-	// Deleting a stub needs no token, so destroy works without the secret.
-	if env.Secret == "" && !env.Destroy {
-		return nil, nil, fmt.Errorf("%s isn't set, and cloud stubs need it to compute the factory's token", token.EnvVar)
+	// Deleting a stub needs no token, so destroy works without the secret,
+	// and so does applying a factory whose file was deleted.
+	secret := ""
+	if !env.Destroy && server != "" {
+		if secret, err = env.SecretFor(server); err != nil {
+			return nil, nil, err
+		}
+		if secret == "" {
+			return nil, nil, fmt.Errorf("there's no server secret for %s, and cloud stubs need it to compute the factory's token; run `fabrica auth login` to set it up (or set %s)", server, token.EnvVar)
+		}
 	}
 	holder := opts.Holder
 	if holder == "" {
@@ -237,7 +248,10 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if dp.Blueprint != nil {
 		state.Blueprint = &home.StateBlueprint{Git: dp.Spec.Blueprint.Git, Path: dp.Spec.Blueprint.Path, Commit: dp.Blueprint.Source.Commit}
 	}
-	tok := token.For(env.Secret, name)
+	tok := ""
+	if secret != "" {
+		tok = token.For(secret, name)
+	}
 	apis := apiClients{}
 	touched := map[*provider.Provider]bool{} // runtimes with creates or updates through their API
 	var failures []string

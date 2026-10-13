@@ -65,7 +65,8 @@ Each factory has a secret token, computed as `HMAC(server secret, factory name)`
 
 - The token goes in an `Authorization: Bearer …` header where the runtime allows headers, or in the URL (`…/pr-review/t/<token>`) where it only takes a URL. Each provider's capability matrix says which. Tokens in URLs can leak through logs or screenshots, so headers are used whenever possible.
 - A request without the right token gets a `401`. A path that isn't a factory gets a `404`, and so does a factory that was deleted from the home repo.
-- To rotate every token, change the server secret and re-apply. `fabrica plan` notices rotated tokens (when it has the secret) and lists the affected stubs as updates.
+- To rotate every token, change the server secret and re-apply. `fabrica auth login <server URL>` makes a new one when you press Enter, and `fabrica plan` notices rotated tokens (when it has the secret) and lists the affected stubs as updates.
+- `fabrica auth` checks that the secret you have is the server's own, by asking the server: a wrong token gets a `401`, and the right one doesn't. See [Credentials](auth.md).
 
 OAuth is planned for later.
 
@@ -73,7 +74,7 @@ OAuth is planned for later.
 
 It needs:
 
-- the server secret, in `FABRICA_SERVER_SECRET` (at least 32 characters; `openssl rand -hex 32` makes a good one),
+- the server secret, in `FABRICA_SERVER_SECRET` (at least 32 characters). `fabrica auth login <the server's URL>` makes one and saves it on your machine, and `fabrica auth env <the server's URL>` prints it for the server's environment. (`openssl rand -hex 32` makes a good one too.)
 - read access to the home repo and the blueprints (Fabrica runs `git`, so give it a credential helper, a deploy key, or a token in the URL),
 - a **persistent volume** for its run-history database, which also holds routine memories.
 
@@ -88,7 +89,7 @@ fabrica mcp --http \
 |---|---|---|
 | `--home` | (required) | The home repo: a git URL, or a path to a git repo. |
 | `--ref` | the default branch | The home repo branch to serve. |
-| `--url` | | Only serve factories whose `server:` is this URL. Handy when one home repo points factories at several servers, like staging and production. |
+| `--url` | | Only serve factories whose `server:` is this URL. Handy when one home repo points factories at several servers, like staging and production. Without `FABRICA_SERVER_SECRET`, the server uses the secret `fabrica auth login` saved for this URL on its machine. |
 | `--listen` | `:8080` | The address to listen on. |
 | `--db` | `fabrica-runs.db` | The run-history database. Keep it on a persistent volume. |
 | `--refresh` | `1m` | How often to re-fetch the home repo and blueprints. |
@@ -98,12 +99,14 @@ fabrica mcp --http \
 With Docker, using the [Dockerfile](../Dockerfile) in this repo:
 
 ```sh
+fabrica auth env https://fabrica.acme.dev > fabrica.env    # FABRICA_SERVER_SECRET=…
 docker build -t fabrica .
 docker run -d --name fabrica \
-  -e FABRICA_SERVER_SECRET="$(cat secret.txt)" \
+  --env-file fabrica.env \
   -v fabrica-data:/data \
   -p 8080:8080 \
   fabrica mcp --http --home https://github.com/acme/home.git
+rm fabrica.env
 ```
 
 The image keeps its database and git cache in `/data`.

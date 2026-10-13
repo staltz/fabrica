@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Error is what a failed git command returns. It keeps git's own stderr,
@@ -95,4 +96,17 @@ func Short(commit string) string {
 		return commit[:7]
 	}
 	return commit
+}
+
+// CanRead checks that git can read the repo at url, with your credentials,
+// the way a fetch would, but without fetching anything: it only asks for
+// the repo's HEAD.
+func CanRead(ctx context.Context, url string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := run(ctx, "", "ls-remote", url, "HEAD")
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("git ls-remote %s: timed out", url)
+	}
+	return err
 }

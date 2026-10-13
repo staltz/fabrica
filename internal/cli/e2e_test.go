@@ -40,7 +40,9 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("FABRICA_HOME", dir)
+	cleanup := testkit.IsolateCredentials()
 	code := m.Run()
+	cleanup()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
@@ -71,6 +73,7 @@ func setupCLI(t *testing.T) *testkit.World {
 	t.Setenv("FABRICA_CACHE", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CI", "")
+	testkit.FreshCredentials(t)
 	t.Setenv(token.EnvVar, testkit.Secret)
 	// Start with the personal home repo there already, as it is after your
 	// first command, so its creation doesn't show up in every output.

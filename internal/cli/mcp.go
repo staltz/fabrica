@@ -3,11 +3,13 @@ package cli
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/staltz/fabrica/internal/credentials"
 	"github.com/staltz/fabrica/internal/hook"
 	"github.com/staltz/fabrica/internal/localtools"
 	"github.com/staltz/fabrica/internal/mcpserver"
@@ -38,11 +40,13 @@ and serves that blueprint. Runs are recorded in runs.db in your home repo.
 
 With --http, it's the remote server for cloud runtimes. Point --home at
 a home repo (a git URL or a path to a git repo) and it serves one
-endpoint per cloud factory, at <server>/<factory>. It needs
-FABRICA_SERVER_SECRET (each factory's token is HMAC(secret,
-factory name)), read access to the home repo and the blueprints, and a
-persistent folder for its run-history database (--db). It re-fetches
-the home repo regularly, so merges show up shortly after they land.`,
+endpoint per cloud factory, at <server>/<factory>. It needs the server
+secret (each factory's token is HMAC(secret, factory name)) in
+FABRICA_SERVER_SECRET, or saved by ` + "`fabrica auth login <url>`" + ` on this
+machine when you pass --url; read access to the home repo and the
+blueprints; and a persistent folder for its run-history database (--db).
+It re-fetches the home repo regularly, so merges show up shortly after
+they land.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -56,7 +60,7 @@ the home repo regularly, so merges show up shortly after they land.`,
 				if g.home == "" {
 					return fmt.Errorf("--http needs --home: the git URL (or path) of the home repo to serve")
 				}
-				secret, err := token.SecretFromEnv()
+				secret, err := remoteSecret(publicURL)
 				if err != nil {
 					return err
 				}
@@ -144,4 +148,20 @@ func newHook(g *globals) *cobra.Command {
 		_ = cmd.MarkFlagRequired(name)
 	}
 	return cmd
+}
+
+// remoteSecret finds the remote server's secret: FABRICA_SERVER_SECRET,
+// or else, when the server knows its own URL, the secret saved for it.
+func remoteSecret(publicURL string) (string, error) {
+	if os.Getenv(token.EnvVar) != "" || publicURL == "" {
+		return token.SecretFromEnv()
+	}
+	found, err := credentials.ServerSecret(publicURL)
+	if err != nil {
+		return "", err
+	}
+	if found.Value == "" {
+		return "", fmt.Errorf("%s isn't set, and there's no secret saved for %s; set it to your server secret, or save one with `fabrica auth login %s`", token.EnvVar, credentials.NormalizeServer(publicURL), credentials.NormalizeServer(publicURL))
+	}
+	return found.Value, nil
 }

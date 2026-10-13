@@ -6,7 +6,7 @@ Every command has `--help`.
 
 ## Choosing the home repo
 
-`plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
+`auth`, `plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
 
 1. the `--home <folder>` flag, if you give one,
 2. otherwise the current folder (or the git repo it's in), if it has `factories/` or `state/`,
@@ -18,13 +18,17 @@ Every command has `--help`.
 |---|---|
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
-| `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
-| `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
+| `FABRICA_SERVER_SECRET` | The server secret, for every server. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. Without it, Fabrica uses the secret `fabrica auth login` saved for each factory's server. See [Credentials](auth.md). |
+| `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. Without either, Fabrica uses the key `fabrica auth login` saved. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
 | `CURSOR_ENDPOINT` | The address of Cursor's API. Default `https://api2.cursor.sh`. |
+| `FABRICA_KEYCHAIN` | Set to `off` to keep the credentials `fabrica auth login` saves in a file only you can read, `$XDG_CONFIG_HOME/fabrica/credentials.json` (or `~/.config/fabrica/`), even where there's a system keychain. |
+| `BROWSER` | The program `fabrica auth login` opens pages with. By default it's `open` on macOS, and `xdg-open` on Linux when there's a display. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
 | `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
 
-Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead.
+An environment variable that holds a credential always wins over one `fabrica auth login` saved, even when it's set to nothing: `CURSOR_API_KEY= fabrica plan` shows what happens without your saved key.
+
+Fabrica runs `git` with interactive password prompts switched off, since it often runs where nobody can type one. Set up a credential helper or SSH keys instead; `fabrica auth login git` does it for GitHub, with the GitHub CLI.
 
 ## `fabrica new <folder>`
 
@@ -69,6 +73,35 @@ Moves imports (all, or the ones you name) to the newest commit of their ref, and
 | `--yes`, `-y` | Write the lock without asking. Without a terminal to ask on, upgrade refuses unless you pass this. |
 | `--dry-run` | Only show what would change. |
 
+## `fabrica auth`
+
+Shows every credential your home repo's factories need for `apply`, and checks each one with the service it's for: the secret of each Fabrica server (the server says whether it accepts tokens made with it), each runtime API's credentials (like a Cursor API key), and git access to the home repo, the blueprints and the product repos. Exits `1` when something apply needs is missing or refused. [Credentials](auth.md) explains it all.
+
+| Flag | What it does |
+|---|---|
+| `--no-check` | Only say what's set, without asking servers, runtime APIs or git whether it works. |
+
+`fabrica auth status` does the same.
+
+### `fabrica auth login [credential…]`
+
+Sets up every credential that's missing or refused, or the ones you name: a server's URL, an environment variable (like `CURSOR_API_KEY`), a runtime (like `cursor-cloud`), or `git`. For a server secret, you paste the server's (Fabrica checks it with the server), or press Enter to make a new one. For a runtime credential, you press Enter to open the page where you make one, and paste it (Fabrica checks it with the runtime where it can). For git, it signs you in to GitHub with the GitHub CLI and lets git use that. Credentials are saved in your system's keychain, or else in a file only you can read. What you paste isn't shown. Without a terminal, answers are read from stdin, one per line.
+
+### `fabrica auth logout <credential…>`
+
+Forgets saved credentials: name a server's URL, an environment variable or a runtime. It leaves environment variables alone.
+
+### `fabrica auth env [credential…]`
+
+Prints the credentials the home repo needs (or the ones you name) as `NAME=value` lines, for your server or CI:
+
+```sh
+fabrica auth env | gh secret set --env-file - --repo acme/home
+fabrica auth env https://fabrica.acme.dev > fabrica.env
+```
+
+Credentials that aren't set up are left out, and the ones you named are an error. A server secret comes out as `FABRICA_SERVER_SECRET`, so when factories use several servers with different secrets, name one.
+
 ## `fabrica plan [factory…]`
 
 Shows what `apply` would do for every factory (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, how each runtime handles each trigger, connector and side effect, each runtime's apply mode, follow versus frozen, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes.
@@ -95,7 +128,7 @@ Makes runtimes match your home repo. For each cloud factory with changes and no 
 |---|---|
 | `--handoff-dir <folder>` | Where to write handoff instructions. Default `$FABRICA_CACHE/handoffs`. |
 
-Cloud factories need `FABRICA_SERVER_SECRET`, and Cursor automations are only managed through Cursor's API with `CURSOR_API_KEY` (otherwise they get handoffs). Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
+Cloud factories need the secret of their server, and Cursor automations are only managed through Cursor's API with a Cursor API key (otherwise they get handoffs): `fabrica auth login` sets both up, or set `FABRICA_SERVER_SECRET` and `CURSOR_API_KEY`. Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
 
 ## `fabrica destroy [factory…]`
 
@@ -111,7 +144,7 @@ It shows the plan, then asks before changing anything. `fabrica plan --destroy` 
 | `--yes`, `-y` | Destroy without asking. Without a terminal to ask on, destroy refuses unless you pass this. |
 | `--handoff-dir <folder>` | Where to write delete handoffs. Default `$FABRICA_CACHE/handoffs`. |
 
-Deleting needs no token, so unlike `apply`, destroy works without `FABRICA_SERVER_SECRET`. Like `apply`, it refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet, and exits `1` if any factory was skipped because of errors, or failed.
+Deleting needs no token, so unlike `apply`, destroy works without a server secret. Like `apply`, it refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet, and exits `1` if any factory was skipped because of errors, or failed.
 
 ## `fabrica confirm <handoff-id>`
 
@@ -146,7 +179,7 @@ Serves a blueprint over MCP.
 |---|---|---|
 | `--home <git URL or path>` | (required) | The home repo to serve. |
 | `--ref <branch>` | the default branch | The home repo branch to serve. |
-| `--url <url>` | | Only serve factories whose `server:` is this URL. |
+| `--url <url>` | | Only serve factories whose `server:` is this URL. Without `FABRICA_SERVER_SECRET`, the server uses the secret `fabrica auth login` saved for this URL. |
 | `--listen <address>` | `:8080` | Where to listen. |
 | `--db <file>` | `fabrica-runs.db` | The run-history database. |
 | `--refresh <duration>` | `1m` | How often to re-fetch. |

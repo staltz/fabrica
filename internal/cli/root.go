@@ -104,6 +104,7 @@ Typical workflow:
   fabrica new        start a new blueprint repo
   fabrica check      lint a blueprint, a home repo or a product repo
   fabrica lock       pin a blueprint's imports in fabrica.lock
+  fabrica auth       check the credentials apply needs (auth login sets them up)
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
   fabrica apply      install stubs in runtimes, and Fabrica in your local tools
   fabrica destroy    remove everything apply installed
@@ -130,6 +131,7 @@ Run fabrica -u to update Fabrica itself to the latest release.`,
 		newCheck(g),
 		newLock(),
 		newUpgrade(),
+		newAuth(g),
 		newPlan(g),
 		newApply(g),
 		newDestroy(g),

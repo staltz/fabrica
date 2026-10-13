@@ -4,6 +4,8 @@
 //   - Local run history: runs.db inside your personal home repo.
 //   - The cache (git clones, unpacked commits and skills): $FABRICA_CACHE,
 //     or $XDG_CACHE_HOME/fabrica, or ~/.cache/fabrica.
+//   - The config folder (credentials, on machines without a keychain):
+//     $XDG_CONFIG_HOME/fabrica, or ~/.config/fabrica.
 package paths
 
 import (
@@ -37,6 +39,21 @@ func Cache() (string, error) {
 		return "", fmt.Errorf("couldn't find your home folder; set FABRICA_CACHE to a folder Fabrica can use as a cache: %w", err)
 	}
 	return filepath.Join(home, ".cache", "fabrica"), nil
+}
+
+// Config returns Fabrica's config folder: $XDG_CONFIG_HOME/fabrica, or
+// ~/.config/fabrica. Fabrica keeps credentials there when your system has
+// no keychain it can use. It's never inside your home repo, which is a git
+// repo you might push.
+func Config() (string, error) {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, "fabrica"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("couldn't find your home folder; set XDG_CONFIG_HOME to a folder Fabrica can keep its config in: %w", err)
+	}
+	return filepath.Join(home, ".config", "fabrica"), nil
 }
 
 // LocalRunsDB returns the path of the local run-history database.

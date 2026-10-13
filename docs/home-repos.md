@@ -158,7 +158,7 @@ The `token_hash` is a short one-way fingerprint of the token, never the token it
 
 `plan` exits with `0` when there's nothing to do, `2` when there are only changes, and `1` when there are errors. Pending handoffs aren't apply's work, so on their own they don't change the exit code, but `plan` lists them.
 
-`plan` reads the home repo as it is on disk, so you can plan your changes before you push them. When the server secret is set (`FABRICA_SERVER_SECRET`), it also notices rotated tokens. Pass `--json` for machine-readable output.
+`plan` reads the home repo as it is on disk, so you can plan your changes before you push them. When it has the server secret (saved by `fabrica auth login`, or in `FABRICA_SERVER_SECRET`), it also notices rotated tokens. Pass `--json` for machine-readable output.
 
 ## Apply
 
@@ -182,7 +182,7 @@ The next apply's refresh adopts whatever the crashed one created. On a runtime t
 
 ### Handoffs
 
-Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, Copilot automations, and Cursor automations when `CURSOR_API_KEY` isn't set). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
+Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, Copilot automations, and Cursor automations without a Cursor API key). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
 
 - Handoffs are written to `~/.cache/fabrica/handoffs/<factory>/<id>.md` (or `--handoff-dir`), readable only by you, because they contain the factory's token. Don't commit them.
 - Each one ends with the `fabrica confirm` command to run when it's done. Until then, the change is **pending** in state, and a second apply never issues the same handoff twice. If what's wanted changes again before you confirm, apply replaces the pending handoff with a new one.
@@ -192,7 +192,7 @@ Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, C
 
 ### API mode
 
-For runtimes whose provider has an API (folder providers with an `api` program, and Cursor automations with `CURSOR_API_KEY` set), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up, so a retry never makes a duplicate. On a runtime that can't list resources, a create whose ID was never learned isn't retried at all until you confirm whether it exists. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
+For runtimes whose provider has an API (folder providers with an `api` program and the credentials it declares, and Cursor automations with a Cursor API key), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up, so a retry never makes a duplicate. On a runtime that can't list resources, a create whose ID was never learned isn't retried at all until you confirm whether it exists. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
 
 Some APIs can't set up everything a resource relies on. Cursor automations, for one, only name their MCP servers. Then apply also writes what to set up by hand next to the handoffs (for Cursor, `~/.cache/fabrica/handoffs/<factory>/cursor-cloud-setup.md`), and lists it at the end. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
 
@@ -214,4 +214,4 @@ Run `fabrica plan` on a schedule too. Remote runs can't inspect the workspace, s
 
 ## Secrets
 
-Secrets never live in blueprint or home repos. The server secret comes from `FABRICA_SERVER_SECRET` (a CI secret, say), and so do runtime API keys, like `CURSOR_API_KEY`. Connector secrets are referenced by name and come from each runtime's own secret store.
+Secrets never live in blueprint or home repos. The server secret and runtime API keys, like a Cursor API key, come from environment variables (`FABRICA_SERVER_SECRET`, `CURSOR_API_KEY`; CI secrets, say), or else from your keychain, where `fabrica auth login` saves them. `fabrica auth` checks that each one works, and `fabrica auth env | gh secret set --env-file -` copies them to CI. See [Credentials](auth.md). Connector secrets are referenced by name and come from each runtime's own secret store.

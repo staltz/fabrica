@@ -83,9 +83,16 @@ type Matrix struct {
 	// ApplyModes are tried in order; the first one that works is used.
 	ApplyModes []ApplyMode
 	// FindByIdentity says the runtime's API can list resources and read
-	// their Fabrica identity back. The api mode requires it, because
-	// without it Fabrica couldn't find (or avoid duplicating) what it made.
+	// their Fabrica identity back, so Fabrica can find (and never
+	// duplicate) what it made, even after a crash.
 	FindByIdentity bool
+	// FindByRemoteID says the runtime's API can't list resources, but can
+	// read one back by its remote ID. Fabrica then finds what it made
+	// through the IDs in state. It records that a create is about to
+	// happen before it calls the API, and records the new ID right after.
+	// A create whose ID was never learned is not retried: that would risk
+	// a duplicate. The api mode needs this or FindByIdentity.
+	FindByRemoteID bool
 	SkillTransport SkillTransport
 	// MCPAuth says how the runtime can pass a token to an MCP server:
 	// TokenInHeader and/or TokenInURL. Only cloud runtimes need it.
@@ -106,6 +113,7 @@ type matrixFile struct {
 	Description    string             `yaml:"description"`
 	ApplyModes     []string           `yaml:"apply_modes"`
 	FindByIdentity bool               `yaml:"find_by_identity"`
+	FindByRemoteID bool               `yaml:"find_by_remote_id"`
 	SkillTransport string             `yaml:"skill_transport"`
 	MCPAuth        map[string]Support `yaml:"mcp_auth"`
 	Triggers       map[string]Support `yaml:"triggers"`
@@ -132,6 +140,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		Scope:          Scope(f.Kind),
 		Description:    strings.TrimSpace(f.Description),
 		FindByIdentity: f.FindByIdentity,
+		FindByRemoteID: f.FindByRemoteID,
 		SkillTransport: SkillTransport(f.SkillTransport),
 		MCPAuth:        orEmpty(f.MCPAuth),
 		Triggers:       orEmpty(f.Triggers),
@@ -168,8 +177,8 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		seenMode[mode] = true
 		m.ApplyModes = append(m.ApplyModes, mode)
 	}
-	if seenMode[API] && !m.FindByIdentity {
-		add("apply_modes: has api, but find_by_identity isn't true; api mode needs an API that can list resources and read their identity back, so Fabrica never makes duplicates")
+	if seenMode[API] && !m.FindByIdentity && !m.FindByRemoteID {
+		add("apply_modes: has api, but neither find_by_identity nor find_by_remote_id is true; api mode needs an API that can list resources and read their identity back, or at least read one back by its ID, so Fabrica never makes duplicates")
 	}
 
 	switch m.SkillTransport {

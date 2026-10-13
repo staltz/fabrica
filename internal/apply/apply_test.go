@@ -170,14 +170,14 @@ func TestFullCloudLifecycle(t *testing.T) {
 	}
 
 	// 4. Confirm one handoff with a remote ID, one without.
-	confirmed, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "trig_123", time.Now())
+	confirmed, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "trig_123", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if confirmed.Unverifiable {
 		t.Error("confirming with a remote ID shouldn't be unverifiable")
 	}
-	confirmed, err = apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[1].ID, "", time.Now())
+	confirmed, err = apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[1].ID, "", false, time.Now())
 	if err != nil || !confirmed.Unverifiable {
 		t.Fatalf("Confirm without ID = %+v, %v", confirmed, err)
 	}
@@ -414,7 +414,7 @@ func TestDeletedFactoryIsCleanedUp(t *testing.T) {
 		t.Fatalf("want 2 delete handoffs pending, got %+v", s)
 	}
 	for _, pend := range s.Pending {
-		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", time.Now()); err != nil {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", false, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -431,7 +431,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 	// One claude-code-cloud stub is confirmed, the other's create handoff
 	// is still pending.
 	s := h.state()
-	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "trig_1", time.Now()); err != nil {
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "trig_1", false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	h.w.Home.Pull()
@@ -495,7 +495,7 @@ func TestDestroyRemovesEverythingAndApplyPutsItBack(t *testing.T) {
 
 	// Once the deletes are confirmed, the next apply puts everything back.
 	for _, pend := range s.Pending {
-		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", time.Now()); err != nil {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", false, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -517,7 +517,7 @@ func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
 	h.apply()
 	for _, pend := range h.state().Pending {
-		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "trig_"+pend.ID, time.Now()); err != nil {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "trig_"+pend.ID, false, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}

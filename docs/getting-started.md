@@ -224,6 +224,7 @@ cd home && fabrica plan
 Factory pr-review (cloud)
   endpoint https://fabrica.acme.dev/pr-review
   · blueprint github.com/acme/blueprint@stable → 72ef761 (branch stable; follows the branch: merges take effect on the next run, no apply needed)
+  · cursor-cloud uses handoff mode because CURSOR_API_KEY isn't set; set it, and Fabrica manages cursor-cloud through its API instead
   claude-code-cloud: handoff mode, text-only skills, token in the url
     routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub e128f7aa2995
   cursor-cloud: handoff mode, text-only skills, token in the header
@@ -258,7 +259,7 @@ Factory pr-review: recorded the results and released the lock.
 Here's what happened:
 
 1. Apply took the factory's **lock**, by committing a `lock:` entry to `state/pr-review.yaml` and pushing it. Git only accepts a push on top of the latest commit, so if two applies race, exactly one wins, and the other stops without touching anything.
-2. Claude routines and Cursor automations have no public API for creating triggered automations yet, so instead of calling an API, Fabrica wrote a **handoff** for each: step-by-step instructions that you, or an AI with computer use, can follow.
+2. Claude routines have no API for creating triggered automations yet, and Cursor's API needs a Cursor API key, which isn't set here. So instead of calling an API, Fabrica wrote a **handoff** for each: step-by-step instructions that you, or an AI with computer use, can follow.
 3. It recorded the handoffs as **pending** in the state file and released the lock, in one commit.
 
 Open a handoff. It tells you exactly what to set up: the routine's name (its Fabrica identity), repo, trigger, connectors (including the Fabrica server with this factory's token), and the stub prompt to paste in. The prompt is tiny. It just tells the agent to call `run_begin` and then load the real routine with `routine_get`.
@@ -272,6 +273,8 @@ fabrica confirm h_19345343ec --remote-id trig_01Hx…
 ```
 
 If you can't find an ID, leave `--remote-id` out. Fabrica then tracks the resource as **unverifiable**, and `plan` says so.
+
+Cursor can skip most of this. Set `CURSOR_API_KEY` to a Cursor API key (as a CI secret, if apply runs in CI), and `cursor-cloud` switches to **api** mode: apply creates, updates and deletes the Cursor automation itself, with nothing to confirm. The one thing Cursor's API can't do is set up the automation's MCP servers, so apply writes down which ones to add to Cursor's MCP settings (here, `fabrica-pr-review`, with this factory's token), once. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
 
 ### 6. Improving the process is a merge
 

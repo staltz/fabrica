@@ -9,6 +9,8 @@ import (
 )
 
 func TestBuiltinsLoad(t *testing.T) {
+	t.Setenv(CursorKeyEnv, "") // without its key, cursor-cloud uses handoffs too
+	t.Setenv(CursorTokenEnv, "")
 	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-cloud", "cursor-local"}
 	got := BuiltinNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -21,7 +23,7 @@ func TestBuiltinsLoad(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 		if p.IsLocal() != (mode == API) {
-			t.Errorf("%s: local=%v but mode=%s; built-in cloud providers use handoff, local ones api", name, p.IsLocal(), mode)
+			t.Errorf("%s: local=%v but mode=%s; built-in cloud providers use handoff without their API's credentials, local ones api", name, p.IsLocal(), mode)
 		}
 	}
 }
@@ -40,6 +42,10 @@ func TestParseMatrixRejectsMistakes(t *testing.T) {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
+	}
+	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [api]\nfind_by_remote_id: true\nskill_transport: text\nmcp_auth: {url: native}\n"))
+	if err != nil || !m.FindByRemoteID {
+		t.Errorf("api mode with find_by_remote_id should be fine, got %+v, %v", m, err)
 	}
 }
 
@@ -143,6 +149,18 @@ func TestLoadFolderNeedsExecutableAPI(t *testing.T) {
 	}
 }
 
+func TestFolderProviderAPINeedsListing(t *testing.T) {
+	dir := writeFolderProvider(t, "#!/bin/sh\n")
+	yaml := "kind: cloud\napply_modes: [api]\nfind_by_remote_id: true\nskill_transport: text\nmcp_auth: {header: native}\n"
+	if err := os.WriteFile(filepath.Join(dir, "provider.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadFolder("acme-runner", dir)
+	if err == nil || !strings.Contains(err.Error(), "needs find_by_identity: true") {
+		t.Errorf("the api protocol has no get operation, so find_by_remote_id alone isn't enough; got %v", err)
+	}
+}
+
 func TestAPIClientProtocol(t *testing.T) {
 	// A tiny provider written in shell. It echoes back canned responses
 	// and records the request it got, so we can check what Fabrica sent.
@@ -163,7 +181,11 @@ esac
 	if mode, _ := p.Mode(); mode != API {
 		t.Fatalf("mode = %s, want api", mode)
 	}
-	api, _ := p.API()
+	client, _ := p.API()
+	api, ok := client.(*APIClient)
+	if !ok {
+		t.Fatalf("a folder provider's API should be its api program, got %T", client)
+	}
 	ctx := context.Background()
 
 	list, err := api.List(ctx, "pr-review", "https://f.example/pr-review")

@@ -1,13 +1,19 @@
 # Cursor automations (cloud agents that fire on a trigger).
 #
-# Our best reading of the Cursor docs as of October 2026. Automations can
-# fire on schedules and on GitHub events, among others. Cursor's Cloud Agents
-# API can launch agents, but there's no documented API to create or list
-# automations, so Fabrica uses handoff.
+# With CURSOR_API_KEY set, Fabrica manages automations through Cursor's
+# Automations API, the one Cursor's Terraform provider uses. That API can
+# create, read, update and delete an automation, but not list them, so
+# Fabrica finds what it made by the IDs in state (find_by_remote_id).
+# Without the key, it falls back to handoffs.
+#
+# The triggers and tools are what that API offers as of October 2026: no
+# pull request "reopened" event, and no Linear tool (Linear only triggers
+# automations), so Linear needs its MCP fallback.
 kind: cloud
 description: Cursor automations (cloud agents)
-apply_modes: [handoff]
+apply_modes: [api, handoff]
 find_by_identity: false
+find_by_remote_id: true
 skill_transport: text
 mcp_auth:
   header: native
@@ -16,13 +22,12 @@ triggers:
   schedule: native
   github.pull_request.opened: native
   github.pull_request.synchronize: native
-  github.pull_request.reopened: native
   github.pull_request.labeled: native
   github.push: native
 connectors:
   github: native
   slack: native
-  linear: native
+  linear: emulated
   mcp.http: native
   # Cloud agents don't support SSE servers, and stdio servers would need
   # to be installed inside the agent's sandbox.

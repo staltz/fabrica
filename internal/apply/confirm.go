@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,12 +16,15 @@ type Confirmed struct {
 	// Unverifiable is true when a create or update was confirmed without
 	// a remote ID.
 	Unverifiable bool
+	// Absent is true when an unfinished API create was confirmed as not
+	// having happened, so the next apply may create it.
+	Absent bool
 }
 
 // Confirm closes a pending handoff: the person (or computer-use agent)
 // followed the instructions, so the change is now real. Like apply, it
 // refuses to write while another apply holds the factory's lock.
-func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (*Confirmed, error) {
+func Confirm(ctx context.Context, homeDir, id, remoteID string, absent bool, now time.Time) (*Confirmed, error) {
 	r, err := OpenRepo(ctx, homeDir)
 	if err != nil {
 		return nil, err
@@ -46,6 +50,9 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (
 	if name == "" {
 		return nil, fmt.Errorf("there's no pending handoff %s in %s; `fabrica plan` lists the pending ones", id, homeDir)
 	}
+	if absent && remoteID != "" {
+		return nil, errors.New("pass either --remote-id or --absent, not both")
+	}
 
 	result := &Confirmed{Factory: name}
 	err = r.Update(ctx, name, "fabrica: confirm "+id, func(s *home.State) error {
@@ -59,6 +66,12 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (
 		p := s.Pending[i]
 		result.Pending = p
 		s.Pending = append(s.Pending[:i], s.Pending[i+1:]...)
+		if p.Uncertain {
+			return confirmUncertain(s, result, p, id, remoteID, absent, now)
+		}
+		if absent {
+			return fmt.Errorf("--absent is for an API create whose result was never recorded; %s is a handoff, so follow it and confirm it", id)
+		}
 		switch p.Action {
 		case "create", "update":
 			if p.Shape == nil {
@@ -88,4 +101,30 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, now time.Time) (
 		return nil, err
 	}
 	return result, nil
+}
+
+// confirmUncertain closes an API create whose result was never learned.
+// With a remote ID, the resource is recorded and later plans can look it
+// up. With absent, nothing was created, and the next apply may try again.
+// Neither means Fabrica won't guess.
+func confirmUncertain(s *home.State, result *Confirmed, p home.Pending, id, remoteID string, absent bool, now time.Time) error {
+	if p.Action != "create" {
+		return fmt.Errorf("pending %s is marked as an unfinished create but its action is %q; only Fabrica should write state files", id, p.Action)
+	}
+	if absent {
+		result.Absent = true
+		return nil
+	}
+	if remoteID == "" {
+		return fmt.Errorf("a create of %s on %s may have happened, and its ID was never recorded. If the resource exists, run `fabrica confirm %s --remote-id <its ID>`. If it doesn't, run `fabrica confirm %s --absent`", p.Resource, p.Runtime, id, id)
+	}
+	if p.Shape == nil {
+		return fmt.Errorf("pending %s has no shape recorded; only Fabrica should write state files", id)
+	}
+	upsertResource(s, home.Resource{
+		ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo,
+		RemoteID: remoteID, Mode: "api", BlueprintCommit: p.BlueprintCommit,
+		TokenHash: p.TokenHash, Shape: *p.Shape, AppliedAt: now.UTC().Truncate(time.Second),
+	})
+	return nil
 }

@@ -19,6 +19,8 @@ Every command has `--help`.
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. |
+| `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
+| `CURSOR_ENDPOINT` | The address of Cursor's API. Default `https://api2.cursor.sh`. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
 | `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
 
@@ -87,13 +89,13 @@ It reads the home repo as it is on disk, and never changes anything.
 
 ## `fabrica apply [factory…]`
 
-Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. For your personal home repo, it also writes the local tools' configs.
+Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it commits state before each create and again once it has the new ID. A create whose answer is lost is not retried; `plan` reports it, and `fabrica confirm` says whether the resource exists. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. For your personal home repo, it also writes the local tools' configs.
 
 | Flag | What it does |
 |---|---|
 | `--handoff-dir <folder>` | Where to write handoff instructions. Default `$FABRICA_CACHE/handoffs`. |
 
-Cloud factories need `FABRICA_SERVER_SECRET`. Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
+Cloud factories need `FABRICA_SERVER_SECRET`, and Cursor automations are only managed through Cursor's API with `CURSOR_API_KEY` (otherwise they get handoffs). Apply refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed yet. Exits `1` if any factory was skipped because of errors, or failed.
 
 ## `fabrica destroy [factory…]`
 
@@ -117,13 +119,14 @@ Closes a pending handoff once someone has followed its instructions.
 
 | Flag | What it does |
 |---|---|
-| `--remote-id <id>` | The runtime's own ID for the resource you created or updated. Without one, the resource is tracked as unverifiable. Not allowed for deletes. |
+| `--remote-id <id>` | The runtime's own ID for the resource you created or updated. Without one, a handoff's resource is tracked as unverifiable. Not allowed for deletes. For an API create whose ID was never recorded, this is how you tell Fabrica the resource does exist. |
+| `--absent` | The unfinished API create did not happen (you looked, and it isn't there). The next apply may create it. Not for handoffs, and not together with `--remote-id`. |
 
 Confirm commits and pushes the factory's state, and refuses while an apply holds its lock.
 
 ## `fabrica unlock <factory>`
 
-Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created.
+Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created. A create on a runtime that can't list resources, whose ID was never recorded, is not adopted: `plan` reports it, and apply won't retry it until you confirm whether it exists.
 
 ## `fabrica mcp`
 

@@ -24,15 +24,19 @@ type Resource struct {
 	// "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app". The
 	// runtime must store it somewhere it can read back (a name or metadata
 	// field), so `list` can return it.
-	Identity    string              `json:"identity"`
-	Factory     string              `json:"factory"`
-	Routine     string              `json:"routine"`
-	Repo        string              `json:"repo"`
-	Trigger     ResourceTrigger     `json:"trigger"`
-	Connectors  []ResourceConnector `json:"connectors"`
-	Fabrica     ResourceFabrica     `json:"fabrica"`
-	Prompt      string              `json:"prompt"`
-	Fingerprint string              `json:"fingerprint"`
+	Identity   string              `json:"identity"`
+	Factory    string              `json:"factory"`
+	Routine    string              `json:"routine"`
+	Repo       string              `json:"repo"`
+	Trigger    ResourceTrigger     `json:"trigger"`
+	Connectors []ResourceConnector `json:"connectors"`
+	Fabrica    ResourceFabrica     `json:"fabrica"`
+	// Memory is "on" or "off" on runtimes with their own memory feature
+	// (memory: native), mirroring the routine's memory: key, and empty
+	// elsewhere.
+	Memory      string `json:"memory,omitempty"`
+	Prompt      string `json:"prompt"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 // ResourceTrigger is the trigger to install.
@@ -89,6 +93,65 @@ type response struct {
 	Resources []RemoteResource `json:"resources,omitempty"`
 }
 
+// RuntimeAPI is how Fabrica creates, updates and deletes a cloud runtime's
+// resources itself. Every API can also find what it made, in one of two
+// ways: a Lister (find_by_identity) or a Getter (find_by_remote_id).
+type RuntimeAPI interface {
+	// Create creates a resource and returns the runtime's ID for it.
+	// An error that isn't a rejected create (see RejectedCreate) is
+	// uncertain: the resource may exist and the answer was lost. A runtime
+	// that can only look resources up by ID must not retry those.
+	Create(ctx context.Context, res Resource) (string, error)
+	// Update replaces an existing resource's trigger, connectors and prompt.
+	Update(ctx context.Context, remoteID string, res Resource) error
+	// Delete deletes a resource. Deleting one that's already gone is fine.
+	Delete(ctx context.Context, factory, remoteID string) error
+}
+
+// Lister is an API that can list every resource belonging to a factory
+// endpoint, with the identity each one carries.
+type Lister interface {
+	List(ctx context.Context, factory, endpoint string) ([]RemoteResource, error)
+}
+
+// Getter is an API that can't list resources, but can read one back by
+// its remote ID. Get returns nil, and no error, when it's gone.
+type Getter interface {
+	Get(ctx context.Context, remoteID string) (*RemoteResource, error)
+}
+
+// rejectedCreate wraps a Create error that proves the runtime did not
+// create the resource, so trying again is safe. Any other error from
+// Create is uncertain.
+type rejectedCreate struct{ error }
+
+func (e *rejectedCreate) Unwrap() error { return e.error }
+
+// RejectedCreate marks err as a definite refusal: Create did not create
+// the resource. Timeouts, lost responses and failures after the runtime
+// may already have committed must not be wrapped with it.
+func RejectedCreate(err error) error {
+	if err == nil || IsRejectedCreate(err) {
+		return err
+	}
+	return &rejectedCreate{err}
+}
+
+// IsRejectedCreate reports whether Create definitely did not create the
+// resource.
+func IsRejectedCreate(err error) bool {
+	var r *rejectedCreate
+	return errors.As(err, &r)
+}
+
+// ManualSetup is an API whose resources rely on something it can't set up
+// itself, so a person has to.
+type ManualSetup interface {
+	// Setup describes, in Markdown, what one factory's resources need set
+	// up by hand, or returns "" when there's nothing to do.
+	Setup(factory string, resources []Resource) string
+}
+
 // APIClient runs a folder provider's `api` program.
 //
 // The protocol is deliberately boring, so you can write a provider in any
@@ -108,12 +171,16 @@ type APIClient struct {
 	Timeout time.Duration
 }
 
-// API returns a client for the provider's api program.
-func (p *Provider) API() (*APIClient, error) {
-	if p.APIPath == "" {
-		return nil, fmt.Errorf("runtime %s has no api program", p.Name())
+// API returns a client for the runtime's API: a folder provider's api
+// program, or a built-in runtime's API client.
+func (p *Provider) API() (RuntimeAPI, error) {
+	switch {
+	case p.APIPath != "":
+		return &APIClient{Path: p.APIPath, Timeout: 2 * time.Minute}, nil
+	case p.builtinAPI != nil:
+		return p.builtinAPI()
 	}
-	return &APIClient{Path: p.APIPath, Timeout: 2 * time.Minute}, nil
+	return nil, fmt.Errorf("runtime %s has no api program", p.Name())
 }
 
 // List asks the runtime for every resource belonging to one factory

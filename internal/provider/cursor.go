@@ -280,6 +280,19 @@ type cursorWorkflow struct {
 	Prompts       []cursorPrompt   `json:"prompts"`
 	GitConfig     *cursorGitConfig `json:"gitConfig,omitempty"`
 	MemoryEnabled *bool            `json:"memoryEnabled,omitempty"`
+	// ModelSelection is the model the automation runs on. Without it,
+	// Cursor picks (Auto).
+	ModelSelection *cursorModelSelection `json:"modelSelection,omitempty"`
+}
+
+type cursorModelSelection struct {
+	ModelID    string                 `json:"modelId"`
+	Parameters []cursorModelParameter `json:"parameters,omitempty"`
+}
+
+type cursorModelParameter struct {
+	ID    string `json:"id"`
+	Value string `json:"value"`
 }
 
 type cursorPrompt struct {
@@ -348,9 +361,56 @@ var cursorPRActions = map[string]string{
 	"github.pull_request.synchronize": "GIT_PULL_REQUEST_ACTION_PUSHED",
 }
 
+// cursorEffortParams names each model's effort parameter in Cursor's model
+// catalog, for the models where it isn't "effort".
+var cursorEffortParams = map[string]string{
+	"claude-haiku-5-5":  "reasoning_effort",
+	"claude-sonnet-5-5": "reasoning_effort",
+	"gemini-3.8-flash":  "reasoning_effort",
+	"grok-4.7":          "reasoning_effort",
+	"glm-5.2":           "reasoning",
+	"glm-5p3":           "reasoning",
+	"glm-5p3-flash":     "reasoning",
+	"gpt-5.1":           "reasoning",
+	"gpt-5.2":           "reasoning",
+	"gpt-5.3-codex":     "reasoning",
+	"gpt-5.4":           "reasoning",
+	"gpt-5.4-mini":      "reasoning",
+	"gpt-5.4-nano":      "reasoning",
+	"gpt-5.5":           "reasoning",
+	"gpt-5.6-luna":      "reasoning",
+	"gpt-5.6-sol":       "reasoning",
+	"gpt-5.6-terra":     "reasoning",
+	"kimi-k3":           "reasoning",
+}
+
+// cursorExtraHigh lists the models whose catalog calls xhigh "extra-high".
+var cursorExtraHigh = map[string]bool{
+	"gpt-5.2": true, "gpt-5.3-codex": true, "gpt-5.4": true, "gpt-5.5": true,
+}
+
+// cursorModelSelectionFor is the model selection for a stub's model.
+func cursorModelSelectionFor(m *ResourceModel) *cursorModelSelection {
+	if m == nil {
+		return nil
+	}
+	sel := &cursorModelSelection{ModelID: m.Name}
+	if m.Effort != "" {
+		param, value := cursorEffortParams[m.Name], m.Effort
+		if param == "" {
+			param = "effort"
+		}
+		if value == "xhigh" && cursorExtraHigh[m.Name] {
+			value = "extra-high"
+		}
+		sel.Parameters = []cursorModelParameter{{ID: param, Value: value}}
+	}
+	return sel
+}
+
 // cursorWorkflowFor builds the automation for a stub: its trigger on the
 // stub's repo, the Fabrica MCP server and the stub's connectors as
-// actions, the runtime's memory setting, and the stub prompt.
+// actions, the runtime's memory setting, its model, and the stub prompt.
 func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
 	wf := &cursorWorkflow{
 		Prompts: []cursorPrompt{{Prompt: res.Prompt}},
@@ -397,6 +457,7 @@ func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
 		enabled := res.Memory == "on"
 		wf.MemoryEnabled = &enabled
 	}
+	wf.ModelSelection = cursorModelSelectionFor(res.Model)
 	return wf, nil
 }
 

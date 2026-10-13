@@ -197,6 +197,7 @@ type HandoffData struct {
 	Trigger     HandoffTrigger
 	Connectors  []HandoffConnector
 	Memory      HandoffMemory
+	Model       HandoffModel
 	Fabrica     HandoffFabrica
 	Prompt      string
 	Fingerprint string
@@ -231,6 +232,18 @@ type HandoffMemory struct {
 	Support string
 	// Setup is a one-line description of what to set, like "turn the
 	// runtime's own memory **off**: …".
+	Setup string
+}
+
+// HandoffModel describes the model to run the stub on.
+type HandoffModel struct {
+	// Name is the model, the first of the routine's models: that the
+	// runtime has. Empty means the runtime's default.
+	Name string
+	// Effort is the effort to run it at. Empty means the model's default.
+	Effort string
+	// Setup is a one-line description of what to pick, like "pick model
+	// `claude-opus-5-5`, with effort `high`".
 	Setup string
 }
 

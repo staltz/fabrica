@@ -474,6 +474,9 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		if cur.Memory != shape.Memory {
 			reasons = append(reasons, fmt.Sprintf("the runtime's memory should be %s", describeMemory(shape.Memory)))
 		}
+		if cur.Model != shape.Model || cur.Effort != shape.Effort {
+			reasons = append(reasons, "the model should be "+describeModel(shape.Model, shape.Effort))
+		}
 	}
 	if len(reasons) == 0 {
 		if cur.Fingerprint == "" {
@@ -490,6 +493,16 @@ func describeMemory(setting string) string {
 		return "left to Fabrica"
 	}
 	return setting
+}
+
+func describeModel(model, effort string) string {
+	switch {
+	case model == "":
+		return "the runtime's default"
+	case effort == "":
+		return model
+	}
+	return model + " (" + effort + ")"
 }
 
 func describeTrigger(on, cron string) string {

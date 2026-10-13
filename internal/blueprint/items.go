@@ -156,6 +156,10 @@ type Routine struct {
 	// turned on where the routine needs it and off where it doesn't, and
 	// Fabrica keeps the memory itself where the runtime has none.
 	Memory bool
+	// Models are the models the routine would like to run on, in order of
+	// preference: each runtime runs it on the first one it has. Empty means
+	// every runtime uses its own default model.
+	Models []Model
 	// Prompt is the routine's instructions (the Markdown body).
 	Prompt string
 }
@@ -170,6 +174,28 @@ func (r *Routine) Param(name string) (Param, bool) {
 		}
 	}
 	return Param{}, false
+}
+
+// Model is one entry of a routine's models: a model and the effort to run
+// it at.
+type Model struct {
+	// Name is the runtime's model ID, like claude-opus-5-5, or
+	// provider.DefaultModel for the runtime's own default.
+	Name string
+	// Effort is one of provider.Efforts, or empty for the model's default
+	// effort.
+	Effort string
+}
+
+// IsDefault reports whether the entry means the runtime's own default.
+func (m Model) IsDefault() bool { return m.Name == provider.DefaultModel }
+
+// String writes the entry like "claude-opus-5-5 (high)".
+func (m Model) String() string {
+	if m.Effort == "" {
+		return m.Name
+	}
+	return m.Name + " (" + m.Effort + ")"
 }
 
 // Rule is an always-on instruction, in Cursor's rule format.

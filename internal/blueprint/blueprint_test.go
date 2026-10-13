@@ -130,6 +130,21 @@ func TestStrictErrors(t *testing.T) {
 		{"undeclared param", "routine.invalid", "{{params.who}}", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: github.push }\n---\nHi {{params.who}}\n",
 		}},
+		{"unknown effort", "routine.invalid", `effort "hihg" isn't one Fabrica knows`, map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: claude-opus-5-5, effort: hihg }]\n---\nHi\n",
+		}},
+		{"unknown key in a model", "routine.invalid", `unknown key "efort"`, map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: claude-opus-5-5, efort: high }]\n---\nHi\n",
+		}},
+		{"model after default", "routine.invalid", "put default last", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [default, gpt-5.5]\n---\nHi\n",
+		}},
+		{"model listed twice", "routine.invalid", "lists gpt-5.5 (high) twice", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: gpt-5.5, effort: high }, { model: gpt-5.5, effort: high }]\n---\nHi\n",
+		}},
+		{"default with an effort", "routine.invalid", "default can't have an effort", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: default, effort: high }]\n---\nHi\n",
+		}},
 		{"schedule without cron", "routine.invalid", "cron", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: schedule }\n---\nHi\n",
 		}},

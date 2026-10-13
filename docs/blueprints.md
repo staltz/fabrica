@@ -196,7 +196,7 @@ Skills often mention other skills in their text (`/changelog`, "use the `test` s
 
 ## Routines
 
-A routine is **trigger + skills + connectors + side effects + params + a prompt**, written as abstract intent, independent of any runtime.
+A routine is **trigger + skills + connectors + side effects + params + a prompt** (and, if you like, the models to run it on), written as abstract intent, independent of any runtime.
 
 ```markdown
 <!-- routines/pr-review.md -->
@@ -211,6 +211,10 @@ side_effects:
 params:
   slack_channel: { required: false, default: "#eng", description: Where to post a summary }
 memory: false                                       # optional; true keeps notes between runs
+models:                                             # optional; the first one a runtime has wins
+  - { model: claude-opus-5-5, effort: high }
+  - { model: gpt-5.6-sol, effort: high }
+  - default                                         # anywhere else, the runtime's own default
 ---
 Review the PR using the `pr-review` skill, post one comment, then tell {{params.slack_channel}}.
 ```
@@ -224,6 +228,7 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | `side_effects` | What the routine may do to the outside world. Each is `connector.action`, optionally with settings. Its connector must be in `connectors:`. |
 | `params` | Values factories can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
 | `memory` | Optional. `true` if the routine keeps notes between runs; default `false`. See [Memory](#memory). |
+| `models` | Optional. The models to run the routine on, each with an effort, in order of preference. See [Models](#models). |
 
 The Markdown body is the routine's prompt. It must not be empty.
 
@@ -267,6 +272,28 @@ The routine file is the source of truth, and every runtime mirrors it:
 - A runtime whose matrix doesn't list `memory` can't run a routine with `memory: true`: that's an error in `check` and `plan`.
 
 Fabrica's memories are capped at 16 KiB each, since every run reads the whole thing. Agents are told to keep notes, not logs; never to keep secrets; and never to keep instructions that came from untrusted input. Your blueprint's own process (what to remember, and when) belongs in the routine's prompt.
+
+### Models
+
+Some routines need a strong model thinking hard, and others are fine on a fast, cheap one. A routine can say which, as a list of models and efforts in order of preference:
+
+```yaml
+models:
+  - { model: claude-opus-5-5, effort: high }
+  - { model: gpt-5.6-sol, effort: xhigh }
+  - claude-sonnet-5-5                       # its default effort
+  - default
+```
+
+Each runtime runs the routine on the **first** entry it has: that model, at that effort. Runtimes list the models they have, and the efforts each one can run at, in their [capability matrix](providers.md#capability-matrices), so `fabrica plan` shows which one every runtime picked.
+
+- **An entry** is either `{ model: <id>, effort: <level> }`, or a model's ID on its own, which means that model at its default effort. Model IDs are the runtime's own, like `claude-opus-5-5` or `gpt-5.5`.
+- **Efforts** are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. Runtimes call some of them something else (Cursor says `extra-high` for some models), and their providers translate. An entry only matches a runtime that has that model *at that effort*.
+- **`default`** matches every runtime, and means the runtime's own default model. It can only come last, since nothing after it would ever be picked.
+- If a runtime has none of the entries, that's an error in `check` and `plan`, which says what the runtime has instead. End the list with `default` if the routine can run anywhere.
+- With no `models:` at all, every runtime uses its own default.
+
+The model is part of the stub's [shape](concepts.md#stubs-and-shapes) on runtimes that let a stub pick one, so changing it there means a re-apply, and `plan` shows the stub as an update. Local runtimes can't pick one (hooks run inside the session you already have open, on its model), so only `default` matches there. The same goes for Copilot automations, which always run on Copilot's Auto.
 
 ### Checks
 

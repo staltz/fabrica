@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/staltz/fabrica/internal/names"
+	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/yamlx"
 )
 
@@ -99,6 +100,7 @@ type routineFile struct {
 	SideEffects []yaml.Node          `yaml:"side_effects"`
 	Params      map[string]paramFile `yaml:"params"`
 	Memory      bool                 `yaml:"memory"`
+	Models      []yaml.Node          `yaml:"models"`
 }
 
 type triggerFile struct {
@@ -203,6 +205,23 @@ func parseRoutine(data []byte, name, file string) *Routine {
 	}
 	sort.Slice(r.Params, func(i, j int) bool { return r.Params[i].Name < r.Params[j].Name })
 
+	// Models.
+	seenModels := map[Model]bool{}
+	for i := range f.Models {
+		m, err := parseModel(&f.Models[i])
+		if err != nil {
+			return fail("models: %v", err)
+		}
+		switch {
+		case seenModels[m]:
+			return fail("models: lists %s twice", m)
+		case len(r.Models) > 0 && r.Models[len(r.Models)-1].IsDefault():
+			return fail("models: %s comes after default, which every runtime has, so it would never be picked; put default last", m)
+		}
+		seenModels[m] = true
+		r.Models = append(r.Models, m)
+	}
+
 	// Side effects.
 	connectorSet := map[string]bool{}
 	for _, c := range r.Connectors {
@@ -276,6 +295,49 @@ func parseSideEffect(node *yaml.Node) (SideEffect, error) {
 		return se, fmt.Errorf("%q isn't a valid side effect; write it as connector.action, like github.pr_comment", se.Name)
 	}
 	return se, nil
+}
+
+// parseModel reads one entry of a routine's models: either a model's name
+// (or default), or `{ model: name, effort: level }`.
+func parseModel(node *yaml.Node) (Model, error) {
+	var m Model
+	switch node.Kind {
+	case yaml.ScalarNode:
+		m.Name = node.Value
+	case yaml.MappingNode:
+		for i := 0; i < len(node.Content); i += 2 {
+			k, v := node.Content[i], node.Content[i+1]
+			if v.Kind != yaml.ScalarNode {
+				return m, fmt.Errorf("line %d: %s must be a single value", v.Line, k.Value)
+			}
+			switch k.Value {
+			case "model":
+				m.Name = v.Value
+			case "effort":
+				m.Effort = v.Value
+			default:
+				return m, fmt.Errorf("line %d: unknown key %q (an entry only has model and effort)", k.Line, k.Value)
+			}
+		}
+		if m.Name == "" {
+			return m, fmt.Errorf("line %d: the entry has no model; write it like `{ model: claude-opus-5-5, effort: high }`", node.Line)
+		}
+	default:
+		return m, fmt.Errorf("line %d: each entry is a model's name, default, or `{ model: name, effort: level }`", node.Line)
+	}
+	if m.IsDefault() {
+		if m.Effort != "" {
+			return m, fmt.Errorf("line %d: default can't have an effort: it means whatever the runtime picks, effort included", node.Line)
+		}
+		return m, nil
+	}
+	if err := provider.CheckModelName(m.Name); err != nil {
+		return m, fmt.Errorf("line %d: %v", node.Line, err)
+	}
+	if m.Effort != "" && !provider.IsEffort(m.Effort) {
+		return m, fmt.Errorf("line %d: effort %q isn't one Fabrica knows; use %s", node.Line, m.Effort, strings.Join(provider.Efforts, ", "))
+	}
+	return m, nil
 }
 
 // ruleFile is the frontmatter of a rule in YAML form.

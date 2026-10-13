@@ -30,13 +30,17 @@ func TestBuiltinsLoad(t *testing.T) {
 
 func TestParseMatrixRejectsMistakes(t *testing.T) {
 	cases := map[string]string{
-		"emulated trigger":  "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {schedule: emulated}\n",
-		"api without find":  "kind: cloud\napply_modes: [api]\nskill_transport: text\nmcp_auth: {url: native}\n",
-		"cloud directory":   "kind: cloud\napply_modes: [handoff]\nskill_transport: directory\nmcp_auth: {url: native}\n",
-		"no token path":     "kind: cloud\napply_modes: [handoff]\nskill_transport: text\n",
-		"unknown key":       "kind: cloud\napply_mode: [handoff]\n",
-		"bad support value": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nconnectors: {github: yes}\n",
-		"bad memory value":  "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmemory: sometimes\n",
+		"emulated trigger":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {schedule: emulated}\n",
+		"api without find":    "kind: cloud\napply_modes: [api]\nskill_transport: text\nmcp_auth: {url: native}\n",
+		"cloud directory":     "kind: cloud\napply_modes: [handoff]\nskill_transport: directory\nmcp_auth: {url: native}\n",
+		"no token path":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\n",
+		"unknown key":         "kind: cloud\napply_mode: [handoff]\n",
+		"bad support value":   "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nconnectors: {github: yes}\n",
+		"bad memory value":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmemory: sometimes\n",
+		"model named default": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {default: []}\n",
+		"bad model name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {Opus 5: []}\n",
+		"unknown effort":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [extra-high]}\n",
+		"effort twice":        "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [high, high]}\n",
 	}
 	for name, yaml := range cases {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {
@@ -63,6 +67,34 @@ func TestMemorySupport(t *testing.T) {
 	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\n"))
 	if err != nil || m.Memory != Unsupported {
 		t.Errorf("a matrix without memory: should mean unsupported, got %q, %v", m.Memory, err)
+	}
+}
+
+func TestModels(t *testing.T) {
+	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [low, high], composer-2.5: []}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		model, effort string
+		want          bool
+	}{
+		{"gpt-5.5", "", true}, {"gpt-5.5", "high", true}, {"gpt-5.5", "max", false},
+		{"composer-2.5", "", true}, {"composer-2.5", "low", false}, {"claude-opus-5-5", "", false},
+	} {
+		if got := m.HasModel(c.model, c.effort); got != c.want {
+			t.Errorf("HasModel(%q, %q) = %v, want %v", c.model, c.effort, got, c.want)
+		}
+	}
+	if got := strings.Join(m.ModelNames(), ","); got != "composer-2.5,gpt-5.5" {
+		t.Errorf("ModelNames = %s", got)
+	}
+	// Local routines run in the session that's open, on its model.
+	for _, name := range BuiltinNames() {
+		p, _ := Builtin(name)
+		if p.IsLocal() && len(p.Matrix.Models) > 0 {
+			t.Errorf("%s lists models, but a local runtime can't pick one for a routine", name)
+		}
 	}
 }
 
@@ -220,6 +252,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 				Trigger:        HandoffTrigger{On: "github.pull_request.opened", Description: "when a pull request is opened"},
 				Connectors:     []HandoffConnector{{Name: "github", Setup: "the built-in GitHub integration"}},
 				Fabrica:        HandoffFabrica{URL: "https://fabrica.acme.dev/pr-review/t/tok"},
+				Model:          HandoffModel{Name: "m", Effort: "high", Setup: "pick model `m`, with effort `high`"},
 				Prompt:         "line one\nline two",
 				ConfirmCommand: "fabrica confirm h_abc --remote-id <id>",
 			})
@@ -234,6 +267,9 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			}
 			if action != "delete" && !strings.Contains(out, "6. Memory: ") {
 				t.Errorf("%s %s: handoff doesn't say what to do with the runtime's memory:\n%s", name, action, out)
+			}
+			if action != "delete" && len(p.Matrix.Models) > 0 && !strings.Contains(out, "7. Model: pick model `m`, with effort `high`.") {
+				t.Errorf("%s %s: handoff doesn't say which model to pick:\n%s", name, action, out)
 			}
 		}
 	}

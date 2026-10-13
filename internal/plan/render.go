@@ -216,6 +216,9 @@ func describeEvaluation(ev *stub.Evaluation) string {
 	if ev.Memory.Support != "" {
 		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
 	}
+	if ev.Model.Name != "" {
+		parts = append(parts, "model "+ev.Model.String())
+	}
 	parts = append(parts, "stub "+ev.Shape.Fingerprint())
 	return strings.Join(parts, " · ")
 }

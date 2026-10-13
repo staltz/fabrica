@@ -16,7 +16,7 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 {{- else -}}
 # {{if eq .Action "create"}}Create{{else}}Update{{end}} Claude routine for `{{.Routine}}` on `{{.Repo}}`
 
-{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors or memory setting), so the routine on claude.ai needs updating. Until it is, the Fabrica server refuses its runs.
+{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting or model), so the routine on claude.ai needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
 1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}.
@@ -29,13 +29,14 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
 6. Memory: {{if .Memory.Needed}}this routine keeps notes between runs, and Fabrica keeps them for it (they come with `routine_get`), so there's nothing to turn on.{{else}}this routine doesn't use memory.{{end}} If the routine has a memory setting of its own, leave it **off**.
-7. Prompt. Replace the whole prompt with this, exactly:
+7. Model: {{.Model.Setup}}.
+8. Prompt. Replace the whole prompt with this, exactly:
 
    ```
 {{indent 3 .Prompt}}
    ```
 
-8. Save it, copy the routine's ID (it looks like `trig_…`), and tell Fabrica you're done:
+9. Save it, copy the routine's ID (it looks like `trig_…`), and tell Fabrica you're done:
 
    ```
    {{.ConfirmCommand}}

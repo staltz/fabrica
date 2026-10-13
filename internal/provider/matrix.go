@@ -106,6 +106,12 @@ type Matrix struct {
 	// off to match the routine; Emulated means Fabrica keeps the memory
 	// itself and serves it over MCP. Not listed means unsupported.
 	Memory Support
+	// Models are the models a stub can ask the runtime to run its routine
+	// on, each with the efforts it can run at (empty when the runtime has
+	// no effort setting for it). A routine runs on the first of its models:
+	// that is listed here. Not listed means the runtime picks the model
+	// itself, so only a routine's `default` entry matches.
+	Models map[string][]string
 	// Credentials are what the runtime's API needs, like an API key, sorted
 	// by variable name. Without every one of them, api mode is unavailable
 	// and the runtime falls back to its next apply mode.
@@ -145,6 +151,7 @@ type matrixFile struct {
 	Connectors     map[string]Support        `yaml:"connectors"`
 	SideEffects    map[string]Support        `yaml:"side_effects"`
 	Memory         Support                   `yaml:"memory"`
+	Models         map[string][]string       `yaml:"models"`
 	Credentials    map[string]credentialFile `yaml:"credentials"`
 }
 
@@ -161,7 +168,39 @@ var (
 	connectorKeyRe  = regexp.MustCompile(`^([a-z0-9]+(-[a-z0-9]+)*|mcp\.(http|sse|stdio))$`)
 	sideEffectKeyRe = regexp.MustCompile(`^(\*|[a-z0-9]+(-[a-z0-9]+)*\.(\*|[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*))$`)
 	envNameRe       = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	modelNameRe     = regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*$`)
 )
+
+// DefaultModel is the entry in a routine's models: that matches every
+// runtime and means "the runtime's own default model". No model can have
+// this name.
+const DefaultModel = "default"
+
+// Efforts are the effort levels, from least to most. Runtimes name some of
+// them differently (like "extra-high" for xhigh), and their providers
+// translate, so blueprints and matrices use one set of words.
+var Efforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+// IsEffort reports whether s is one of Efforts.
+func IsEffort(s string) bool {
+	for _, e := range Efforts {
+		if s == e {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckModelName says what's wrong with a model name, if anything.
+func CheckModelName(name string) error {
+	switch {
+	case name == DefaultModel:
+		return fmt.Errorf("%q isn't a model, it means the runtime's own default", name)
+	case !modelNameRe.MatchString(name):
+		return fmt.Errorf("%q isn't a valid model name; use the runtime's model ID, in lowercase letters, digits, dots, hyphens and underscores (like claude-opus-5-5 or gpt-5.5)", name)
+	}
+	return nil
+}
 
 // ParseMatrix reads a provider.yaml. Unknown keys and unknown values are
 // errors, like everywhere else in Fabrica.
@@ -275,6 +314,8 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		add("memory: is %q; use native, emulated or unsupported", f.Memory)
 	}
 
+	m.Models = parseModels(f.Models, add)
+
 	m.Credentials = parseCredentials(f.Credentials, add)
 	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API]) {
 		add("credentials: are only for a cloud runtime's API, so they need kind: cloud and api in apply_modes")
@@ -288,6 +329,28 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 }
 
 func (s Support) valid() bool { return s == Native || s == Emulated || s == Unsupported }
+
+// parseModels checks the models: entries.
+func parseModels(in map[string][]string, add func(string, ...any)) map[string][]string {
+	out := map[string][]string{}
+	for name, efforts := range in {
+		if err := CheckModelName(name); err != nil {
+			add("models: %v", err)
+		}
+		seen := map[string]bool{}
+		for _, e := range efforts {
+			switch {
+			case !IsEffort(e):
+				add("models.%s: effort %q isn't one Fabrica knows; use %s", name, e, strings.Join(Efforts, ", "))
+			case seen[e]:
+				add("models.%s: lists effort %q twice", name, e)
+			}
+			seen[e] = true
+		}
+		out[name] = efforts
+	}
+	return out
+}
 
 // parseCredentials checks the credentials: entries and sorts them.
 func parseCredentials(in map[string]credentialFile, add func(string, ...any)) []Credential {
@@ -358,6 +421,35 @@ func lookup(m map[string]Support, key string) Support {
 		return s
 	}
 	return Unsupported
+}
+
+// HasModel reports whether the runtime can run a stub on model at effort.
+// An empty effort means the model's default effort, which every listed
+// model has.
+func (m *Matrix) HasModel(model, effort string) bool {
+	efforts, ok := m.Models[model]
+	if !ok {
+		return false
+	}
+	if effort == "" {
+		return true
+	}
+	for _, e := range efforts {
+		if e == effort {
+			return true
+		}
+	}
+	return false
+}
+
+// ModelNames lists the runtime's models, sorted.
+func (m *Matrix) ModelNames() []string {
+	out := make([]string, 0, len(m.Models))
+	for name := range m.Models {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TokenPlacement picks how to pass the factory token: in a header when

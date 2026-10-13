@@ -196,3 +196,74 @@ func TestMemoryOnRuntimeWithoutIt(t *testing.T) {
 		t.Errorf("want a memory error, got:\n%s", e.Diags)
 	}
 }
+
+func withModels(models string) string {
+	return strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nmodels: "+models+"\n", 1)
+}
+
+func TestModelIsTheFirstTheRuntimeHas(t *testing.T) {
+	f := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: gpt-5.6-sol, effort: high }, { model: claude-opus-5-5, effort: max }, claude-sonnet-5-5, default]")})
+	r := f.Routines["pr-review"]
+
+	// Codex has the first one, and Claude routines only the second.
+	codex := stub.Evaluate(f, r, target(t, "codex"))
+	claude := stub.Evaluate(f, r, target(t, "claude-code-cloud"))
+	if !codex.OK() || codex.Shape.Model != "gpt-5.6-sol" || codex.Shape.Effort != "high" {
+		t.Errorf("codex: model %s (%s): %s", codex.Shape.Model, codex.Shape.Effort, codex.Diags)
+	}
+	if !claude.OK() || claude.Shape.Model != "claude-opus-5-5" || claude.Shape.Effort != "max" {
+		t.Errorf("claude-code-cloud: model %s (%s): %s", claude.Shape.Model, claude.Shape.Effort, claude.Diags)
+	}
+
+	// Copilot automations and local tools pick their own, so they get
+	// default, and nothing about the model goes into the stub.
+	for _, rt := range []string{"copilot-cloud", "claude-code-local"} {
+		plain := load(t, map[string]string{"routines/pr-review.md": routine})
+		e := stub.Evaluate(f, r, target(t, rt))
+		if e.Model.Name != "default" || e.Shape.Model != "" || e.Shape.Fingerprint() != stub.Evaluate(plain, plain.Routines["pr-review"], target(t, rt)).Shape.Fingerprint() {
+			t.Errorf("%s: picked %s, shape %+v", rt, e.Model, e.Shape)
+		}
+	}
+
+	// The model is part of the shape, so changing it changes the stub.
+	other := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-opus-5-5, effort: high }]")})
+	if stub.Evaluate(other, other.Routines["pr-review"], target(t, "claude-code-cloud")).Shape.Fingerprint() == claude.Shape.Fingerprint() {
+		t.Error("changing the model's effort should change the stub's fingerprint")
+	}
+}
+
+func TestNoModelTheRuntimeHasIsAnError(t *testing.T) {
+	cases := map[string]string{
+		// The runtime has the model, but not at that effort.
+		"[{ model: claude-opus-5-5, effort: none }]": "has claude-opus-5-5, at effort low, medium, high, xhigh, max",
+		"[gpt-5.5]":                          "add one it has (claude-fable-5-1, claude-haiku-5-5, claude-opus-5-5, claude-sonnet-5-5)",
+		"[{ model: gpt-5.5, effort: high }]": "end models: with default",
+	}
+	for models, hint := range cases {
+		f := load(t, map[string]string{"routines/pr-review.md": withModels(models)})
+		e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-cloud"))
+		if e.OK() || !strings.Contains(e.Diags.String(), "has none of the models routine pr-review lists") || !strings.Contains(e.Diags.String(), hint) {
+			t.Errorf("%s: want an error with %q, got:\n%s", models, hint, e.Diags)
+		}
+	}
+	f := load(t, map[string]string{"routines/pr-review.md": withModels("[gpt-5.5]")})
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-local"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "picks its model itself") {
+		t.Errorf("cursor-local: want an error saying it picks its own model, got:\n%s", e.Diags)
+	}
+}
+
+func TestDescribeModel(t *testing.T) {
+	for _, c := range []struct {
+		shape stub.Shape
+		want  string
+	}{
+		{stub.Shape{}, "leave it at the runtime's default"},
+		{stub.Shape{Model: "gpt-5.5"}, "pick model `gpt-5.5`, and leave its effort at the default"},
+		{stub.Shape{Model: "claude-opus-5-5", Effort: "max"}, "pick model `claude-opus-5-5`, with effort `max`"},
+	} {
+		if got := stub.DescribeModel(c.shape); got != c.want {
+			t.Errorf("DescribeModel(%+v) = %q, want %q", c.shape, got, c.want)
+		}
+	}
+}

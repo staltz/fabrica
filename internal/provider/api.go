@@ -34,15 +34,26 @@ type Resource struct {
 	// Memory is "on" or "off" on runtimes with their own memory feature
 	// (memory: native), mirroring the routine's memory: key, and empty
 	// elsewhere.
-	Memory      string `json:"memory,omitempty"`
-	Prompt      string `json:"prompt"`
-	Fingerprint string `json:"fingerprint"`
+	Memory string `json:"memory,omitempty"`
+	// Model is the model to run the stub on, on runtimes whose matrix lists
+	// models; nil means the runtime's default.
+	Model       *ResourceModel `json:"model,omitempty"`
+	Prompt      string         `json:"prompt"`
+	Fingerprint string         `json:"fingerprint"`
 }
 
 // ResourceTrigger is the trigger to install.
 type ResourceTrigger struct {
 	On   string `json:"on"`
 	Cron string `json:"cron,omitempty"`
+}
+
+// ResourceModel is the model to run a stub on: one the runtime's matrix
+// lists, at one of the efforts it lists for it.
+type ResourceModel struct {
+	Name string `json:"name"`
+	// Effort is one of Efforts, or empty for the model's default effort.
+	Effort string `json:"effort,omitempty"`
 }
 
 // ResourceConnector is one connector to install.

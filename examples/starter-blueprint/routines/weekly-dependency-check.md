@@ -11,6 +11,10 @@ params:
     default: dependencies
     description: The label of the issue where the weekly reports go
 memory: true
+models:
+  - { model: claude-sonnet-5-5, effort: high }
+  - { model: gpt-5.6-terra, effort: high }
+  - default
 ---
 It's time for the weekly dependency check. Find the dependencies in this repo that are out of date or have known security problems, and report them in one GitHub issue. Don't change any code: this routine only reports, and a person decides what to update.
 

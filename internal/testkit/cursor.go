@@ -22,7 +22,17 @@ type FakeCursor struct {
 	mu          sync.Mutex
 	n           int
 	automations map[string]*FakeAutomation
-	failNext    map[string]string // method → Connect error code
+	failNext    map[string]string // method → Connect error code, before the call does anything
+	loseNext    map[string]bool   // method → do the call, then answer as if the response were lost
+	hold        *fakeHold
+}
+
+// fakeHold pauses one call until the test lets it continue, so a test can
+// look at state after Fabrica has recorded a create but before Cursor sees it.
+type fakeHold struct {
+	method  string
+	started chan struct{}
+	release chan struct{}
 }
 
 // FakeAutomation is one automation in the fake.
@@ -43,7 +53,7 @@ const fakeCursorSession = "session-for-tests"
 // environment variables the cursor-cloud runtime reads.
 func NewFakeCursor(t *testing.T) *FakeCursor {
 	t.Helper()
-	f := &FakeCursor{t: t, automations: map[string]*FakeAutomation{}, failNext: map[string]string{}}
+	f := &FakeCursor{t: t, automations: map[string]*FakeAutomation{}, failNext: map[string]string{}, loseNext: map[string]bool{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
@@ -90,11 +100,34 @@ func (f *FakeCursor) Remove(id string) {
 	delete(f.automations, id)
 }
 
-// FailNext makes the next call to method fail with a Connect error code.
+// FailNext makes the next call to method fail with a Connect error code,
+// before the call changes anything.
 func (f *FakeCursor) FailNext(method, code string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failNext[method] = code
+}
+
+// LoseNext makes the next call to method succeed on the server, then
+// answer with a Connect "unavailable" error, as if the response were lost
+// after Cursor had already committed.
+func (f *FakeCursor) LoseNext(method string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loseNext[method] = true
+}
+
+// Hold pauses the next call to method until release is called. started
+// fires once the call has arrived, which is after Fabrica has committed
+// whatever it commits before the call. release is safe to call twice.
+func (f *FakeCursor) Hold(method string) (started <-chan struct{}, release func()) {
+	startedCh := make(chan struct{})
+	releaseCh := make(chan struct{})
+	f.mu.Lock()
+	f.hold = &fakeHold{method: method, started: startedCh, release: releaseCh}
+	f.mu.Unlock()
+	var once sync.Once
+	return startedCh, func() { once.Do(func() { close(releaseCh) }) }
 }
 
 func (f *FakeCursor) serve(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +167,7 @@ func (f *FakeCursor) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	f.wait(method)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if code := f.failNext[method]; code != "" {
@@ -178,10 +212,30 @@ func (f *FakeCursor) serve(w http.ResponseWriter, r *http.Request) {
 		connectError(w, "unimplemented", method)
 		return
 	}
+	if f.loseNext[method] {
+		delete(f.loseNext, method)
+		connectError(w, "unavailable", "Error")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"workflow": map[string]any{
 		"workflow":  map[string]any{"automationId": a.ID, "name": a.Name, "description": a.Description, "enabled": true, "workflow": a.Workflow, "createdAt": "1760000000"},
 		"ownerName": "Test",
 	}})
+}
+
+// wait blocks while a test is holding this method. The lock isn't held
+// across the wait, so the test can still inspect the fake.
+func (f *FakeCursor) wait(method string) {
+	f.mu.Lock()
+	h := f.hold
+	if h == nil || h.method != method {
+		f.mu.Unlock()
+		return
+	}
+	f.hold = nil
+	f.mu.Unlock()
+	close(h.started)
+	<-h.release
 }
 
 func connectError(w http.ResponseWriter, code, message string) {

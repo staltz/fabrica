@@ -128,9 +128,10 @@ func (r *Repo) Release(ctx context.Context, name, message string, state *home.St
 }
 
 // Checkpoint records state partway through an apply, keeping the lock.
-// Apply does it after creating a resource in a runtime that can't list its
-// resources, so a crash can't make Fabrica lose track of it. Even when the
-// push fails, the commit stays, and the next push takes it along.
+// Apply does it before creating a resource in a runtime that can't list
+// its resources, and again once it has the new ID, so a crash or a lost
+// answer can't make Fabrica create a second one. Even when the push
+// fails, the commit stays, and the next push takes it along.
 func (r *Repo) Checkpoint(ctx context.Context, name, message string, state *home.State) error {
 	return r.commitHeld(ctx, name, message, state)
 }

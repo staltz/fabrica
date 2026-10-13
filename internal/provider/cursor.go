@@ -89,10 +89,15 @@ func (c *cursorAPI) Create(ctx context.Context, res Resource) (string, error) {
 	var resp cursorAutomationResponse
 	err = c.call(ctx, "CreateAutomation", cursorCreateRequest{Name: res.Identity, Description: &desc, Workflow: wf}, &resp)
 	if err != nil {
+		if cursorCreateRejected(err) {
+			return "", RejectedCreate(err)
+		}
 		return "", err
 	}
 	if resp.Workflow == nil || resp.Workflow.Workflow == nil || resp.Workflow.Workflow.AutomationID == "" {
-		return "", fmt.Errorf("Cursor created automation %s but didn't say its ID; delete it in Cursor, then apply again", res.Identity)
+		// A success with no ID means Cursor may already have the automation.
+		// Leaving this uncertain lets apply ask, instead of creating another.
+		return "", fmt.Errorf("Cursor's answer to creating %s has no automation ID", res.Identity)
 	}
 	return resp.Workflow.Workflow.AutomationID, nil
 }
@@ -511,6 +516,25 @@ type cursorError struct {
 
 func (e *cursorError) Error() string {
 	return fmt.Sprintf("Cursor's %s failed: %s", e.Method, e.Message)
+}
+
+// cursorCreateRejected reports whether Cursor's answer proves the
+// automation was not created. A code the server uses when the handler
+// may already have committed (or a lost connection, which isn't a
+// cursorError at all) is not a rejection: the automation may exist, and
+// this API can't list them to check.
+func cursorCreateRejected(err error) bool {
+	var ce *cursorError
+	if !errors.As(err, &ce) || ce.Code == "" {
+		return false
+	}
+	switch ce.Code {
+	case "invalid_argument", "not_found", "permission_denied", "unauthenticated",
+		"resource_exhausted", "failed_precondition", "out_of_range", "unimplemented":
+		return true
+	default:
+		return false
+	}
 }
 
 // isCursorNotFound reports whether Cursor said the automation doesn't

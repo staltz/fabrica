@@ -34,7 +34,7 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 	dp.State = state
 	if state.Lock != nil && (e.LockHolder == "" || state.Lock.Holder != e.LockHolder) {
 		dp.Diags.Errorf("factory.locked", home.StatePath(name), "factory %s is locked by %q since %s", name, state.Lock.Holder, state.Lock.Since.Format(time.RFC3339)).
-			Hintf("another apply is running; wait for it. If it crashed, run `fabrica unlock %s` (the next apply adopts whatever it created)", name)
+			Hintf("another apply is running; wait for it. If it crashed, run `fabrica unlock %s` (the next apply adopts whatever it created; a create whose ID was never recorded is reported instead, and not retried)", name)
 	}
 	seen := map[home.Key]bool{}
 	for _, r := range state.Resources {
@@ -266,9 +266,9 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 }
 
 // refreshByRemoteID looks up, one by one, the resources state records on
-// a runtime that can't list them. It can't find resources missing from
-// state, which is why apply records each create right away on such
-// runtimes.
+// a runtime that can't list them. It can't find a resource that state
+// never got an ID for, which is why apply records a create before calling
+// the API and refuses to retry one whose ID it never learned.
 func (e *Env) refreshByRemoteID(ctx context.Context, dp *Factory, rt string, api provider.Getter, current map[home.Key]home.Resource) {
 	for _, key := range sortedKeysOf(current) {
 		r := current[key]
@@ -331,14 +331,30 @@ func endpointsToList(dp *Factory) []string {
 // diff compares what's wanted with what's there.
 func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers map[string]*provider.Provider) {
 	pending := map[home.Key]home.Pending{}
+	// uncertain are API creates whose result was never learned. They must
+	// not become another create: the resource may already exist, and a
+	// runtime that can't list resources would never notice the duplicate.
+	uncertain := map[home.Key]bool{}
 	if dp.State != nil {
 		for _, p := range dp.State.Pending {
-			pending[p.Key()] = p
+			if !p.Uncertain {
+				pending[p.Key()] = p
+				continue
+			}
+			if uncertain[p.Key()] {
+				continue
+			}
+			uncertain[p.Key()] = true
+			dp.Diags.Errorf("refresh.uncertain-create", p.Resource, "a create on %s may have happened, but Fabrica never learned its ID, and %s can't list its resources, so apply will not create another", p.Runtime, p.Runtime).
+				Hintf("%s", UncertainCreateHint(p.Resource, p.ID))
 		}
 	}
 	wanted := map[home.Key]bool{}
 	for _, want := range dp.Desired {
 		wanted[want.Key] = true
+		if uncertain[want.Key] {
+			continue
+		}
 		pend, hasPend := pending[want.Key]
 		cur, hasCur := current[want.Key]
 		if hasPend && pend.Action != string(Delete) && pend.Shape != nil && pend.Shape.Fingerprint == want.Fingerprint && tokenMatches(pend.TokenHash, want.TokenHash) {
@@ -501,6 +517,12 @@ func (e *Env) whyGone(dp *Factory, r home.Resource) string {
 		return "the factory's server address changed, so this stub belongs to the old one"
 	}
 	return "it's no longer deployed"
+}
+
+// UncertainCreateHint is how to resolve a create whose ID was never
+// recorded. Apply uses the same wording when the create fails uncertainly.
+func UncertainCreateHint(identity, id string) string {
+	return fmt.Sprintf("look for a resource named %s. If it's there, run `fabrica confirm %s --remote-id <its ID>`. If it isn't, run `fabrica confirm %s --absent`", identity, id, id)
 }
 
 func tokenMatches(have, want string) bool {

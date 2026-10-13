@@ -88,8 +88,10 @@ type Matrix struct {
 	FindByIdentity bool
 	// FindByRemoteID says the runtime's API can't list resources, but can
 	// read one back by its remote ID. Fabrica then finds what it made
-	// through the IDs in state, and records each new resource in state
-	// right after creating it. The api mode needs this or FindByIdentity.
+	// through the IDs in state. It records that a create is about to
+	// happen before it calls the API, and records the new ID right after.
+	// A create whose ID was never learned is not retried: that would risk
+	// a duplicate. The api mode needs this or FindByIdentity.
 	FindByRemoteID bool
 	SkillTransport SkillTransport
 	// MCPAuth says how the runtime can pass a token to an MCP server:

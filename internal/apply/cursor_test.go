@@ -71,15 +71,20 @@ func TestCursorCloudThroughTheAPI(t *testing.T) {
 		t.Fatalf("state after apply = %+v", s)
 	}
 
-	// Cursor can't list automations, so each one went into state as soon
-	// as it was made, while the lock was held: a crash can't orphan it.
+	// Cursor can't list automations. Each create is recorded before the
+	// call, while the lock is held, and again once its ID is known.
 	log := testkit.Git(t, h.w.Home.Dir, "log", "--format=%h %s")
-	if strings.Count(log, "(created pr-review @ ") != 2 || !strings.Contains(log, "fabrica: apply pr-review (2 changes)") {
-		t.Errorf("home repo log should have a checkpoint per create, then the apply:\n%s", log)
+	if strings.Count(log, "(creating pr-review @ ") != 2 || strings.Count(log, "(created pr-review @ ") != 2 || !strings.Contains(log, "fabrica: apply pr-review (2 changes)") {
+		t.Errorf("home repo log should checkpoint each create before and after the call:\n%s", log)
+	}
+	creating := lastLine(testkit.Git(t, h.w.Home.Dir, "log", "--format=%h", "--grep=(creating pr-review @ "))
+	before := testkit.Git(t, h.w.Home.Dir, "show", creating+":state/pr-review.yaml")
+	if !strings.Contains(before, "uncertain: true") || !strings.Contains(before, "holder: test-holder") || strings.Contains(before, "remote_id:") {
+		t.Errorf("the first checkpoint should record the create before Cursor answers, under the lock, with no ID yet:\n%s", before)
 	}
 	first := lastLine(testkit.Git(t, h.w.Home.Dir, "log", "--format=%h", "--grep=(created pr-review @ "))
 	checkpoint := testkit.Git(t, h.w.Home.Dir, "show", first+":state/pr-review.yaml")
-	if !strings.Contains(checkpoint, "holder: test-holder") || strings.Count(checkpoint, "remote_id: auto_") != 1 {
+	if !strings.Contains(checkpoint, "holder: test-holder") || strings.Count(checkpoint, "remote_id: auto_") != 1 || strings.Contains(checkpoint, "uncertain:") {
 		t.Errorf("the first checkpoint should record one automation, under the lock:\n%s", checkpoint)
 	}
 
@@ -151,8 +156,8 @@ func TestCursorFailedCreateKeepsTheRest(t *testing.T) {
 	if res.ExitCode() != 1 || !strings.Contains(h.out.String(), "Cursor's CreateAutomation failed: resource_exhausted") {
 		t.Fatalf("apply should report the failed create:\n%s", h.out.String())
 	}
-	if s := h.state(); s.Lock != nil || len(s.Resources) != 1 {
-		t.Fatalf("state should keep the automation that was made, and no lock: %+v", s)
+	if s := h.state(); s.Lock != nil || len(s.Resources) != 1 || len(s.Pending) != 0 {
+		t.Fatalf("state should keep the automation that was made, drop the refused create, and hold no lock: %+v", s)
 	}
 	// What to set up by hand is written even when a call fails, since a
 	// missing MCP server could be why it failed.
@@ -191,10 +196,10 @@ func TestCursorHandoffsCarryOverToTheAPI(t *testing.T) {
 	s := h.state()
 	first := s.Pending[0]
 	id := cursor.Put(first.Resource, "… and stub `"+first.Shape.Fingerprint+"`, and …")
-	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, first.ID, id, time.Now()); err != nil {
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, first.ID, id, false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[1].ID, "", time.Now()); err != nil {
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[1].ID, "", false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,13 +226,153 @@ func TestCursorHandoffsCarryOverToTheAPI(t *testing.T) {
 	// 4. The second is confirmed with a mistyped ID. Fabrica can't find it,
 	// so it makes a new one, and warns that the old one may still run.
 	s = h.state()
-	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "auto_404", time.Now()); err != nil {
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "auto_404", false, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	p := h.plan()
 	if changes := p.Factory("pr-review").Changes; len(changes) != 1 || changes[0].Action != plan.Create ||
 		!strings.Contains(render(p), "it was set up by hand, so if auto_404 isn't its real ID, it's still there") {
 		t.Errorf("plan after a mistyped ID:\n%s", render(p))
+	}
+}
+
+func TestCursorLostCreateIsNotRetried(t *testing.T) {
+	h := newHarness(t)
+	cursor := testkit.NewFakeCursor(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": cursorFactory}).CommitPush("add pr-review on Cursor")
+
+	// The first create commits in Cursor, then the answer is lost.
+	cursor.LoseNext("CreateAutomation")
+	res := h.apply()
+	if res.ExitCode() != 1 || !strings.Contains(h.out.String(), "will not try again") || !strings.Contains(h.out.String(), "--absent") {
+		t.Fatalf("apply should stop and say how to recover:\n%s", h.out.String())
+	}
+	if got := len(cursor.Automations()); got != 2 {
+		t.Fatalf("Cursor has %d automations, want both (one of them unanswered)", got)
+	}
+	s := h.state()
+	if s.Lock != nil || len(s.Resources) != 1 || len(s.Pending) != 1 || !s.Pending[0].Uncertain {
+		t.Fatalf("state should remember the unanswered create and the one that finished: %+v", s)
+	}
+	lost := s.Pending[0]
+
+	// Applying again must not make a third automation.
+	res = h.apply()
+	if res.ExitCode() != 1 || !strings.Contains(h.out.String(), "will not create another") {
+		t.Fatalf("the next apply should refuse the factory:\n%s", h.out.String())
+	}
+	if got := len(cursor.Automations()); got != 2 {
+		t.Fatalf("a retry created an automation; Cursor has %d", got)
+	}
+	p := h.plan()
+	if p.ExitCode() != 1 || !p.Factory("pr-review").Diags.HasCode("refresh.uncertain-create") || len(p.Factory("pr-review").Changes) != 0 {
+		t.Fatalf("plan should report the unanswered create and propose nothing:\n%s", render(p))
+	}
+	dp := h.destroyPlan()
+	if dp.ExitCode() != 1 || !dp.Factory("pr-review").Diags.HasCode("refresh.uncertain-create") {
+		t.Fatalf("destroy should wait too:\n%s", render(dp))
+	}
+	for _, c := range dp.Factory("pr-review").Changes {
+		if c.Action == plan.Create {
+			t.Fatalf("destroy planned a create for the unanswered automation:\n%s", render(dp))
+		}
+	}
+
+	// Confirming without looking is a guess, so it fails.
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, lost.ID, "", false, time.Now()); err == nil {
+		t.Fatal("confirm with neither --remote-id nor --absent should fail")
+	}
+
+	var remoteID string
+	for _, a := range cursor.Automations() {
+		if a.Name == lost.Resource {
+			remoteID = a.ID
+		}
+	}
+	if remoteID == "" {
+		t.Fatalf("Cursor has no automation named %s: %+v", lost.Resource, cursor.Automations())
+	}
+	confirmed, err := apply.Confirm(context.Background(), h.w.Home.Dir, lost.ID, remoteID, false, time.Now())
+	if err != nil || confirmed.Unverifiable || confirmed.Absent {
+		t.Fatalf("confirm = %+v, %v", confirmed, err)
+	}
+	if s = h.state(); len(s.Resources) != 2 || len(s.Pending) != 0 || s.Resources[0].Mode != "api" || s.Resources[0].RemoteID == "" {
+		t.Fatalf("state after confirm = %+v", s)
+	}
+	if p = h.plan(); p.ExitCode() != 0 {
+		t.Fatalf("plan after confirm: exit %d\n%s", p.ExitCode(), render(p))
+	}
+}
+
+func TestCursorUncertainCreateAbsentCanBeRetried(t *testing.T) {
+	h := newHarness(t)
+	cursor := testkit.NewFakeCursor(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": cursorFactory}).CommitPush("add pr-review on Cursor")
+
+	// unavailable before anything is saved: the automation was not created,
+	// but the answer doesn't prove that, so apply won't guess.
+	cursor.FailNext("CreateAutomation", "unavailable")
+	if res := h.apply(); res.ExitCode() != 1 {
+		t.Fatalf("apply: exit %d\n%s", res.ExitCode(), h.out.String())
+	}
+	if got := len(cursor.Automations()); got != 1 {
+		t.Fatalf("Cursor has %d automations, want only the one that succeeded", got)
+	}
+	s := h.state()
+	if len(s.Pending) != 1 || !s.Pending[0].Uncertain {
+		t.Fatalf("state = %+v", s)
+	}
+	if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, s.Pending[0].ID, "", true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	p := h.plan()
+	if changes := p.Factory("pr-review").Changes; len(changes) != 1 || changes[0].Action != plan.Create {
+		t.Fatalf("after --absent, plan should create the missing one:\n%s", render(p))
+	}
+	h.apply()
+	if got := len(cursor.Automations()); got != 2 {
+		t.Fatalf("Cursor has %d automations, want 2", got)
+	}
+}
+
+func TestCursorCreateIsRecordedBeforeTheCall(t *testing.T) {
+	h := newHarness(t)
+	cursor := testkit.NewFakeCursor(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": cursorFactory}).CommitPush("add pr-review on Cursor")
+
+	started, release := cursor.Hold("CreateAutomation")
+	defer release()
+	errCh := make(chan error, 1)
+	go func() {
+		h.out.Reset()
+		_, err := apply.Run(context.Background(), apply.Options{Plan: h.env, Out: &h.out, HandoffDir: h.handof, Holder: "test-holder"}, h.w.Home.Dir)
+		errCh <- err
+	}()
+	select {
+	case <-started:
+	case err := <-errCh:
+		t.Fatalf("apply finished before CreateAutomation: %v\n%s", err, h.out.String())
+	case <-time.After(20 * time.Second):
+		t.Fatal("CreateAutomation was never called")
+	}
+	if autos := cursor.Automations(); len(autos) != 0 {
+		t.Fatalf("Cursor already has %+v, before the call was allowed to finish", autos)
+	}
+	data := testkit.Git(t, h.w.Home.Dir, "show", "HEAD:state/pr-review.yaml")
+	if !strings.Contains(data, "uncertain: true") || !strings.Contains(data, "holder: test-holder") || strings.Contains(data, "remote_id:") {
+		t.Errorf("state should already record the unfinished create, with the lock held and no ID:\n%s", data)
+	}
+	release()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("apply: %v\n%s", err, h.out.String())
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("apply didn't finish after the create was released")
+	}
+	if got := len(cursor.Automations()); got != 2 {
+		t.Fatalf("Cursor has %d automations, want 2", got)
 	}
 }
 

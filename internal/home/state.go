@@ -77,7 +77,8 @@ type Resource struct {
 // Unverifiable reports whether Fabrica can't check on the resource.
 func (r Resource) Unverifiable() bool { return r.RemoteID == "" }
 
-// Pending is a handoff that was issued but not confirmed yet.
+// Pending is a handoff that was issued but not confirmed yet, or (when
+// Uncertain is set) an API create whose result was never learned.
 type Pending struct {
 	ID       string `yaml:"id"`
 	Action   string `yaml:"action"`
@@ -85,6 +86,10 @@ type Pending struct {
 	Runtime  string `yaml:"runtime"`
 	Routine  string `yaml:"routine"`
 	Repo     string `yaml:"repo"`
+	// Uncertain means this isn't a handoff. An API create on a runtime
+	// that can't list resources was started, and Fabrica never learned
+	// whether it happened. Apply will not try it again until confirm says.
+	Uncertain bool `yaml:"uncertain,omitempty"`
 	// RemoteID is the resource's ID for updates and deletes, when known.
 	RemoteID string `yaml:"remote_id,omitempty"`
 	// Shape is what the handoff installs (creates and updates).

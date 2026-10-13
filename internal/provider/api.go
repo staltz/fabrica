@@ -98,6 +98,9 @@ type response struct {
 // ways: a Lister (find_by_identity) or a Getter (find_by_remote_id).
 type RuntimeAPI interface {
 	// Create creates a resource and returns the runtime's ID for it.
+	// An error that isn't a rejected create (see RejectedCreate) is
+	// uncertain: the resource may exist and the answer was lost. A runtime
+	// that can only look resources up by ID must not retry those.
 	Create(ctx context.Context, res Resource) (string, error)
 	// Update replaces an existing resource's trigger, connectors and prompt.
 	Update(ctx context.Context, remoteID string, res Resource) error
@@ -115,6 +118,30 @@ type Lister interface {
 // its remote ID. Get returns nil, and no error, when it's gone.
 type Getter interface {
 	Get(ctx context.Context, remoteID string) (*RemoteResource, error)
+}
+
+// rejectedCreate wraps a Create error that proves the runtime did not
+// create the resource, so trying again is safe. Any other error from
+// Create is uncertain.
+type rejectedCreate struct{ error }
+
+func (e *rejectedCreate) Unwrap() error { return e.error }
+
+// RejectedCreate marks err as a definite refusal: Create did not create
+// the resource. Timeouts, lost responses and failures after the runtime
+// may already have committed must not be wrapped with it.
+func RejectedCreate(err error) error {
+	if err == nil || IsRejectedCreate(err) {
+		return err
+	}
+	return &rejectedCreate{err}
+}
+
+// IsRejectedCreate reports whether Create definitely did not create the
+// resource.
+func IsRejectedCreate(err error) bool {
+	var r *rejectedCreate
+	return errors.As(err, &r)
 }
 
 // ManualSetup is an API whose resources rely on something it can't set up

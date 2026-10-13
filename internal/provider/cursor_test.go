@@ -192,8 +192,8 @@ func TestCursorAPIErrorsAndRetries(t *testing.T) {
 		t.Errorf("a rate-limited call should be retried, and a restricted automation is an error; calls=%d, err=%v", calls, err)
 	}
 	_, err = api.Create(ctx, cursorResource())
-	if err == nil || err.Error() != "Cursor's CreateAutomation failed: permission_denied: Not allowed: Ask a team admin for it." {
-		t.Errorf("Create error = %v", err)
+	if err == nil || err.Error() != "Cursor's CreateAutomation failed: permission_denied: Not allowed: Ask a team admin for it." || !IsRejectedCreate(err) {
+		t.Errorf("Create error = %v; a permission_denied answer means the automation was not created", err)
 	}
 	// A plain 404 means a wrong address, not a deleted automation:
 	// treating it as "gone" would make Fabrica forget what it made.

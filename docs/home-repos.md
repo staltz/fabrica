@@ -167,7 +167,7 @@ The `token_hash` is a short one-way fingerprint of the token, never the token it
 1. **Plan** against the latest home repo. Apply fetches the remote and fast-forwards first, and refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed: it applies what's on the remote, never what's only on your machine. If the plan finds errors, apply lists them and skips that factory. If nothing needs to change, it stops without committing.
 2. **Take the lock.** Commit a `lock:` entry to the state file and push. Git only accepts a push on top of the latest commit, so when two applies race, exactly one push gets through. The other takes its commit back, pulls, sees the lock, and stops with a message naming who holds it. Nothing remote has been touched yet, so losing the race is always safe.
 3. **Refresh.** Look up all of this factory's resources in each runtime **by identity** (for runtimes with an API). A resource that exists but is missing from state gets adopted, like one created by an apply that crashed before recording it. A runtime whose API can't list resources (like Cursor's) is asked about each resource state records, by its remote ID, instead.
-4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change. In a runtime that can't list resources, each create is committed to the state file (and pushed) right away, lock still held, so a crash can never leave a resource that state doesn't know about.
+4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change. In a runtime that can't list resources, apply commits the state file (and pushes) before each create, lock still held, and again once the new ID comes back. A crash after the ID is recorded can't lose the resource. A lost answer, or a crash before the ID is recorded, leaves the create marked unfinished: the next plan reports it, and apply will not create another until `fabrica confirm` says whether it exists.
 5. **Record and release.** Write the results and remove the lock in one commit, then push. If the push is rejected because of unrelated commits (like another factory's state), rebase and push again. While the lock is held, nobody else writes this file.
 
 ### Crashed applies
@@ -178,7 +178,7 @@ A crashed apply leaves its lock in place. Fabrica can't tell a crashed apply fro
 fabrica unlock pr-review
 ```
 
-The next apply's refresh adopts whatever the crashed one created. (Runtimes that can't list resources have nothing to adopt: apply recorded each of their creates as it went.)
+The next apply's refresh adopts whatever the crashed one created. On a runtime that can't list resources, a create whose ID was recorded is already in state, so there's nothing to adopt. A create whose ID was never recorded (the answer was lost, or apply stopped mid-call) is an error in `plan`, not a new create: the resource may already exist, and a second one would run alongside it. Look for it, then `fabrica confirm <id> --remote-id <its ID>` if it's there, or `fabrica confirm <id> --absent` if it isn't.
 
 ### Handoffs
 
@@ -192,7 +192,7 @@ Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, C
 
 ### API mode
 
-For runtimes whose provider has an API (folder providers with an `api` program, and Cursor automations with `CURSOR_API_KEY` set), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up, so a retry never makes a duplicate. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
+For runtimes whose provider has an API (folder providers with an `api` program, and Cursor automations with `CURSOR_API_KEY` set), apply creates, updates and deletes resources itself. Every create comes after the refresh has looked the resource up, so a retry never makes a duplicate. On a runtime that can't list resources, a create whose ID was never learned isn't retried at all until you confirm whether it exists. If the refresh finds two resources with the same identity (say, someone copied one by hand), that's an error, and Fabrica names both rather than picking one to delete.
 
 Some APIs can't set up everything a resource relies on. Cursor automations, for one, only name their MCP servers. Then apply also writes what to set up by hand next to the handoffs (for Cursor, `~/.cache/fabrica/handoffs/<factory>/cursor-cloud-setup.md`), and lists it at the end. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api).
 

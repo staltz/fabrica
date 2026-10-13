@@ -242,6 +242,20 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	touched := map[*provider.Provider]bool{} // runtimes with creates or updates through their API
 	var failures []string
 	for _, c := range dp.Changes {
+		// A runtime that can't list its resources can't find a create it
+		// doesn't have an ID for. Record the attempt before calling the
+		// API, so a lost answer or a crash isn't retried into a duplicate.
+		// A failed record means the create never started.
+		guardID := ""
+		if getOnlyCreate(c) {
+			id, err := beginUncertainCreate(ctx, repo, env, dp, state, c, now)
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", c.Describe(), err))
+				fmt.Fprintf(out, "  ✗ %s\n    %v\n", c.Describe(), err)
+				continue
+			}
+			guardID = id
+		}
 		if c.Mode == provider.API && c.Desired != nil {
 			touched[c.Provider] = true
 		}
@@ -250,6 +264,11 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 			handoffs = append(handoffs, file)
 		}
 		if err != nil {
+			if guardID != "" && provider.IsRejectedCreate(err) {
+				dropUncertain(state, c.Key)
+			} else if guardID != "" {
+				err = fmt.Errorf("%w. This may have created it anyway, and %s can't list its resources, so apply will not try again: %s", err, c.Key.Runtime, plan.UncertainCreateHint(c.Key.ID, guardID))
+			}
 			failures = append(failures, fmt.Sprintf("%s: %v", c.Describe(), err))
 			fmt.Fprintf(out, "  ✗ %s\n    %v\n", c.Describe(), err)
 			continue
@@ -259,10 +278,11 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 			done = "handoff written to " + file
 		}
 		fmt.Fprintf(out, "  ✓ %s (%s)\n", c.Describe(), done)
-		// A runtime that can't list its resources can't help a later
-		// apply find this one if we crash before the end, so record it
-		// now. If that fails, it's recorded with everything else below.
-		if file == "" && c.Action == plan.Create && !c.Provider.Matrix.FindByIdentity {
+		// The ID is known now, so the attempt record can go, and state
+		// should say so before the next change. If this checkpoint fails,
+		// the final record below still has the ID.
+		if guardID != "" {
+			dropUncertain(state, c.Key)
 			msg := fmt.Sprintf("fabrica: %s %s (created %s @ %s on %s)", verb(env), name, c.Routine, c.Repo, c.Key.Runtime)
 			if err := repo.Checkpoint(ctx, name, msg, state); err != nil {
 				fmt.Fprintf(out, "    (couldn't record it in the home repo right away: %v)\n", err)
@@ -349,6 +369,55 @@ func writeSetups(out io.Writer, opts Options, dp *plan.Factory, tok string, touc
 	}
 	sort.Strings(files)
 	return files
+}
+
+// getOnlyCreate reports whether this change creates a resource on a
+// runtime that can only find resources by an ID state already has.
+func getOnlyCreate(c *plan.Change) bool {
+	return c.Action == plan.Create && c.Mode == provider.API && c.Provider != nil && !c.Provider.Matrix.FindByIdentity
+}
+
+// beginUncertainCreate records, and commits, that a create is about to
+// happen whose result may be lost. The returned ID is what `fabrica
+// confirm` later resolves.
+func beginUncertainCreate(ctx context.Context, repo *Repo, env *plan.Env, dp *plan.Factory, state *home.State, c *plan.Change, now time.Time) (string, error) {
+	shape := stateShape(c.Desired.Eval.Shape)
+	id := HandoffID(dp.Name, c.Key, string(plan.Create), c.Desired.Fingerprint+c.Desired.TokenHash)
+	// One pending entry per resource. An older handoff for it is replaced:
+	// this create is what has to be resolved now.
+	dropPendingForKey(state, c.Key)
+	state.Pending = append(state.Pending, home.Pending{
+		ID: id, Action: string(plan.Create), Resource: c.Key.ID, Runtime: c.Key.Runtime,
+		Routine: c.Routine, Repo: c.Repo, Uncertain: true,
+		Shape: &shape, TokenHash: c.Desired.TokenHash, BlueprintCommit: blueprintCommit(dp), IssuedAt: now,
+	})
+	msg := fmt.Sprintf("fabrica: %s %s (creating %s @ %s on %s)", verb(env), dp.Name, c.Routine, c.Repo, c.Key.Runtime)
+	if err := repo.Checkpoint(ctx, dp.Name, msg, state); err != nil {
+		dropUncertain(state, c.Key)
+		return "", fmt.Errorf("didn't create it, because recording that the create was about to happen failed: %w", err)
+	}
+	return id, nil
+}
+
+func dropUncertain(state *home.State, key home.Key) {
+	for i := 0; i < len(state.Pending); {
+		p := state.Pending[i]
+		if p.Uncertain && p.Key() == key {
+			state.Pending = append(state.Pending[:i], state.Pending[i+1:]...)
+			continue
+		}
+		i++
+	}
+}
+
+func dropPendingForKey(state *home.State, key home.Key) {
+	for i := 0; i < len(state.Pending); {
+		if state.Pending[i].Key() == key {
+			state.Pending = append(state.Pending[:i], state.Pending[i+1:]...)
+			continue
+		}
+		i++
+	}
 }
 
 // applyChange carries out one change and updates state to match.

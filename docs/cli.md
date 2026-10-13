@@ -89,7 +89,7 @@ It reads the home repo as it is on disk, and never changes anything.
 
 ## `fabrica apply [factory…]`
 
-Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it also commits state after each create. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. For your personal home repo, it also writes the local tools' configs.
+Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it commits state before each create and again once it has the new ID. A create whose answer is lost is not retried; `plan` reports it, and `fabrica confirm` says whether the resource exists. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. For your personal home repo, it also writes the local tools' configs.
 
 | Flag | What it does |
 |---|---|
@@ -119,13 +119,14 @@ Closes a pending handoff once someone has followed its instructions.
 
 | Flag | What it does |
 |---|---|
-| `--remote-id <id>` | The runtime's own ID for the resource you created or updated. Without one, the resource is tracked as unverifiable. Not allowed for deletes. |
+| `--remote-id <id>` | The runtime's own ID for the resource you created or updated. Without one, a handoff's resource is tracked as unverifiable. Not allowed for deletes. For an API create whose ID was never recorded, this is how you tell Fabrica the resource does exist. |
+| `--absent` | The unfinished API create did not happen (you looked, and it isn't there). The next apply may create it. Not for handoffs, and not together with `--remote-id`. |
 
 Confirm commits and pushes the factory's state, and refuses while an apply holds its lock.
 
 ## `fabrica unlock <factory>`
 
-Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created.
+Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created. A create on a runtime that can't list resources, whose ID was never recorded, is not adopted: `plan` reports it, and apply won't retry it until you confirm whether it exists.
 
 ## `fabrica mcp`
 

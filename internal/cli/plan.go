@@ -257,6 +257,7 @@ nothing.`,
 
 func newConfirm(g *globals) *cobra.Command {
 	var remoteID string
+	var absent bool
 	cmd := &cobra.Command{
 		Use:   "confirm <handoff-id>",
 		Short: "Mark a handoff as done",
@@ -264,6 +265,12 @@ func newConfirm(g *globals) *cobra.Command {
 instructions. Pass --remote-id with the runtime's ID for the resource when
 you have it. Without one, Fabrica tracks the resource as unverifiable: no
 drift detection and no automatic deletion.
+
+Confirm also closes an API create whose result was never recorded (the
+answer was lost, or apply stopped, on a runtime that can't list its
+resources). Pass --remote-id with the resource's ID if it exists, or
+--absent if you looked and it doesn't. Until then, apply will not create
+it again.
 
 Like apply, confirm writes the factory's state file, so it commits and
 pushes to the home repo, and refuses while an apply holds the lock.`,
@@ -274,12 +281,16 @@ pushes to the home repo, and refuses while an apply holds the lock.`,
 			if err != nil {
 				return err
 			}
-			c, err := apply.Confirm(ctx, dir, args[0], remoteID, time.Now())
+			c, err := apply.Confirm(ctx, dir, args[0], remoteID, absent, time.Now())
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
 			p := c.Pending
+			if c.Absent {
+				fmt.Fprintf(out, "Cleared %s: %s @ %s on %s was not created (factory %s). The next apply can create it.\n", p.ID, p.Routine, p.Repo, p.Runtime, c.Factory)
+				return nil
+			}
 			fmt.Fprintf(out, "Confirmed %s: %s %s @ %s on %s (factory %s).\n", p.ID, p.Action, p.Routine, p.Repo, p.Runtime, c.Factory)
 			if c.Unverifiable {
 				fmt.Fprintln(out, "There's no remote ID, so Fabrica tracks it as unverifiable: no drift detection and no automatic deletion.")
@@ -288,6 +299,7 @@ pushes to the home repo, and refuses while an apply holds the lock.`,
 		},
 	}
 	cmd.Flags().StringVar(&remoteID, "remote-id", "", "the runtime's own ID for the resource you created or updated")
+	cmd.Flags().BoolVar(&absent, "absent", false, "the unfinished API create did not happen; the next apply may create it")
 	return cmd
 }
 
@@ -298,7 +310,10 @@ func newUnlock(g *globals) *cobra.Command {
 		Long: `Fabrica can't tell a crashed apply from a slow one, so it never guesses:
 a crashed apply leaves its lock in place, and plan and apply show who
 holds it and since when. Once you're sure that apply is gone, unlock
-removes the lock. The next apply adopts whatever the crashed one created.`,
+removes the lock. The next apply adopts whatever the crashed one created.
+A create on a runtime that can't list resources, whose ID was never
+recorded, is not adopted: plan reports it, and apply won't retry it until
+you confirm whether it exists.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

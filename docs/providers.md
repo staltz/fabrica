@@ -17,6 +17,7 @@ What the values mean:
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
 - **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`.
 - **Models** list the models a stub can ask the runtime to run its routine on, each with the efforts it can run at (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; an empty list means the runtime has no effort setting for it). A routine runs on the first of its [`models:`](blueprints.md#models) the runtime lists. A runtime that doesn't list any picks its model itself, and only a routine's `default` entry matches it. Models go by their makers' IDs, like blueprints name them; **model IDs** (`model_ids:`) say what the runtime calls the ones it calls something else. **Fast models** (`fast_models:`) are the ones the runtime can run in a fast mode: a stub for one of them always sets fast mode, on when the routine's entry says `fast: true` and off otherwise, so the runtime's own default never decides.
+- **Launch modes** say how Fabrica can start a one-off session there, for an [init routine](blueprints.md#init-routines): `api` (it starts the session itself) and `handoff` (it writes instructions for a person). A runtime without them can't run init routines. See [Init sessions](#init-sessions).
 - **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](blueprints.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
 - Anything a matrix doesn't list is unsupported.
 
@@ -46,6 +47,7 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 | Side effects | all emulated | all emulated | all emulated | all emulated |
 | Memory | emulated | native (the automation's memory tool) | emulated | emulated |
 | Models | Claude's: Fable, Opus, Sonnet and Haiku, at `low` to `max` | Cursor's whole cloud agent catalog, Auto for `default` | OpenAI's GPT models, at `low` to `xhigh` | — (always Auto) |
+| Init sessions | handoff (a Claude Code session on the web) | api, as a cloud agent, with a Cursor API key; handoff without | handoff (a Codex cloud task) | — |
 
 Cursor's memory tool is on by default, so every Cursor automation gets it turned on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
@@ -91,6 +93,7 @@ Copilot reads MCP servers from the repository's settings (**Settings → Copilot
 | Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks | same as Claude Code |
 | Memory | emulated (in `runs.db`) | emulated | emulated | emulated |
 | Models | — (your session's) | — | — | — |
+| Init sessions | api: `claude -p` on the machine that applies, never in CI | — | — | — |
 
 A few things worth knowing about local hooks:
 
@@ -101,6 +104,23 @@ A few things worth knowing about local hooks:
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
 
 A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
+
+## Init sessions
+
+An [init routine](blueprints.md#init-routines) doesn't get a stub. It gets one session, which `fabrica apply` starts the first time it creates a factory, on the first of the routine's runtimes that's available. A provider's `launch_modes` say how Fabrica can start that session, tried like apply modes:
+
+1. **`api`**: Fabrica starts it itself, and it's available when the provider's credentials are set (or, for a local runtime, when its command line is installed, and not in CI).
+2. **`handoff`**: Fabrica writes instructions from the provider's `launch.md`, and the session counts as started once `fabrica confirm` says so.
+
+Fabrica first looks for a runtime it can start the session on itself, in the routine's order, and only then for one with a handoff. Either way, the session gets the init's prompt, which works like a stub's: it says who the session is, and to call `run_begin` and `routine_get`. It reaches the factory's own Fabrica server, with the factory's token, however it's started, and the server checks it like a stub: the factory still runs its init, on that repo and runtime, with the same shape.
+
+Every init has an ID (like `i_3f2a1c9e04`) that stays the same when apply tries again after a failure. **A launcher must never start a second session for an ID it already started one for**, since a try can get further than apply learns.
+
+The built-in ones:
+
+- **`cursor-cloud`** starts a cloud agent through Cursor's [Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints) (`POST /v1/agents`), with the same Cursor API key automations use. The launch carries everything: the prompt, the factory's targets as the agent's repos (the first one is where it starts), the model, and the MCP servers inline, the factory's Fabrica server with its `Authorization` header among them. So unlike automations, nothing needs setting up in Cursor's settings. The agent's ID is derived from the init's ID, and Cursor refuses a second agent with the same one. Connectors need an MCP server (Cursor's API has no built-in integrations to give an agent, except GitHub, which every agent has), and a bearer secret is read from `fabrica apply`'s environment by name. `CURSOR_AGENTS_ENDPOINT` overrides the API's address (`https://api.cursor.com`).
+- **`claude-code-local`** runs `claude -p` on the machine that runs `fabrica apply`, in the background, in a fresh clone of the factory's first target under `$FABRICA_CACHE/sessions/<factory>/<init ID>/`. It gets exactly the init's MCP servers (`--mcp-config`, from a file only you can read, since it holds the token; `--strict-mcp-config`), so it's served by the factory's Fabrica server, whatever local factories you have. Nobody answers permission prompts, so it runs with `--permission-mode auto`. Its session ID is derived from the init's ID, and its output goes to `session.log` in the same folder. `FABRICA_CLAUDE_BIN` says which `claude` to run.
+- **`claude-code-cloud`** and **`codex`** write handoffs: start a Claude Code session on the web, or a Codex cloud task, with the connectors, model and prompt they list.
 
 ## Apply modes
 
@@ -119,6 +139,7 @@ providers/<name>/
   provider.yaml    # the capability matrix (plain data)
   api              # optional executable, any language, JSON over stdio
   handoff.md       # template for handoff instructions
+  launch.md        # optional template for starting an init session by hand
 ```
 
 In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
@@ -133,6 +154,7 @@ There's a complete, runnable example in [examples/custom-provider](../examples/c
 kind: cloud                          # cloud (local is reserved for built-ins in v0.1)
 description: Acme's in-house agent runner
 apply_modes: [api, handoff]          # tried in order
+launch_modes: [api, handoff]         # optional: how Fabrica can start init sessions
 find_by_identity: true               # the API can list resources and read their identity back (folder providers need this for api)
 skill_transport: text                # text (read file by file); cloud runtimes can't use directory
 mcp_auth:
@@ -161,7 +183,7 @@ credentials:                         # optional: what the api program needs
     instructions: Click New key, and copy it. # optional: what to do there
 ```
 
-Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`.
+Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`. Likewise, `api` in `launch_modes` needs the `api` program (with the `launch` operation), and `handoff` there needs a `launch.md`.
 
 `credentials:` lists what the `api` program needs, keyed by environment variable (not `FABRICA_…`). `fabrica auth` lists them, and `fabrica auth login` asks for them, opening `url` when there is one. Fabrica only uses `api` mode when they're all set; otherwise the runtime falls back to `handoff`, or, without it, `plan` reports an error that names what's missing. An entry can also list `aliases:`, other variables that work too. See [Credentials](auth.md#for-provider-authors).
 
@@ -177,6 +199,7 @@ Every request has `"version": 1` and `"op"`. The operations are:
 | `create` | `factory`, `resource` | `{"remote_id": "…"}` |
 | `update` | `factory`, `remote_id`, `resource` | `{}` |
 | `delete` | `factory`, `remote_id` | `{}` |
+| `launch` | `factory`, `session` | `{"session_id": "…", "url"?: "…"}`: only with `api` in `launch_modes` |
 
 A `resource` looks like this:
 
@@ -201,6 +224,8 @@ On runtimes with `memory: native`, a resource also has `"memory": "on"` or `"off
 
 On runtimes that list `models:`, a resource whose routine picked one of them also has `"model": {"name": "acme-large", "effort": "high", "fast": "off"}`, with the runtime's own ID for the model (from `model_ids:`, if it's there) (without `effort` for the model's default effort). `fast` is `"on"` or `"off"` for the models in `fast_models:`, and missing for the rest. Without `model`, leave the runtime's default.
 
+A `session` is an [init session](#init-sessions) to start. It has the same `identity`, `factory`, `routine`, `repo`, `connectors`, `fabrica`, `model`, `prompt` and `fingerprint` fields as a resource, plus `id`, the init's ID, and `repos`, every target of the factory (`repo`, where the session starts, first). `launch` must never start a second session for an `id` it already started one for: return the first one's `session_id` instead.
+
 Your program must store the `identity` somewhere it can read back (a name or a metadata field), so `list` can return it. If it can also store the `fingerprint`, return it from `list`, which helps `plan` spot drift. The `fabrica.token` is a secret: never log it. When `placement` is `url`, the token is already in `fabrica.url`.
 
 ### `handoff.md`
@@ -221,5 +246,9 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.Model.Name`, `.Model.Effort`, `.Model.Fast`, `.Model.Setup` | The model to pick (the runtime's own ID for it) and its effort (both empty for the runtime's default, and the effort alone for the model's default effort), its fast mode (`on` or `off` for the models in `fast_models:`, empty for the rest), and a sentence saying what to pick. |
 | `.Prompt`, `.Fingerprint` | The stub prompt to paste in, and its fingerprint. |
 | `.ConfirmCommand` | The exact `fabrica confirm …` line to end with. |
+
+### `launch.md`
+
+`launch.md` is a template too, filled in when an [init session](#init-sessions) has to be started by hand, with these fields: `.ID` (the init's ID, for `fabrica confirm`), `.Runtime`, `.Factory`, `.Routine`, `.Identity`, `.Repo` (where to start it), `.Repos` (every target, `.Repo` first), `.Connectors`, `.Model`, `.Fabrica`, `.Prompt`, `.Fingerprint` and `.ConfirmCommand`, all like `handoff.md`'s.
 
 There's an extra template function, `indent N text`, which indents every line of the text by N spaces (handy for pasting the prompt inside a list item). Missing fields are errors, so a typo in the template fails loudly. The built-in templates in [internal/provider/builtin](../internal/provider/builtin/) are good starting points.

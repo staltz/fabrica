@@ -38,6 +38,13 @@ type Options struct {
 	// has changes. If it returns an error, nothing is changed and Run
 	// returns that error.
 	Approve func(*plan.Plan) error
+	// SessionDir is where init sessions started on this machine keep their
+	// checkout and log, one folder per factory and init.
+	SessionDir string
+	// WaitForServer waits until the factory's Fabrica server is ready for
+	// an init session, before apply starts one. Nil means asking the
+	// server over HTTP.
+	WaitForServer func(context.Context, provider.ResourceFabrica) error
 }
 
 // Result is the outcome of an apply.
@@ -123,7 +130,7 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 			res.Failed = append(res.Failed, dp.Name)
 			continue
 		}
-		if len(dp.Changes) == 0 {
+		if !dp.HasWork() {
 			continue // nothing to do, and nothing to commit
 		}
 		server := ""
@@ -305,8 +312,37 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	}
 	setups = writeSetups(out, opts, dp, tok, touched, apis)
 
+	// The factory's init session, when this apply creates it. It comes
+	// last, once its stubs are in.
+	done := len(dp.Changes) - len(failures)
+	if dp.Init.Start() {
+		file, err := startInit(ctx, opts, repo, env, dp, state, tok, now, len(failures))
+		switch {
+		case err != nil:
+			failures = append(failures, fmt.Sprintf("%s: %v", describeInit(dp.Init), err))
+			fmt.Fprintf(out, "  ✗ %s\n    %v\n", describeInit(dp.Init), err)
+		case file != "":
+			handoffs = append(handoffs, file)
+			fmt.Fprintf(out, "  ✓ %s (handoff written to %s)\n", describeInit(dp.Init), file)
+		default:
+			fmt.Fprintf(out, "  ✓ %s (started%s)\n", describeInit(dp.Init), startedWhere(state.Init))
+		}
+		if err == nil {
+			done++
+		}
+	}
+
+	// A destroy ends the factory's life, so the apply that recreates it
+	// runs its init again. One that failed partway hasn't ended it.
+	switch {
+	case env.Destroy && len(failures) == 0:
+		state.Init, state.DestroyedAt = nil, &now
+	case !env.Destroy:
+		state.DestroyedAt = nil
+	}
+
 	// 5. Record and release.
-	msg := fmt.Sprintf("fabrica: %s %s (%s)", verb(env), name, plural(len(dp.Changes)-len(failures), "change"))
+	msg := fmt.Sprintf("fabrica: %s %s (%s)", verb(env), name, plural(done, "change"))
 	if err := repo.Release(ctx, name, msg, state); err != nil {
 		return handoffs, setups, err
 	}
@@ -315,6 +351,16 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		return handoffs, setups, fmt.Errorf("%s failed:\n  %s", plural(len(failures), "change"), strings.Join(failures, "\n  "))
 	}
 	return handoffs, setups, nil
+}
+
+func startedWhere(st *home.Init) string {
+	switch {
+	case st.URL != "":
+		return ": " + st.URL
+	case st.Session != "":
+		return ", session " + st.Session
+	}
+	return ""
 }
 
 // releaseAfter releases the lock after a problem, keeping the original
@@ -482,18 +528,31 @@ func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Re
 		Memory:  shape.Memory, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
 	}
-	if shape.Model != "" {
-		res.Model = &provider.ResourceModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast}
+	res.Model, res.Connectors = modelFor(shape), connectorsFor(shape)
+	return res
+}
+
+// modelFor is the model a shape picked, for a provider; nil means the
+// runtime's default.
+func modelFor(shape stub.Shape) *provider.ResourceModel {
+	if shape.Model == "" {
+		return nil
 	}
+	return &provider.ResourceModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast}
+}
+
+// connectorsFor is a shape's connectors, for a provider.
+func connectorsFor(shape stub.Shape) []provider.ResourceConnector {
+	var out []provider.ResourceConnector
 	for _, c := range shape.Connectors {
 		rc := provider.ResourceConnector{Name: c.Name, Kind: c.Kind}
 		if c.Server != nil {
 			rc.URL, rc.Transport, rc.Auth, rc.Secret = c.Server.URL, c.Server.Transport, c.Server.Auth, c.Server.Secret
 			rc.Command, rc.Args, rc.Env = c.Server.Command, c.Server.Args, c.Server.Env
 		}
-		res.Connectors = append(res.Connectors, rc)
+		out = append(out, rc)
 	}
-	return res
+	return out
 }
 
 // fabricaURL is the URL a runtime should use for the Fabrica server: with

@@ -27,6 +27,63 @@ type State struct {
 	Resources []Resource `yaml:"resources"`
 	// Pending are handoffs waiting for `fabrica confirm`.
 	Pending []Pending `yaml:"pending"`
+	// Init records the factory's init session, once there's been one (or
+	// an attempt at one). A factory runs its init once per life: it's
+	// only removed by `fabrica destroy`, which ends that life.
+	Init *Init `yaml:"init,omitempty"`
+	// DestroyedAt is when `fabrica destroy` last removed everything the
+	// factory installed. The next apply recreates the factory, so it runs
+	// the init again, and clears this.
+	DestroyedAt *time.Time `yaml:"destroyed_at,omitempty"`
+}
+
+// Init is what state records about a factory's init session.
+type Init struct {
+	// ID identifies the init, like "i_3f2a1c9e04": the same on every
+	// attempt, so a retry finds the session an earlier one started. It's
+	// also what `fabrica confirm` takes for a handoff.
+	ID      string `yaml:"id"`
+	Routine string `yaml:"routine"`
+	Runtime string `yaml:"runtime"`
+	// Repo is the repo the session started in.
+	Repo string `yaml:"repo"`
+	// Mode is api (Fabrica started it) or handoff (a person does).
+	Mode   string `yaml:"mode"`
+	Status string `yaml:"status"`
+	// Session and URL say which session it is, in the runtime, when known.
+	Session string `yaml:"session,omitempty"`
+	URL     string `yaml:"url,omitempty"`
+	// Error is why the last attempt failed.
+	Error           string    `yaml:"error,omitempty"`
+	BlueprintCommit string    `yaml:"blueprint_commit,omitempty"`
+	At              time.Time `yaml:"at"`
+}
+
+// What an init's Status can be.
+const (
+	// InitStarting means an apply was about to start the session. If it's
+	// still there after the apply, the apply stopped partway, and the next
+	// one tries again (the session's ID keeps that from starting two).
+	InitStarting = "starting"
+	// InitStarted means the session was started: by Fabrica, or by a person
+	// who confirmed the handoff.
+	InitStarted = "started"
+	// InitWaiting means a handoff says how to start the session, and waits
+	// for `fabrica confirm`.
+	InitWaiting = "waiting"
+	// InitFailed means the last attempt failed. The next apply tries again.
+	InitFailed = "failed"
+)
+
+// Born reports whether the factory exists: it was applied, and not
+// destroyed since. A factory that exists has had its chance at an init;
+// one that's applied while it doesn't is created (or recreated), and runs
+// its init.
+func (s *State) Born() bool {
+	if s.DestroyedAt != nil {
+		return false
+	}
+	return s.Init != nil || s.Blueprint != nil || len(s.Resources) > 0 || len(s.Pending) > 0
 }
 
 // Lock says who's applying this factory right now.
@@ -191,7 +248,9 @@ func keyLess(a, b Key) bool {
 	return a.Runtime < b.Runtime
 }
 
-// Empty reports whether the state records nothing at all.
+// Empty reports whether the state records nothing that needs cleaning
+// up. The init record and DestroyedAt don't count: they only matter while
+// the factory exists.
 func (s *State) Empty() bool {
 	return s.Lock == nil && len(s.Resources) == 0 && len(s.Pending) == 0
 }

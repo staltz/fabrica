@@ -32,8 +32,15 @@ type Provider struct {
 	// Fabrica drives itself. It fails when the client can't be made, like
 	// when its credentials aren't set.
 	builtinAPI func() (RuntimeAPI, error)
+	// builtinLauncher makes what starts init sessions on a built-in
+	// runtime by itself. It fails when it can't, like when a credential
+	// isn't set or a command isn't installed.
+	builtinLauncher func() (Launcher, error)
 	// handoff is the parsed handoff.md template, if the provider has one.
 	handoff *template.Template
+	// launchHandoff is the parsed launch.md template, if the provider has
+	// one: how a person starts an init session.
+	launchHandoff *template.Template
 }
 
 // Name is the runtime's name, like "claude-code-cloud" or "cursor-local".
@@ -69,13 +76,25 @@ func mustLoadBuiltins() map[string]*Provider {
 		if err != nil {
 			panic(fmt.Sprintf("built-in provider %s: %v", name, err))
 		}
-		p := &Provider{Matrix: m, Builtin: true, builtinAPI: builtinAPIs[name]}
+		p := &Provider{Matrix: m, Builtin: true, builtinAPI: builtinAPIs[name], builtinLauncher: builtinLaunchers[name]}
 		if m.Scope == Cloud && m.HasMode(API) != (p.builtinAPI != nil) {
 			panic(fmt.Sprintf("built-in provider %s: apply_modes and its Go API client disagree", name))
+		}
+		if m.HasLaunchMode(API) != (p.builtinLauncher != nil) {
+			panic(fmt.Sprintf("built-in provider %s: launch_modes and its Go launcher disagree", name))
 		}
 		if tmpl, err := fs.ReadFile(builtinFS, path.Join("builtin", name, "handoff.md")); err == nil {
 			p.handoff, err = parseHandoff(name, string(tmpl))
 			if err != nil {
+				panic(err)
+			}
+		}
+		tmpl, err := fs.ReadFile(builtinFS, path.Join("builtin", name, "launch.md"))
+		if (err == nil) != m.HasLaunchMode(Handoff) {
+			panic(fmt.Sprintf("built-in provider %s: launch_modes and launch.md disagree", name))
+		}
+		if err == nil {
+			if p.launchHandoff, err = parseLaunchHandoff(name, string(tmpl)); err != nil {
 				panic(err)
 			}
 		}
@@ -154,12 +173,12 @@ func LoadFolder(name, dir string) (*Provider, error) {
 	if m.HasMode(API) && !m.FindByIdentity {
 		return nil, fmt.Errorf("providers/%s/provider.yaml: a folder provider's api program can't look a resource up by its ID (there's no get operation), so api mode needs find_by_identity: true", name)
 	}
-	if m.HasMode(API) {
+	if m.HasMode(API) || m.HasLaunchMode(API) {
 		apiPath := filepath.Join(dir, "api")
 		info, err := os.Stat(apiPath)
 		switch {
 		case err != nil:
-			return nil, fmt.Errorf("providers/%s lists api in apply_modes but has no api program next to provider.yaml", name)
+			return nil, fmt.Errorf("providers/%s lists api in apply_modes or launch_modes but has no api program next to provider.yaml", name)
 		case info.IsDir() || info.Mode().Perm()&0o111 == 0:
 			return nil, fmt.Errorf("providers/%s/api isn't an executable file; mark it executable (chmod +x) and commit that", name)
 		}
@@ -173,6 +192,15 @@ func LoadFolder(name, dir string) (*Provider, error) {
 		p.handoff, err = parseHandoff(name, string(tmpl))
 		if err != nil {
 			return nil, fmt.Errorf("providers/%s/handoff.md: %w", name, err)
+		}
+	}
+	if m.HasLaunchMode(Handoff) {
+		tmpl, err := os.ReadFile(filepath.Join(dir, "launch.md"))
+		if err != nil {
+			return nil, fmt.Errorf("providers/%s lists handoff in launch_modes but has no launch.md", name)
+		}
+		if p.launchHandoff, err = parseLaunchHandoff(name, string(tmpl)); err != nil {
+			return nil, fmt.Errorf("providers/%s/launch.md: %w", name, err)
 		}
 	}
 	return p, nil

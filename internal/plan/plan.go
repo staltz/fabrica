@@ -106,11 +106,17 @@ type Factory struct {
 	// Pending are handoffs that are still waiting for `fabrica confirm`
 	// and still match what's wanted.
 	Pending []home.Pending
-	Diags   diag.List
-	Notes   []string
+	// Init is what apply does about the factory's init session, when its
+	// blueprint has an init routine that hasn't run yet.
+	Init  *Init
+	Diags diag.List
+	Notes []string
 	// Destroy is true when everything the factory installed is to go.
 	Destroy bool
 }
+
+// HasWork reports whether apply has anything to do for the factory.
+func (d *Factory) HasWork() bool { return len(d.Changes) > 0 || d.Init.Start() }
 
 // Local reports whether this is a local factory.
 func (d *Factory) Local() bool { return d.Spec != nil && d.Spec.Scope == provider.Local }
@@ -188,7 +194,7 @@ func (p *Plan) HasErrors() bool {
 // HasChanges reports whether apply has work to do.
 func (p *Plan) HasChanges() bool {
 	for _, d := range p.Factories {
-		if len(d.Changes) > 0 {
+		if d.HasWork() {
 			return true
 		}
 	}
@@ -353,6 +359,11 @@ func checkRoutinesAndParams(dp *Factory, d *home.Factory, f *blueprint.Blueprint
 	declared := map[string]bool{}
 	for _, r := range routines {
 		for _, prm := range r.Params {
+			declared[prm.Name] = true
+		}
+	}
+	if init := f.Init(); init != nil {
+		for _, prm := range init.Params {
 			declared[prm.Name] = true
 		}
 	}

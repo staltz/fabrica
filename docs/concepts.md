@@ -77,7 +77,7 @@ Fabrica never installs a routine's real content into a runtime. It installs a **
 
 Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
-What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the model and effort the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
+What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
 
 ### Stale stubs
 

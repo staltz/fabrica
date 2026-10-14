@@ -59,6 +59,11 @@ type Shape struct {
 	// model's default effort.
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Fast is the model's fast mode, "on" or "off", on runtimes that have
+	// one for it (see provider.Matrix.FastModels): on when the routine's
+	// entry says fast: true, off otherwise, so the runtime's own default
+	// never decides. It's empty for models without a fast mode.
+	Fast string `json:"fast,omitempty"`
 	// Endpoint and TokenPlacement describe the connection to the Fabrica
 	// server (cloud only).
 	Endpoint       string `json:"endpoint,omitempty"`
@@ -81,6 +86,12 @@ type ShapeConnector struct {
 const (
 	MemoryOn  = "on"
 	MemoryOff = "off"
+)
+
+// Fast mode settings in a shape.
+const (
+	FastOn  = "on"
+	FastOff = "off"
 )
 
 // Fingerprint is a short hash of the shape. The same shape always gives
@@ -238,6 +249,12 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 			e.Model = pick
 			if !pick.IsDefault() {
 				shape.Model, shape.Effort = m.ModelID(pick.Name), pick.Effort
+				if m.FastModels[pick.Name] {
+					shape.Fast = FastOff
+					if pick.Fast {
+						shape.Fast = FastOn
+					}
+				}
 			}
 		} else {
 			e.Diags.Errorf("capability.model", where, "runtime %s has none of the models routine %s lists (%s)", rt, r.Ref.Name, describeModels(r.Models)).
@@ -260,10 +277,11 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 }
 
 // PickModel picks the first of a routine's models that the runtime has:
-// the model at that effort, or default, which every runtime has.
+// the model at that effort (and in its fast mode, if the entry asks for
+// it), or default, which every runtime has.
 func PickModel(models []blueprint.Model, m *provider.Matrix) (blueprint.Model, bool) {
 	for _, want := range models {
-		if want.IsDefault() || m.HasModel(want.Name, want.Effort) {
+		if want.IsDefault() || m.HasModel(want.Name, want.Effort, want.Fast) {
 			return want, true
 		}
 	}
@@ -287,6 +305,9 @@ func modelHint(models []blueprint.Model, m *provider.Matrix) string {
 			return fmt.Sprintf("%s is what the runtime calls %s; blueprints name models the same way on every runtime, so use %s, %s", want.Name, name, name, end)
 		}
 		if efforts, ok := m.Models[want.Name]; ok {
+			if want.Fast && !m.FastModels[want.Name] {
+				return fmt.Sprintf("the runtime has %s, but no fast mode for it; drop fast: true from it, %s", want.Name, end)
+			}
 			if len(efforts) == 0 {
 				return fmt.Sprintf("the runtime has %s, but no effort setting for it; list it without an effort, %s", want.Name, end)
 			}
@@ -386,13 +407,20 @@ func DescribeMemory(needed bool, support provider.Support) string {
 
 // DescribeModel says which model to pick, for handoff instructions.
 func DescribeModel(shape Shape) string {
-	switch {
-	case shape.Model == "":
+	if shape.Model == "" {
 		return "leave it at the runtime's default"
-	case shape.Effort == "":
-		return fmt.Sprintf("pick model `%s`, and leave its effort at the default", shape.Model)
 	}
-	return fmt.Sprintf("pick model `%s`, with effort `%s`", shape.Model, shape.Effort)
+	out := fmt.Sprintf("pick model `%s`, with effort `%s`", shape.Model, shape.Effort)
+	if shape.Effort == "" {
+		out = fmt.Sprintf("pick model `%s`, and leave its effort at the default", shape.Model)
+	}
+	switch shape.Fast {
+	case FastOn:
+		out += ", with fast mode **on**"
+	case FastOff:
+		out += ", with fast mode **off**"
+	}
+	return out
 }
 
 // DescribeConnector says how to set up one installed connector, for

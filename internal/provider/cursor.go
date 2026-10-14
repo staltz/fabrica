@@ -367,9 +367,10 @@ var cursorPRActions = map[string]string{
 // set ("Model 'grok-4.6' does not match a known variant" otherwise), so a
 // stub's model gets its default variant, with the effort parameter
 // (effort, reasoning or reasoning_effort, whichever the model has) set to
-// the stub's effort. That's a known variant for every effort the catalog
-// lists. Everything else (context, fast, thinking, cyber) stays as Cursor
-// sets it by default.
+// the stub's effort, and fast set to the stub's fast mode (see
+// cursorFastVariants). That's a known variant for every effort the catalog
+// lists. Everything else (context, thinking, cyber) stays as Cursor sets
+// it by default.
 var cursorModelVariants = map[string]map[string]string{
 	"claude-fable-5":    {"context": "1m", "thinking": "true", "effort": "high"},
 	"claude-fable-5-1":  {"context": "1m", "thinking": "true", "effort": "high"},
@@ -432,6 +433,14 @@ func cursorEffortParam(variant map[string]string) string {
 	return ""
 }
 
+// cursorFastVariants are the parameters a model needs besides fast: true,
+// where its default variant has no fast twin. GPT-5.4 and 5.5 only run fast
+// with the 272k context, not their default 1m.
+var cursorFastVariants = map[string]map[string]string{
+	"gpt-5.4": {"context": "272k"},
+	"gpt-5.5": {"context": "272k"},
+}
+
 // cursorExtraHigh lists the models whose catalog calls xhigh "extra-high".
 var cursorExtraHigh = map[string]bool{
 	"gpt-5.2": true, "gpt-5.3-codex": true, "gpt-5.4": true, "gpt-5.5": true,
@@ -460,6 +469,19 @@ func cursorModelSelectionFor(m *ResourceModel) (*cursorModelSelection, error) {
 			value = "extra-high"
 		}
 		params[param] = value
+	}
+	switch _, hasFast := variant["fast"]; {
+	case m.Fast == "on" && !hasFast:
+		return nil, fmt.Errorf("Cursor's model %s has no fast mode", m.Name)
+	case m.Fast == "on":
+		params["fast"] = "true"
+		for id, value := range cursorFastVariants[m.Name] {
+			params[id] = value
+		}
+	case hasFast:
+		// Some models are fast by default (Grok, Composer and older GPTs),
+		// and a stub only runs one fast when its routine asks for it.
+		params["fast"] = "false"
 	}
 	sel := &cursorModelSelection{ModelID: m.Name}
 	for id, value := range params {

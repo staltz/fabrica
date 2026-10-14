@@ -261,10 +261,48 @@ func TestDescribeModel(t *testing.T) {
 		{stub.Shape{}, "leave it at the runtime's default"},
 		{stub.Shape{Model: "gpt-5.5"}, "pick model `gpt-5.5`, and leave its effort at the default"},
 		{stub.Shape{Model: "claude-opus-5-5", Effort: "max"}, "pick model `claude-opus-5-5`, with effort `max`"},
+		{stub.Shape{Model: "grok-4.7", Effort: "high", Fast: "off"}, "pick model `grok-4.7`, with effort `high`, with fast mode **off**"},
+		{stub.Shape{Model: "composer-2.5", Fast: "on"}, "pick model `composer-2.5`, and leave its effort at the default, with fast mode **on**"},
 	} {
 		if got := stub.DescribeModel(c.shape); got != c.want {
 			t.Errorf("DescribeModel(%+v) = %q, want %q", c.shape, got, c.want)
 		}
+	}
+}
+
+func TestFastMode(t *testing.T) {
+	// On a runtime with a fast mode for the model, the stub sets it either
+	// way, so the runtime's own default (Grok runs fast on Cursor) never
+	// decides.
+	for models, want := range map[string]string{
+		"[{ model: grok-4.7, effort: high }]":              "off",
+		"[{ model: grok-4.7, effort: high, fast: false }]": "off",
+		"[{ model: grok-4.7, effort: high, fast: true }]":  "on",
+		"[{ model: claude-sonnet-5-5, effort: high }]":     "",
+	} {
+		f := load(t, map[string]string{"routines/pr-review.md": withModels(models)})
+		e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+		if !e.OK() || e.Shape.Fast != want {
+			t.Errorf("%s: fast %q, want %q: %s", models, e.Shape.Fast, want, e.Diags)
+		}
+	}
+	// Fast mode is part of the shape, so turning it on changes the stub.
+	slow := load(t, map[string]string{"routines/pr-review.md": withModels("[grok-4.7]")})
+	fast := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: grok-4.7, fast: true }]")})
+	if stub.Evaluate(slow, slow.Routines["pr-review"], target(t, "cursor-cloud")).Shape.Fingerprint() == stub.Evaluate(fast, fast.Routines["pr-review"], target(t, "cursor-cloud")).Shape.Fingerprint() {
+		t.Error("turning fast mode on should change the stub's fingerprint")
+	}
+	// An entry asking for fast mode only matches runtimes that have it for
+	// the model; the next entry gets its turn elsewhere.
+	f := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-opus-5-5, effort: high, fast: true }, { model: claude-opus-5-5, effort: high }]")})
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-cloud"))
+	if !e.OK() || e.Model.Fast || e.Shape.Fast != "" {
+		t.Errorf("claude-code-cloud: picked %s, shape fast %q: %s", e.Model, e.Shape.Fast, e.Diags)
+	}
+	f = load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-sonnet-5-5, fast: true }]")})
+	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "no fast mode for it") {
+		t.Errorf("want an error saying claude-sonnet-5-5 has no fast mode, got:\n%s", e.Diags)
 	}
 }
 

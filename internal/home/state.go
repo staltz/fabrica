@@ -51,6 +51,7 @@ type Shape struct {
 	Memory      string   `yaml:"memory,omitempty"`
 	Model       string   `yaml:"model,omitempty"`
 	Effort      string   `yaml:"effort,omitempty"`
+	Fast        string   `yaml:"fast,omitempty"`
 	Fingerprint string   `yaml:"fingerprint"`
 }
 

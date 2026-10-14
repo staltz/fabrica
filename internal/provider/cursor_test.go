@@ -72,17 +72,22 @@ func TestCursorWorkflowJSON(t *testing.T) {
 	if _, err := cursorWorkflowFor(res); err == nil {
 		t.Error("Cursor has no built-in notion tool, so that should be an error")
 	}
-	// Cursor only takes whole variants: the stub's effort, and Cursor's
-	// defaults for everything else.
+	// Cursor only takes whole variants: the stub's effort and fast mode,
+	// and Cursor's defaults for everything else. Fast mode is off unless the
+	// stub turns it on, even for models that are fast by default.
 	for model, want := range map[ResourceModel]string{
-		{Name: "claude-opus-5-5", Effort: "high"}:  `{"modelId":"claude-opus-5-5","parameters":[{"id":"context","value":"1m"},{"id":"effort","value":"high"},{"id":"fast","value":"false"}]}`,
-		{Name: "gpt-5.5", Effort: "xhigh"}:         `{"modelId":"gpt-5.5","parameters":[{"id":"context","value":"1m"},{"id":"fast","value":"false"},{"id":"reasoning","value":"extra-high"}]}`,
-		{Name: "claude-sonnet-5-5", Effort: "low"}: `{"modelId":"claude-sonnet-5-5","parameters":[{"id":"context","value":"1m"},{"id":"reasoning_effort","value":"low"}]}`,
-		{Name: "grok-4.6", Effort: "medium"}:       `{"modelId":"grok-4.6","parameters":[{"id":"effort","value":"medium"},{"id":"fast","value":"true"}]}`,
-		{Name: "grok-4.7"}:                         `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"true"},{"id":"reasoning_effort","value":"high"}]}`,
-		{Name: "composer-2.5"}:                     `{"modelId":"composer-2.5","parameters":[{"id":"fast","value":"true"}]}`,
-		{Name: "gemini-3.1-pro"}:                   `{"modelId":"gemini-3.1-pro"}`,
-		{Name: "glm-5p3", Effort: "low"}:           `{"modelId":"glm-5p3","parameters":[{"id":"reasoning","value":"low"}]}`,
+		{Name: "claude-opus-5-5", Effort: "high"}:         `{"modelId":"claude-opus-5-5","parameters":[{"id":"context","value":"1m"},{"id":"effort","value":"high"},{"id":"fast","value":"false"}]}`,
+		{Name: "gpt-5.5", Effort: "xhigh"}:                `{"modelId":"gpt-5.5","parameters":[{"id":"context","value":"1m"},{"id":"fast","value":"false"},{"id":"reasoning","value":"extra-high"}]}`,
+		{Name: "claude-sonnet-5-5", Effort: "low"}:        `{"modelId":"claude-sonnet-5-5","parameters":[{"id":"context","value":"1m"},{"id":"reasoning_effort","value":"low"}]}`,
+		{Name: "grok-4.6", Effort: "medium", Fast: "off"}: `{"modelId":"grok-4.6","parameters":[{"id":"effort","value":"medium"},{"id":"fast","value":"false"}]}`,
+		{Name: "grok-4.6", Effort: "medium", Fast: "on"}:  `{"modelId":"grok-4.6","parameters":[{"id":"effort","value":"medium"},{"id":"fast","value":"true"}]}`,
+		{Name: "grok-4.7", Fast: "off"}:                   `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"false"},{"id":"reasoning_effort","value":"high"}]}`,
+		{Name: "grok-4.7"}:                                `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"false"},{"id":"reasoning_effort","value":"high"}]}`,
+		{Name: "composer-2.5", Fast: "on"}:                `{"modelId":"composer-2.5","parameters":[{"id":"fast","value":"true"}]}`,
+		{Name: "claude-opus-5-5", Fast: "on"}:             `{"modelId":"claude-opus-5-5","parameters":[{"id":"context","value":"1m"},{"id":"effort","value":"medium"},{"id":"fast","value":"true"}]}`,
+		{Name: "gpt-5.5", Effort: "high", Fast: "on"}:     `{"modelId":"gpt-5.5","parameters":[{"id":"context","value":"272k"},{"id":"fast","value":"true"},{"id":"reasoning","value":"high"}]}`,
+		{Name: "gemini-3.1-pro"}:                          `{"modelId":"gemini-3.1-pro"}`,
+		{Name: "glm-5p3", Effort: "low"}:                  `{"modelId":"glm-5p3","parameters":[{"id":"reasoning","value":"low"}]}`,
 	} {
 		res := cursorResource()
 		res.Model = &model
@@ -95,7 +100,7 @@ func TestCursorWorkflowJSON(t *testing.T) {
 			t.Errorf("%s: modelSelection = %s, want %s", model.Name, got, want)
 		}
 	}
-	for _, model := range []ResourceModel{{Name: "gpt-9"}, {Name: "composer-2.5", Effort: "high"}} {
+	for _, model := range []ResourceModel{{Name: "gpt-9"}, {Name: "composer-2.5", Effort: "high"}, {Name: "claude-sonnet-5-5", Fast: "on"}} {
 		res := cursorResource()
 		res.Model = &model
 		if _, err := cursorWorkflowFor(res); err == nil {
@@ -137,8 +142,19 @@ func TestCursorVariantsAreForItsModels(t *testing.T) {
 		if name := p.Matrix.ModelWithID(id); name != "" {
 			id = name
 		}
-		if !p.Matrix.HasModel(id, "xhigh") {
+		if !p.Matrix.HasModel(id, "xhigh", false) {
 			t.Errorf("cursorExtraHigh has %s, which cursor-cloud's matrix doesn't list with xhigh", id)
+		}
+	}
+	for name := range p.Matrix.Models {
+		_, hasFast := cursorModelVariants[p.Matrix.ModelID(name)]["fast"]
+		if p.Matrix.FastModels[name] != hasFast {
+			t.Errorf("cursor-cloud's matrix says %s's fast mode is %v, but its variant disagrees", name, p.Matrix.FastModels[name])
+		}
+	}
+	for id := range cursorFastVariants {
+		if !p.Matrix.FastModels[id] {
+			t.Errorf("cursorFastVariants has %s, which cursor-cloud's matrix doesn't list in fast_models", id)
 		}
 	}
 }

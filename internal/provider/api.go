@@ -95,6 +95,7 @@ type request struct {
 	Endpoint string    `json:"endpoint,omitempty"`
 	RemoteID string    `json:"remote_id,omitempty"`
 	Resource *Resource `json:"resource,omitempty"`
+	Session  *Session  `json:"session,omitempty"`
 }
 
 // response is what the program prints on stdout.
@@ -102,6 +103,8 @@ type response struct {
 	Error     string           `json:"error,omitempty"`
 	RemoteID  string           `json:"remote_id,omitempty"`
 	Resources []RemoteResource `json:"resources,omitempty"`
+	SessionID string           `json:"session_id,omitempty"`
+	URL       string           `json:"url,omitempty"`
 }
 
 // RuntimeAPI is how Fabrica creates, updates and deletes a cloud runtime's
@@ -177,6 +180,7 @@ type ManualSetup interface {
 //	create  → {"remote_id": "…"}
 //	update  → {}
 //	delete  → {}
+//	launch  → {"session_id": "…", "url"?}   (for init routines)
 type APIClient struct {
 	Path    string
 	Timeout time.Duration

@@ -152,10 +152,22 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	where := r.Where()
 	rt := t.Runtime.Name()
 
-	e.Trigger = Use{Name: r.Trigger.On, Support: m.Trigger(r.Trigger.On)}
-	if e.Trigger.Support != provider.Native {
-		e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, r.Trigger.On).
-			Hintf("triggers can't be emulated; deploy this routine to a runtime that has %s, or change its trigger", r.Trigger.On)
+	switch {
+	case r.IsInit():
+		// Fabrica fires init itself, by starting a session.
+		e.Trigger = Use{Name: r.Trigger.On, Support: provider.Unsupported}
+		if m.CanLaunch() {
+			e.Trigger.Support = provider.Native
+		} else {
+			e.Diags.Errorf("capability.init", where, "Fabrica can't start a session on runtime %s, so init routine %s can't run there", rt, r.Ref.Name).
+				Hintf("list runtimes Fabrica can start sessions on in the init routine's runtimes: (their capability matrices have launch_modes)")
+		}
+	default:
+		e.Trigger = Use{Name: r.Trigger.On, Support: m.Trigger(r.Trigger.On)}
+		if e.Trigger.Support != provider.Native {
+			e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, r.Trigger.On).
+				Hintf("triggers can't be emulated; deploy this routine to a runtime that has %s, or change its trigger", r.Trigger.On)
+		}
 	}
 
 	shape := Shape{Trigger: r.Trigger.On, Cron: r.Trigger.Cron}
@@ -245,12 +257,15 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		}
 	}
 
-	if m.SkillTransport == provider.Text {
+	// The Fabrica server serves skills file by file, whatever runtime
+	// connects to it: that's every cloud runtime, and a local one running a
+	// cloud factory's init session.
+	if m.SkillTransport == provider.Text || t.Endpoint != "" {
 		for _, name := range r.Skills {
 			s := f.Skills[name]
 			if s != nil && !s.TextOnly {
-				e.Diags.Errorf("capability.skill", where, "skill %s isn't text-only (%s), so cloud runtime %s can't use it", name, s.NotTextOnlyReason, rt).
-					Hintf("in v0.1 cloud runtimes can only use skills made of Markdown, plain text and data files; run this routine locally, or split the scripts out of the skill")
+				e.Diags.Errorf("capability.skill", where, "skill %s isn't text-only (%s), so %s can't use it from the Fabrica server", name, s.NotTextOnlyReason, rt).
+					Hintf("in v0.1 the Fabrica server can only serve skills made of Markdown, plain text and data files; run this routine locally, or split the scripts out of the skill")
 			}
 		}
 	}
@@ -339,6 +354,32 @@ func EndpointID(endpoint string) string {
 	return u.Host + strings.TrimRight(u.Path, "/")
 }
 
+// InitIdentity is the identity of a factory's init, like
+// "fabrica.acme.dev/acme-app#onboard": the endpoint and the init routine.
+// There's one init per factory, so no repo goes in.
+func InitIdentity(endpoint, routine string) string {
+	return EndpointID(endpoint) + "#" + routine
+}
+
+// InitPrompt is what an init session is started with. Like a stub, it says
+// who the session is and how to load its real instructions.
+func InitPrompt(identity, factory, routine, runtime, repo, fingerprint string, repos []string) string {
+	others := ""
+	if len(repos) > 1 {
+		others = fmt.Sprintf(" The factory deploys to %s.", strings.Join(quote(repos), ", "))
+	}
+	return fmt.Sprintf("You are the init session of Fabrica factory `%s` (`%s`): its init routine, `%s`, runs once, now that the factory was applied for the first time.%s Call `run_begin` with routine `%s`, runtime `%s`, repo `%s` and stub `%s`, and an intent that sums up what you're about to do in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.",
+		factory, identity, routine, others, routine, runtime, repo, fingerprint)
+}
+
+func quote(list []string) []string {
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = "`" + s + "`"
+	}
+	return out
+}
+
 // Prompt is the text of a cloud stub. It tells the agent who it is and how
 // to load its real instructions.
 func Prompt(identity, routine, runtime, repo, fingerprint string) string {
@@ -354,6 +395,9 @@ func LocalPrompt(routine, factory, runtime, repo, fingerprint string) string {
 
 // DescribeTrigger turns a trigger into words for handoff instructions.
 func DescribeTrigger(tr blueprint.Trigger, repo string) string {
+	if tr.On == blueprint.InitTrigger {
+		return "once, when the factory is first applied"
+	}
 	if tr.On == "schedule" {
 		return fmt.Sprintf("on a schedule, cron `%s` (UTC)", tr.Cron)
 	}

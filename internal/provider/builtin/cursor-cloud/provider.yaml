@@ -13,6 +13,11 @@
 kind: cloud
 description: Cursor automations (cloud agents)
 apply_modes: [api, handoff]
+# An init routine's session is a Cursor cloud agent. With the same API key,
+# Fabrica starts it through Cursor's Cloud Agents API (POST /v1/agents),
+# which takes the agent's MCP servers inline. Without it, launch.md says how
+# to start one by hand.
+launch_modes: [api, handoff]
 find_by_identity: false
 find_by_remote_id: true
 skill_transport: text

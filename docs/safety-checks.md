@@ -28,6 +28,12 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A param that no routine declares, or a required param that isn't set | ❌ error | — | — | `factory.unknown-param`, `factory.missing-param` |
 | A ref that's both a branch and a tag | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `blueprint.resolve` |
 | A trigger, connector or side effect a runtime doesn't support | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |
+| More than one init routine in a blueprint, or one that prefers a runtime that doesn't exist | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `init.ambiguous`, `init.unknown-runtime` |
+| An init routine with `memory: true`, or `runtimes:` on a routine that isn't an init routine | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `routine.invalid` |
+| A new factory's init routine has no runtime to start its session on | ❌ error, saying why for each runtime it lists | — | — | `init.no-runtime` |
+| A factory lists its blueprint's init routine under `routines:` | ❌ error | — | — | `factory.init-routine` |
+| An init session for a factory that turned its init off, on a runtime the init routine no longer lists, or from a local factory | — | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
+| Starting an init session failed, or apply stopped while starting it | 🔧 the next apply tries again, with the same init ID, so the runtime never gets a second session | — | — | — |
 | A routine's trigger, connectors or memory setting (on runtimes with their own memory) changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | A routine, repo or runtime was removed from a factory (or a routine no longer runs on a runtime), but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | The server secret was rotated | 🔧 update in `plan` (when it has the secret) | — | ❌ old tokens get `401` | — |

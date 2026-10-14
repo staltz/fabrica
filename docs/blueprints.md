@@ -229,6 +229,7 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | `params` | Values factories can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
 | `memory` | Optional. `true` if the routine keeps notes between runs; default `false`. See [Memory](#memory). |
 | `models` | Optional. The models to run the routine on, each with an effort, in order of preference. See [Models](#models). |
+| `runtimes` | Only for an [init routine](#init-routines): where to run it, in order of preference. |
 
 The Markdown body is the routine's prompt. It must not be empty.
 
@@ -244,6 +245,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
 | `git.pre_commit`, `git.pre_push` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
+| `init` | Fired by Fabrica itself, once per factory. See [Init routines](#init-routines). |
 
 ### Side effects
 
@@ -294,6 +296,45 @@ Each runtime runs the routine on the **first** entry it has: that model, at that
 - With no `models:` at all, every runtime uses its own default.
 
 The model is part of the stub's [shape](concepts.md#stubs-and-shapes) on runtimes that let a stub pick one, so changing it there means a re-apply, and `plan` shows the stub as an update. Local runtimes can't pick one (hooks run inside the session you already have open, on its model), so only `default` matches there. The same goes for Copilot automations, which always run on Copilot's Auto.
+
+### Init routines
+
+Some blueprints need a one-off session before their routines are any use: open an issue in each repo listing what it's missing, create the labels the routines use, write the `test` skill the blueprint [expects](#expects), set up a Slack channel. That's an **init routine**: a routine whose trigger is `init`.
+
+```markdown
+<!-- routines/onboard.md -->
+---
+description: Get a new factory's repos ready for this blueprint
+trigger: { on: init }
+runtimes: [cursor-cloud, claude-code-local, claude-code-cloud]   # optional; the first one available wins
+skills: [repo-setup]
+connectors: [github]        # give it a fallback: MCP server, so Claude Code can use it locally
+side_effects: [github.issue_open]
+models: [{ model: claude-opus-5-5, effort: high }, default]
+---
+For each of the factory's repos, check that it provides the skills this blueprint expects, and open one issue listing what's missing.
+```
+
+Fabrica runs it **once per factory, ever**: `fabrica apply` starts a session for it the first time it creates the factory, right after the factory's stubs. Not on later applies, not after a `fabrica destroy` and a fresh apply, and not for a factory that was first applied before its blueprint had an init routine. The factory's [state](home-repos.md#state) remembers.
+
+- **It's a routine like any other**, with skills, connectors, side effects, params and models, served live over MCP. Only its trigger is special: no runtime fires `init`, Fabrica does, by starting a session.
+- **One per blueprint.** Two init routines (say, one of yours and one an import brings) are an error; leave one out with `exclude:`.
+- **No memory.** It runs once, so `memory: true` is an error.
+- **It runs for cloud factories**, which keep state to remember it ran. Local factories don't run it.
+- **Factories don't list it** under `routines:`; it comes with the blueprint. A factory turns it off with `init: false` (see [Home repos](home-repos.md#init)).
+
+#### Where it runs
+
+`runtimes:` lists where you'd like it to run, in order of preference. Without it, the factory's own runtimes are the list, in their order. Fabrica picks:
+
+1. the **first runtime it can start the session on by itself**: through the runtime's API (Cursor's cloud agents, with a Cursor API key; a folder provider with a `launch` operation), or with a local tool's command line (`claude`, when `fabrica apply` runs on a machine that has Claude Code, and never in CI);
+2. otherwise, the **first runtime a person can start it on**, from a handoff. Apply writes the instructions, and `fabrica confirm` records that it's started.
+
+So a list like `[claude-code-local, cursor-cloud, claude-code-cloud]` runs the session on your laptop when you apply from there, as a Cursor cloud agent when CI applies with a Cursor key, and otherwise asks a person to start it in Claude Code on the web. A runtime that can't run the routine at all (it lacks a connector the routine needs, or none of its models) is skipped, and `fabrica plan` says why for each one. If no runtime is left, that's an error.
+
+Each provider says how it can start sessions, in its capability matrix (`launch_modes`, see [Providers](providers.md#init-sessions)). The session is served by the factory's own Fabrica server, wherever it runs, so on a local runtime it can only use [text-only skills](#skill-files-and-relative-paths) too.
+
+The session runs in the factory's **first target**, and its prompt names every target, so it can reach the others through its connectors (a Cursor cloud agent gets them all as its repos).
 
 ### Checks
 

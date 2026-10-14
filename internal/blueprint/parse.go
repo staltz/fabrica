@@ -101,6 +101,7 @@ type routineFile struct {
 	Params      map[string]paramFile `yaml:"params"`
 	Memory      bool                 `yaml:"memory"`
 	Models      []yaml.Node          `yaml:"models"`
+	Runtimes    []string             `yaml:"runtimes"`
 }
 
 type triggerFile struct {
@@ -161,6 +162,28 @@ func parseRoutine(data []byte, name, file string) *Routine {
 		}
 	}
 	r.Trigger = Trigger{On: f.Trigger.On, Cron: strings.Join(strings.Fields(f.Trigger.Cron), " ")}
+
+	// Init routines run once, where the routine says.
+	switch {
+	case r.IsInit() && r.Memory:
+		return fail("an init routine runs once per factory, so it has nothing to remember between runs; drop memory: true")
+	case !r.IsInit() && f.Runtimes != nil:
+		return fail("runtimes: is only for init routines (`trigger: { on: init }`); a factory chooses where its other routines run, with `{ routine, runtimes }` under its routines:")
+	}
+	seenRuntimes := map[string]bool{}
+	for _, rt := range f.Runtimes {
+		if err := names.Validate(rt); err != nil {
+			return fail("runtimes: %q isn't a valid runtime name", rt)
+		}
+		if current, ok := provider.Renamed(rt); ok {
+			return fail("runtimes: %s was renamed to %s; use the new name", rt, current)
+		}
+		if seenRuntimes[rt] {
+			return fail("runtimes: lists %q twice", rt)
+		}
+		seenRuntimes[rt] = true
+		r.Runtimes = append(r.Runtimes, rt)
+	}
 
 	// Skills.
 	seen := map[string]bool{}

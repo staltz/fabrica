@@ -83,6 +83,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	e.planInit(dp, d, f)
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
 			if !d.Runs(r.Ref.Name, rt.Name) {

@@ -42,6 +42,7 @@ params:
 | `routines` | for cloud | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
+| `init` | no | `false` never runs the blueprint's [init routine](blueprints.md#init-routines) for this factory. See [Init](#init). |
 
 - **The file name is the factory's ID.** `factories/pr-review.yaml` is the factory `pr-review`.
 - **It expands to every combination** of routines × targets × runtimes. The example creates 1 × 2 × 2 = 4 remote resources, each tracked separately. A routine can be narrowed to some of the runtimes, see [below](#routines-on-some-runtimes).
@@ -76,6 +77,26 @@ This creates 3 remote resources: `pr-review` on both runtimes, and `release-note
 Params are set once at the top, and individual targets can override them. Every param must be declared by one of the factory's routines, and every required param must have a value for every target. Both are errors otherwise, which catches typos.
 
 If two runtimes need different settings, write two factory files.
+
+### Init
+
+When the blueprint has an [init routine](blueprints.md#init-routines), the factory's first apply starts a session for it, once, after creating the stubs. `plan` shows where it would run and why:
+
+```
+  init routine onboard (once, on the first of its runtimes Fabrica can start a session on):
+      cursor-cloud: a person starts it, from a handoff (Fabrica can't by itself: CURSOR_API_KEY isn't set)
+    → claude-code-local: Fabrica starts it
+  Changes:
+    + create pr-review @ github.com/acme/app on cursor-cloud (handoff): it isn't installed yet
+    ! init   onboard @ github.com/acme/app on claude-code-local (api; Fabrica starts it): the factory is being applied for the first time
+```
+
+- **Once, ever.** State records the init, and nothing removes the record, not even `fabrica destroy`. A factory that was applied before its blueprint got an init routine never runs it.
+- **Failures are retried.** If the session can't start (the runtime refused, the Fabrica server wasn't ready, or other changes in the same apply failed), the next apply tries again. Every attempt uses the same init ID, and each runtime uses it to make sure there's never a second session: Cursor refuses a second cloud agent with the same ID, and a local session keeps its folder.
+- **The Fabrica server has to serve the factory first.** It reads the home repo about once a minute, so before starting a session apply waits (up to 3 minutes) until the server answers for the new factory.
+- **A handoff** waits for `fabrica confirm <init ID> --remote-id <the session's ID or URL>`, like any other. Until then, `plan` lists it as waiting, and no apply starts it again.
+- **A local session** (on `claude-code-local`) runs in the background, in a fresh clone of the repo under `~/.cache/fabrica/sessions/<factory>/<init ID>/`, with a log file there. Nobody is there to answer permission prompts, so it runs in Claude Code's `auto` permission mode. Resume it with `claude --resume <session ID>` in that clone.
+- `init: false` turns it off for the factory: say, for a new factory on repos that are set up already.
 
 ### Follow versus frozen
 
@@ -145,6 +166,17 @@ resources:
       fingerprint: e128f7aa2995
     applied_at: 2026-10-10T12:01:00Z
 pending: []                              # handoffs waiting for `fabrica confirm`
+init:                                    # the factory's init session, once there's been one
+  id: i_3f2a1c9e04                       # the same on every attempt
+  routine: onboard
+  runtime: cursor-cloud
+  repo: github.com/acme/app
+  mode: api
+  status: started                        # starting, started, waiting (for confirm) or failed
+  session: bc-6f1c…
+  url: https://cursor.com/agents/bc-6f1c…
+  blueprint_commit: 9c1e4b2a…
+  at: 2026-10-10T12:01:00Z
 ```
 
 The `token_hash` is a short one-way fingerprint of the token, never the token itself.
@@ -167,7 +199,7 @@ The `token_hash` is a short one-way fingerprint of the token, never the token it
 1. **Plan** against the latest home repo. Apply fetches the remote and fast-forwards first, and refuses to run with uncommitted changes in `factories/` or `state/`, or with local commits that aren't pushed: it applies what's on the remote, never what's only on your machine. If the plan finds errors, apply lists them and skips that factory. If nothing needs to change, it stops without committing.
 2. **Take the lock.** Commit a `lock:` entry to the state file and push. Git only accepts a push on top of the latest commit, so when two applies race, exactly one push gets through. The other takes its commit back, pulls, sees the lock, and stops with a message naming who holds it. Nothing remote has been touched yet, so losing the race is always safe.
 3. **Refresh.** Look up all of this factory's resources in each runtime **by identity** (for runtimes with an API). A resource that exists but is missing from state gets adopted, like one created by an apply that crashed before recording it. A runtime whose API can't list resources (like Cursor's) is asked about each resource state records, by its remote ID, instead.
-4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change. In a runtime that can't list resources, apply commits the state file (and pushes) before each create, lock still held, and again once the new ID comes back. A crash after the ID is recorded can't lose the resource. A lost answer, or a crash before the ID is recorded, leaves the create marked unfinished: the next plan reports it, and apply will not create another until `fabrica confirm` says whether it exists.
+4. **Re-plan and apply.** If the re-plan finds errors (say, duplicates the refresh turned up), remove the lock and stop without touching any resource. Otherwise carry out each change, and then, on the factory's first apply, start its [init](#init) session (recording in state, before it starts, that it's starting). In a runtime that can't list resources, apply commits the state file (and pushes) before each create, lock still held, and again once the new ID comes back. A crash after the ID is recorded can't lose the resource. A lost answer, or a crash before the ID is recorded, leaves the create marked unfinished: the next plan reports it, and apply will not create another until `fabrica confirm` says whether it exists.
 5. **Record and release.** Write the results and remove the lock in one commit, then push. If the push is rejected because of unrelated commits (like another factory's state), rebase and push again. While the lock is held, nobody else writes this file.
 
 ### Crashed applies

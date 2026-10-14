@@ -151,7 +151,7 @@ your factory changes first.`,
 				handoffDir = filepath.Join(t.cacheDir, "handoffs")
 			}
 			out := cmd.OutOrStdout()
-			res, err := apply.Run(ctx, apply.Options{Plan: env, Out: out, HandoffDir: handoffDir}, dir)
+			res, err := apply.Run(ctx, apply.Options{Plan: env, Out: out, HandoffDir: handoffDir, SessionDir: filepath.Join(t.cacheDir, "sessions")}, dir)
 			if err != nil {
 				return err
 			}
@@ -296,6 +296,10 @@ pushes to the home repo, and refuses while an apply holds the lock.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
+			if st := c.Init; st != nil {
+				fmt.Fprintf(out, "Confirmed %s: init %s @ %s on %s started (factory %s). It won't run again.\n", st.ID, st.Routine, st.Repo, st.Runtime, c.Factory)
+				return nil
+			}
 			p := c.Pending
 			if c.Absent {
 				fmt.Fprintf(out, "Cleared %s: %s @ %s on %s was not created (factory %s). The next apply can create it.\n", p.ID, p.Routine, p.Repo, p.Runtime, c.Factory)

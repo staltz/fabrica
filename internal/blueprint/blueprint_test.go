@@ -519,3 +519,40 @@ func refsEqual(refs []names.Ref, want ...string) bool {
 	}
 	return true
 }
+
+func TestInitRoutines(t *testing.T) {
+	const init = "---\ntrigger: { on: init }\nruntimes: [cursor-cloud, claude-code-local]\n---\nGet the repos ready.\n"
+	f := mustLoad(t, newLoader(t), writeBlueprint(t, map[string]string{
+		"fabrica.yaml":     "",
+		"routines/init.md": init,
+	}))
+	r := f.Init()
+	if r == nil || !r.IsInit() || strings.Join(r.Runtimes, ",") != "cursor-cloud,claude-code-local" {
+		t.Fatalf("Init = %+v", r)
+	}
+	if got := r.Trigger.String(); got != "init (once, when the factory is first applied)" {
+		t.Errorf("Trigger = %q", got)
+	}
+
+	for name, c := range map[string]struct {
+		files       map[string]string
+		code, about string
+	}{
+		"runtimes on a triggered routine": {map[string]string{"routines/r.md": "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\nruntimes: [toy]\n---\nGo.\n"}, "routine.invalid", "runtimes: is only for init routines"},
+		"memory on an init":               {map[string]string{"routines/r.md": "---\ntrigger: { on: init }\nmemory: true\n---\nGo.\n"}, "routine.invalid", "nothing to remember"},
+		"a renamed runtime":               {map[string]string{"routines/r.md": "---\ntrigger: { on: init }\nruntimes: [cursor]\n---\nGo.\n"}, "routine.invalid", "cursor was renamed to cursor-cloud"},
+		"a runtime twice":                 {map[string]string{"routines/r.md": "---\ntrigger: { on: init }\nruntimes: [codex, codex]\n---\nGo.\n"}, "routine.invalid", "twice"},
+		"an unknown runtime":              {map[string]string{"routines/r.md": "---\ntrigger: { on: init }\nruntimes: [acme-runner]\n---\nGo.\n"}, "init.unknown-runtime", "no providers/acme-runner"},
+		"two inits":                       {map[string]string{"routines/a.md": init, "routines/b.md": init}, "init.ambiguous", "2 init routines (routines/a.md, routines/b.md)"},
+	} {
+		files := map[string]string{"fabrica.yaml": ""}
+		for k, v := range c.files {
+			files[k] = v
+		}
+		f, diags := newLoader(t).LoadDir(context.Background(), writeBlueprint(t, files), blueprint.LoadOptions{})
+		t.Run(name, func(t *testing.T) { expectError(t, diags, c.code, c.about) })
+		if f != nil && name == "two inits" && f.Init() != nil {
+			t.Errorf("with two inits, Init should be nil")
+		}
+	}
+}

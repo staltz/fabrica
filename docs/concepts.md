@@ -24,6 +24,7 @@ Fabrica sits beside git. It never wraps it. Blueprints and home repos are plain 
 | **Runtime** | A tool that runs agents. Cloud runtimes: Claude routines, Cursor automations, Codex, Copilot automations. Local runtimes: Claude Code, Cursor IDE, Codex CLI, Copilot CLI. |
 | **Skill** | A standard [Agent Skills](https://agentskills.io/specification) folder: a `SKILL.md` plus any other files. The agent loads it when it's relevant. |
 | **Routine** | Something an agent does automatically when a trigger fires, like "review every new PR". |
+| **Init routine** | A routine with the trigger `init`: Fabrica starts a session for it once per factory, the first time `fabrica apply` creates the factory, on the first of its runtimes that's available. |
 | **Rule** | An instruction that's always on (or on for certain files), in Cursor's rule format. |
 | **Connector** | An integration the agent needs: a runtime's built-in one, like GitHub, or an MCP server. |
 | **Models** | The models a routine would like to run on, with an effort for each, in order of preference. Each runtime runs it on the first one it has. |

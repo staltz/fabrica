@@ -103,6 +103,9 @@ type Trigger struct {
 }
 
 func (t Trigger) String() string {
+	if t.On == InitTrigger {
+		return "init (once, when the factory is first applied)"
+	}
 	if t.Cron != "" {
 		return t.On + " (" + t.Cron + ")"
 	}
@@ -160,11 +163,24 @@ type Routine struct {
 	// preference: each runtime runs it on the first one it has. Empty means
 	// every runtime uses its own default model.
 	Models []Model
+	// Runtimes are where an init routine would like to run, in order of
+	// preference: the first one Fabrica can start a session on wins. Only
+	// init routines have them (factories choose where other routines run),
+	// and empty means the factory's own runtimes, in their order.
+	Runtimes []string
 	// Prompt is the routine's instructions (the Markdown body).
 	Prompt string
 }
 
 func (r *Routine) withOrigin(o Origin) item { c := *r; c.Origin = o; return &c }
+
+// InitTrigger is the trigger of an init routine. Fabrica fires it itself,
+// once per factory: it starts a session for the routine the first time
+// `fabrica apply` creates the factory.
+const InitTrigger = "init"
+
+// IsInit reports whether the routine is an init routine.
+func (r *Routine) IsInit() bool { return r.Trigger.On == InitTrigger }
 
 // Param looks up a declared param by name.
 func (r *Routine) Param(name string) (Param, bool) {

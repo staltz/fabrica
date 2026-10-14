@@ -486,3 +486,41 @@ func TestLocalMemoryOnlyForRoutinesThatAskForIt(t *testing.T) {
 	}
 	c.fails("memory_save", map[string]any{"run_id": runID, "content": "x"}, "doesn't use memory")
 }
+
+func TestRemoteInitRun(t *testing.T) {
+	rw := newRemoteWorld(t)
+	rw.w.UpdateBlueprint(map[string]string{"routines/onboard.md": "---\ntrigger: { on: init }\nruntimes: [cursor-cloud, claude-code-local]\nskills: [pr-review]\n---\nCheck the repos are ready for this blueprint.\n"})
+	if err := rw.srv.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(context.Background(), "stable")
+	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
+	p, _ := provider.Builtin("claude-code-local")
+	fp := stub.Evaluate(f, f.Routines["onboard"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Shape.Fingerprint()
+
+	// A local runtime runs the init session of a cloud factory, from the
+	// factory's own server, like apply starts it.
+	c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+	args := map[string]any{"intent": "get the factory's repos ready", "routine": "onboard", "runtime": "claude-code-local", "repo": "github.com/acme/app", "stub": fp}
+	runID := c.runID(c.ok("run_begin", args))
+	routine := c.ok("routine_get", map[string]any{"name": "onboard"})
+	for _, want := range []string{"# Routine onboard", "for repo github.com/acme/app", "Trigger: init (once, when the factory is first applied)", "Check the repos are ready"} {
+		if !strings.Contains(routine, want) {
+			t.Errorf("routine_get is missing %q:\n%s", want, routine)
+		}
+	}
+	c.ok("run_report", map[string]any{"run_id": runID, "summary": "opened an issue listing what's missing", "status": "succeeded"})
+
+	// Only on the init's runtimes, with the right shape.
+	other := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+	other.fails("run_begin", map[string]any{"intent": "get the repos ready", "routine": "onboard", "runtime": "codex", "repo": "github.com/acme/app", "stub": fp}, "doesn't run on runtime codex anymore")
+	other.fails("run_begin", map[string]any{"intent": "get the repos ready", "routine": "onboard", "runtime": "claude-code-local", "repo": "github.com/acme/app", "stub": "000000000000"}, "this stub is outdated")
+
+	// A factory that turns its init off refuses it.
+	rw.w.Home.Pull()
+	rw.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory + "init: false\n"}).CommitPush("no init")
+	if err := rw.srv.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review")).fails("run_begin", args, "factory pr-review says init: false")
+}

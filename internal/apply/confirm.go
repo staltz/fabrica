@@ -19,6 +19,8 @@ type Confirmed struct {
 	// Absent is true when an unfinished API create was confirmed as not
 	// having happened, so the next apply may create it.
 	Absent bool
+	// Init is set when the handoff started the factory's init session.
+	Init *home.Init
 }
 
 // Confirm closes a pending handoff: the person (or computer-use agent)
@@ -42,7 +44,7 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, absent bool, now
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := s.FindPending(id); ok {
+		if _, ok := s.FindPending(id); ok || s.Init != nil && s.Init.ID == id {
 			name = n
 			break
 		}
@@ -58,6 +60,14 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, absent bool, now
 	err = r.Update(ctx, name, "fabrica: confirm "+id, func(s *home.State) error {
 		if s.Lock != nil {
 			return &ErrLocked{Factory: name, Lock: *s.Lock}
+		}
+		if s.Init != nil && s.Init.ID == id {
+			if err := confirmInit(s, id, remoteID, absent, now); err != nil {
+				return err
+			}
+			started := *s.Init
+			result.Init = &started
+			return nil
 		}
 		i, ok := s.FindPending(id)
 		if !ok {

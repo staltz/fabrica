@@ -17,12 +17,14 @@ Every command has `--help`.
 | Variable | What it's for |
 |---|---|
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
-| `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files and hook markers. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
+| `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files, hook markers, and the clones and logs of init sessions started on this machine. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret, for every server. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. Without it, Fabrica uses the secret `fabrica auth login` saved for each factory's server. See [Credentials](auth.md). |
 | `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. Without either, Fabrica uses the key `fabrica auth login` saved. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
 | `CURSOR_ENDPOINT` | The address of Cursor's API. Default `https://api2.cursor.sh`. |
 | `FABRICA_KEYCHAIN` | Set to `off` to keep the credentials `fabrica auth login` saves in a file only you can read, `$XDG_CONFIG_HOME/fabrica/credentials.json` (or `~/.config/fabrica/`), even where there's a system keychain. |
 | `BROWSER` | The program `fabrica auth login` opens pages with. By default it's `open` on macOS, and `xdg-open` on Linux when there's a display. |
+| `CURSOR_AGENTS_ENDPOINT` | The address of Cursor's Cloud Agents API, which starts [init sessions](providers.md#init-sessions) on `cursor-cloud`. Default `https://api.cursor.com`. |
+| `FABRICA_CLAUDE_BIN` | The `claude` command that starts [init sessions](providers.md#init-sessions) on `claude-code-local`. Default `claude`, from your `PATH`. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
 | `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
 
@@ -122,7 +124,7 @@ It reads the home repo as it is on disk, and never changes anything.
 
 ## `fabrica apply [factory…]`
 
-Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it commits state before each create and again once it has the new ID. A create whose answer is lost is not retried; `plan` reports it, and `fabrica confirm` says whether the resource exists. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. For your personal home repo, it also writes the local tools' configs.
+Makes runtimes match your home repo. For each cloud factory with changes and no errors, it syncs the home repo, takes the factory's lock, refreshes by identity, re-plans, applies each change (through the runtime's API, or by writing a handoff), and records the results and releases the lock in one commit. On runtimes whose API can't list resources, like Cursor's, it commits state before each create and again once it has the new ID. A create whose answer is lost is not retried; `plan` reports it, and `fabrica confirm` says whether the resource exists. When a runtime's API can't set up everything its resources rely on (Cursor automations' MCP servers), apply writes what to set up by hand next to the handoffs, and lists it at the end. The first time it creates a factory whose blueprint has an [init routine](blueprints.md#init-routines), it starts the init's session after the stubs, once, on the first of its runtimes that's available (or writes a handoff for it). For your personal home repo, it also writes the local tools' configs.
 
 | Flag | What it does |
 |---|---|
@@ -148,7 +150,7 @@ Deleting needs no token, so unlike `apply`, destroy works without a server secre
 
 ## `fabrica confirm <handoff-id>`
 
-Closes a pending handoff once someone has followed its instructions.
+Closes a pending handoff once someone has followed its instructions. That includes the handoff for a factory's [init session](home-repos.md#init): confirm its ID (like `i_3f2a1c9e04`), with `--remote-id` set to the session's ID or URL, once the session is running.
 
 | Flag | What it does |
 |---|---|

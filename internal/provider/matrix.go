@@ -121,6 +121,12 @@ type Matrix struct {
 	// names blueprints use, their makers' model IDs, whatever the runtime
 	// calls them.
 	Models map[string][]string
+	// FastModels are the models from Models that the runtime can run in a
+	// fast mode (a faster variant of the model, usually at a higher price),
+	// by the names blueprints use. A stub asks for fast mode on these
+	// models, or turns it off; elsewhere, only entries that don't ask for
+	// fast mode match.
+	FastModels map[string]bool
 	// ModelIDs are the runtime's own IDs for the models it calls something
 	// else, by the names blueprints use. ModelID translates.
 	ModelIDs map[string]string
@@ -165,6 +171,7 @@ type matrixFile struct {
 	SideEffects    map[string]Support        `yaml:"side_effects"`
 	Memory         Support                   `yaml:"memory"`
 	Models         map[string][]string       `yaml:"models"`
+	FastModels     []string                  `yaml:"fast_models"`
 	ModelIDs       map[string]string         `yaml:"model_ids"`
 	Credentials    map[string]credentialFile `yaml:"credentials"`
 }
@@ -342,6 +349,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 	}
 
 	m.Models = parseModels(f.Models, add)
+	m.FastModels = parseFastModels(f.FastModels, m.Models, add)
 	m.ModelIDs = parseModelIDs(f.ModelIDs, m.Models, add)
 
 	m.Credentials = parseCredentials(f.Credentials, add)
@@ -376,6 +384,22 @@ func parseModels(in map[string][]string, add func(string, ...any)) map[string][]
 			seen[e] = true
 		}
 		out[name] = efforts
+	}
+	return out
+}
+
+// parseFastModels checks the fast_models: entries: each one is a model
+// from models:, listed once.
+func parseFastModels(in []string, models map[string][]string, add func(string, ...any)) map[string]bool {
+	out := map[string]bool{}
+	for _, name := range in {
+		if _, ok := models[name]; !ok {
+			add("fast_models: %s isn't in models:", name)
+		}
+		if out[name] {
+			add("fast_models: lists %s twice", name)
+		}
+		out[name] = true
 	}
 	return out
 }
@@ -477,12 +501,12 @@ func lookup(m map[string]Support, key string) Support {
 	return Unsupported
 }
 
-// HasModel reports whether the runtime can run a stub on model at effort.
-// An empty effort means the model's default effort, which every listed
-// model has.
-func (m *Matrix) HasModel(model, effort string) bool {
+// HasModel reports whether the runtime can run a stub on model at effort,
+// and in its fast mode if fast. An empty effort means the model's default
+// effort, which every listed model has.
+func (m *Matrix) HasModel(model, effort string, fast bool) bool {
 	efforts, ok := m.Models[model]
-	if !ok {
+	if !ok || fast && !m.FastModels[model] {
 		return false
 	}
 	if effort == "" {

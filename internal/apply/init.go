@@ -97,7 +97,7 @@ func writeLaunchHandoff(opts Options, factory string, in *plan.Init, c *plan.Ini
 	data := provider.LaunchData{
 		ID: in.ID, Runtime: c.Runtime, Factory: factory, Routine: s.Routine, Identity: in.Identity,
 		Repo: in.Repo, Repos: in.Repos, Prompt: s.Prompt, Fingerprint: s.Fingerprint,
-		Model:          provider.HandoffModel{Name: c.Eval.Shape.Model, Effort: c.Eval.Shape.Effort, Setup: stub.DescribeModel(c.Eval.Shape)},
+		Model:          provider.HandoffModel{Name: c.Eval.Shape.Model, Effort: c.Eval.Shape.Effort, Fast: c.Eval.Shape.Fast, Setup: stub.DescribeModel(c.Eval.Shape)},
 		Fabrica:        provider.HandoffFabrica{URL: s.Fabrica.URL},
 		ConfirmCommand: fmt.Sprintf("fabrica confirm %s --remote-id <the session's ID or URL>", in.ID),
 	}

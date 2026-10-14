@@ -54,6 +54,9 @@ type ResourceModel struct {
 	Name string `json:"name"`
 	// Effort is one of Efforts, or empty for the model's default effort.
 	Effort string `json:"effort,omitempty"`
+	// Fast is the model's fast mode, "on" or "off", for the models the
+	// matrix lists in fast_models:, and empty for the rest.
+	Fast string `json:"fast,omitempty"`
 }
 
 // ResourceConnector is one connector to install.

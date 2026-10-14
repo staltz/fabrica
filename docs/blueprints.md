@@ -283,14 +283,16 @@ Some routines need a strong model thinking hard, and others are fine on a fast, 
 models:
   - { model: claude-opus-5-5, effort: high }
   - { model: gpt-5.6-sol, effort: xhigh }
+  - { model: grok-4.7, effort: high, fast: true }
   - claude-sonnet-5-5                       # its default effort
   - default
 ```
 
 Each runtime runs the routine on the **first** entry it has: that model, at that effort. Runtimes list the models they have, and the efforts each one can run at, in their [capability matrix](providers.md#capability-matrices), so `fabrica plan` shows which one every runtime picked.
 
-- **An entry** is either `{ model: <id>, effort: <level> }`, or a model's ID on its own, which means that model at its default effort. Model IDs are their makers' own, like Anthropic's `claude-opus-5-5` or OpenAI's `gpt-5.5`, and the same on every runtime: where a runtime calls a model something else (Cursor calls GLM 5.3 `glm-5p3`), Fabrica translates.
+- **An entry** is either `{ model: <id>, effort: <level>, fast: <true|false> }` (`effort` and `fast` are optional), or a model's ID on its own, which means that model at its default effort, with fast mode off. Model IDs are their makers' own, like Anthropic's `claude-opus-5-5` or OpenAI's `gpt-5.5`, and the same on every runtime: where a runtime calls a model something else (Cursor calls GLM 5.3 `glm-5p3`), Fabrica translates.
 - **Efforts** are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. Runtimes call some of them something else (Cursor says `extra-high` for some models), and their providers translate. An entry only matches a runtime that has that model *at that effort*.
+- **Fast mode** is a faster variant of a model that some runtimes have (Cursor has it for Grok, Composer, Opus and GPT models), usually at a higher price. `fast: true` asks for it, and the entry then only matches runtimes with a fast mode for that model. Without it (or with `fast: false`), fast mode is off, even on runtimes that would run the model fast by default.
 - **`default`** matches every runtime, and means the runtime's own default model. It can only come last, since nothing after it would ever be picked.
 - If a runtime has none of the entries, that's an error in `check` and `plan`, which says what the runtime has instead. End the list with `default` if the routine can run anywhere.
 - With no `models:` at all, every runtime uses its own default.

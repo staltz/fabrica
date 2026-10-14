@@ -192,8 +192,8 @@ func (r *Routine) Param(name string) (Param, bool) {
 	return Param{}, false
 }
 
-// Model is one entry of a routine's models: a model and the effort to run
-// it at.
+// Model is one entry of a routine's models: a model, the effort to run it
+// at, and whether to run it in its fast mode.
 type Model struct {
 	// Name is the model's ID from its maker, like claude-opus-5-5 or
 	// gpt-5.5, the same on every runtime (each runtime's matrix says what
@@ -203,17 +203,29 @@ type Model struct {
 	// Effort is one of provider.Efforts, or empty for the model's default
 	// effort.
 	Effort string
+	// Fast asks for the model's fast mode, where a runtime has one (see
+	// provider.Matrix.FastModels). Without it, a runtime with a fast mode
+	// for the model runs it with fast mode off.
+	Fast bool
 }
 
 // IsDefault reports whether the entry means the runtime's own default.
 func (m Model) IsDefault() bool { return m.Name == provider.DefaultModel }
 
-// String writes the entry like "claude-opus-5-5 (high)".
+// String writes the entry like "claude-opus-5-5 (high)" or "grok-4.7
+// (high, fast)".
 func (m Model) String() string {
-	if m.Effort == "" {
+	var settings []string
+	if m.Effort != "" {
+		settings = append(settings, m.Effort)
+	}
+	if m.Fast {
+		settings = append(settings, "fast")
+	}
+	if len(settings) == 0 {
 		return m.Name
 	}
-	return m.Name + " (" + m.Effort + ")"
+	return m.Name + " (" + strings.Join(settings, ", ") + ")"
 }
 
 // Rule is an always-on instruction, in Cursor's rule format.

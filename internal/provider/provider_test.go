@@ -45,6 +45,8 @@ func TestParseMatrixRejectsMistakes(t *testing.T) {
 		"id is the name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {gpt-5.5: gpt-5.5}\n",
 		"id twice":            "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-x, gpt-5.4: gpt-x}\n",
 		"id of another model": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-5.4}\n",
+		"fast but no model":   "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [grok-4.7]\n",
+		"fast twice":          "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [gpt-5.5, gpt-5.5]\n",
 	}
 	for name, yaml := range cases {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {
@@ -75,19 +77,20 @@ func TestMemorySupport(t *testing.T) {
 }
 
 func TestModels(t *testing.T) {
-	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [low, high], composer-2.5: []}\n"))
+	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [low, high], composer-2.5: []}\nfast_models: [composer-2.5]\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
 		model, effort string
-		want          bool
+		fast, want    bool
 	}{
-		{"gpt-5.5", "", true}, {"gpt-5.5", "high", true}, {"gpt-5.5", "max", false},
-		{"composer-2.5", "", true}, {"composer-2.5", "low", false}, {"claude-opus-5-5", "", false},
+		{"gpt-5.5", "", false, true}, {"gpt-5.5", "high", false, true}, {"gpt-5.5", "max", false, false},
+		{"gpt-5.5", "high", true, false}, {"composer-2.5", "", true, true},
+		{"composer-2.5", "", false, true}, {"composer-2.5", "low", false, false}, {"claude-opus-5-5", "", false, false},
 	} {
-		if got := m.HasModel(c.model, c.effort); got != c.want {
-			t.Errorf("HasModel(%q, %q) = %v, want %v", c.model, c.effort, got, c.want)
+		if got := m.HasModel(c.model, c.effort, c.fast); got != c.want {
+			t.Errorf("HasModel(%q, %q, %v) = %v, want %v", c.model, c.effort, c.fast, got, c.want)
 		}
 	}
 	if got := strings.Join(m.ModelNames(), ","); got != "composer-2.5,gpt-5.5" {

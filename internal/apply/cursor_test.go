@@ -146,6 +146,43 @@ func TestCursorCloudThroughTheAPI(t *testing.T) {
 	}
 }
 
+func TestCursorFastMode(t *testing.T) {
+	h := newHarness(t)
+	cursor := testkit.NewFakeCursor(t)
+	withModel := func(entry string) string {
+		return strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nmodels: ["+entry+"]\n", 1)
+	}
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": withModel("{ model: grok-4.7, effort: high }")})
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": cursorFactory}).CommitPush("add pr-review on Cursor")
+
+	// Grok runs fast on Cursor by default, but a routine only gets fast
+	// mode when it asks for it.
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply: exit %d\n%s", res.ExitCode(), h.out.String())
+	}
+	const slow, fast = `{"id":"fast","value":"false"}`, `{"id":"fast","value":"true"}`
+	for _, a := range cursor.Automations() {
+		if wf := toJSON(a.Workflow); !strings.Contains(wf, slow) {
+			t.Errorf("automation %s should run with fast mode off: %s", a.ID, wf)
+		}
+	}
+	if s := h.state(); s.Resources[0].Shape.Fast != "off" {
+		t.Errorf("state should record fast mode off, got %+v", s.Resources[0].Shape)
+	}
+
+	// Asking for it is a plan update.
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": withModel("{ model: grok-4.7, effort: high, fast: true }")})
+	if text := render(h.plan()); !strings.Contains(text, "the model should be grok-4.7 (high, fast)") {
+		t.Errorf("plan should say the model changed:\n%s", text)
+	}
+	h.apply()
+	for _, a := range cursor.Automations() {
+		if wf := toJSON(a.Workflow); !strings.Contains(wf, fast) {
+			t.Errorf("automation %s should run with fast mode on: %s", a.ID, wf)
+		}
+	}
+}
+
 func TestCursorFailedCreateKeepsTheRest(t *testing.T) {
 	h := newHarness(t)
 	cursor := testkit.NewFakeCursor(t)

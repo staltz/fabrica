@@ -478,8 +478,8 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		if cur.Memory != shape.Memory {
 			reasons = append(reasons, fmt.Sprintf("the runtime's memory should be %s", describeMemory(shape.Memory)))
 		}
-		if cur.Model != shape.Model || cur.Effort != shape.Effort {
-			reasons = append(reasons, "the model should be "+describeModel(shape.Model, shape.Effort))
+		if cur.Model != shape.Model || cur.Effort != shape.Effort || cur.Fast != shape.Fast {
+			reasons = append(reasons, "the model should be "+describeModel(shape.Model, shape.Effort, shape.Fast))
 		}
 	}
 	if len(reasons) == 0 {
@@ -499,14 +499,24 @@ func describeMemory(setting string) string {
 	return setting
 }
 
-func describeModel(model, effort string) string {
-	switch {
-	case model == "":
+func describeModel(model, effort, fast string) string {
+	if model == "" {
 		return "the runtime's default"
-	case effort == "":
+	}
+	var settings []string
+	if effort != "" {
+		settings = append(settings, effort)
+	}
+	switch fast {
+	case stub.FastOn:
+		settings = append(settings, "fast")
+	case stub.FastOff:
+		settings = append(settings, "not fast")
+	}
+	if len(settings) == 0 {
 		return model
 	}
-	return model + " (" + effort + ")"
+	return model + " (" + strings.Join(settings, ", ") + ")"
 }
 
 func describeTrigger(on, cron string) string {

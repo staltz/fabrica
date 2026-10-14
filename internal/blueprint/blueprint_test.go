@@ -145,6 +145,15 @@ func TestStrictErrors(t *testing.T) {
 		{"default with an effort", "routine.invalid", "default can't have an effort", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: default, effort: high }]\n---\nHi\n",
 		}},
+		{"fast default", "routine.invalid", "default can't be fast", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: default, fast: true }]\n---\nHi\n",
+		}},
+		{"fast that isn't true or false", "routine.invalid", `fast is "yes"; use true or false`, map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [{ model: grok-4.7, fast: yes }]\n---\nHi\n",
+		}},
+		{"fast and not fast is the same entry twice", "routine.invalid", "lists grok-4.7 twice", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\nmodels: [grok-4.7, { model: grok-4.7, fast: false }]\n---\nHi\n",
+		}},
 		{"schedule without cron", "routine.invalid", "cron", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: schedule }\n---\nHi\n",
 		}},

@@ -270,8 +270,12 @@ type HandoffModel struct {
 	Name string
 	// Effort is the effort to run it at. Empty means the model's default.
 	Effort string
+	// Fast is the model's fast mode, "on" or "off", for models the runtime
+	// has a fast mode for, and empty for the rest.
+	Fast string
 	// Setup is a one-line description of what to pick, like "pick model
-	// `claude-opus-5-5`, with effort `high`".
+	// `claude-opus-5-5`, with effort `high`", with "with fast mode **off**"
+	// added for models with a fast mode.
 	Setup string
 }
 

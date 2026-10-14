@@ -72,17 +72,34 @@ func TestCursorWorkflowJSON(t *testing.T) {
 	if _, err := cursorWorkflowFor(res); err == nil {
 		t.Error("Cursor has no built-in notion tool, so that should be an error")
 	}
+	// Cursor only takes whole variants: the stub's effort, and Cursor's
+	// defaults for everything else.
 	for model, want := range map[ResourceModel]string{
-		{Name: "claude-opus-5-5", Effort: "high"}:  `{"modelId":"claude-opus-5-5","parameters":[{"id":"effort","value":"high"}]}`,
-		{Name: "gpt-5.5", Effort: "xhigh"}:         `{"modelId":"gpt-5.5","parameters":[{"id":"reasoning","value":"extra-high"}]}`,
-		{Name: "claude-sonnet-5-5", Effort: "low"}: `{"modelId":"claude-sonnet-5-5","parameters":[{"id":"reasoning_effort","value":"low"}]}`,
-		{Name: "composer-2.5"}:                     `{"modelId":"composer-2.5"}`,
+		{Name: "claude-opus-5-5", Effort: "high"}:  `{"modelId":"claude-opus-5-5","parameters":[{"id":"context","value":"1m"},{"id":"effort","value":"high"},{"id":"fast","value":"false"}]}`,
+		{Name: "gpt-5.5", Effort: "xhigh"}:         `{"modelId":"gpt-5.5","parameters":[{"id":"context","value":"1m"},{"id":"fast","value":"false"},{"id":"reasoning","value":"extra-high"}]}`,
+		{Name: "claude-sonnet-5-5", Effort: "low"}: `{"modelId":"claude-sonnet-5-5","parameters":[{"id":"context","value":"1m"},{"id":"reasoning_effort","value":"low"}]}`,
+		{Name: "grok-4.6", Effort: "medium"}:       `{"modelId":"grok-4.6","parameters":[{"id":"effort","value":"medium"},{"id":"fast","value":"true"}]}`,
+		{Name: "grok-4.7"}:                         `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"true"},{"id":"reasoning_effort","value":"high"}]}`,
+		{Name: "composer-2.5"}:                     `{"modelId":"composer-2.5","parameters":[{"id":"fast","value":"true"}]}`,
+		{Name: "gemini-3.1-pro"}:                   `{"modelId":"gemini-3.1-pro"}`,
+		{Name: "glm-5p3", Effort: "low"}:           `{"modelId":"glm-5p3","parameters":[{"id":"reasoning","value":"low"}]}`,
 	} {
 		res := cursorResource()
 		res.Model = &model
-		wf, _ := cursorWorkflowFor(res)
+		wf, err := cursorWorkflowFor(res)
+		if err != nil {
+			t.Errorf("%s: %v", model.Name, err)
+			continue
+		}
 		if got, _ := json.Marshal(wf.ModelSelection); string(got) != want {
 			t.Errorf("%s: modelSelection = %s, want %s", model.Name, got, want)
+		}
+	}
+	for _, model := range []ResourceModel{{Name: "gpt-9"}, {Name: "composer-2.5", Effort: "high"}} {
+		res := cursorResource()
+		res.Model = &model
+		if _, err := cursorWorkflowFor(res); err == nil {
+			t.Errorf("%s: want an error rather than a variant Cursor doesn't have", model)
 		}
 	}
 	res = cursorResource()
@@ -92,16 +109,36 @@ func TestCursorWorkflowJSON(t *testing.T) {
 	}
 }
 
-func TestCursorEffortParamsAreForItsModels(t *testing.T) {
+func TestCursorVariantsAreForItsModels(t *testing.T) {
 	p, _ := Builtin("cursor-cloud")
-	for model := range cursorEffortParams {
-		if len(p.Matrix.Models[model]) == 0 {
-			t.Errorf("cursorEffortParams has %s, which cursor-cloud's matrix doesn't list with efforts", model)
+	ids := map[string]bool{}
+	for name, efforts := range p.Matrix.Models {
+		id := p.Matrix.ModelID(name)
+		ids[id] = true
+		variant, ok := cursorModelVariants[id]
+		switch {
+		case !ok:
+			t.Errorf("cursor-cloud's matrix lists %s, but cursorModelVariants doesn't have %s", name, id)
+		case (len(efforts) > 0) != (cursorEffortParam(variant) != ""):
+			t.Errorf("cursor-cloud's matrix lists %s with efforts %v, but its variant %v disagrees", name, efforts, variant)
+		}
+		for _, n := range cursorEffortParamNames[1:] {
+			if _, ok := variant[n]; ok && cursorEffortParam(variant) != n {
+				t.Errorf("%s's variant has two effort parameters: %v", id, variant)
+			}
 		}
 	}
-	for model := range cursorExtraHigh {
-		if !p.Matrix.HasModel(model, "xhigh") {
-			t.Errorf("cursorExtraHigh has %s, which cursor-cloud's matrix doesn't list with xhigh", model)
+	for id := range cursorModelVariants {
+		if !ids[id] {
+			t.Errorf("cursorModelVariants has %s, which cursor-cloud's matrix doesn't list", id)
+		}
+	}
+	for id := range cursorExtraHigh {
+		if name := p.Matrix.ModelWithID(id); name != "" {
+			id = name
+		}
+		if !p.Matrix.HasModel(id, "xhigh") {
+			t.Errorf("cursorExtraHigh has %s, which cursor-cloud's matrix doesn't list with xhigh", id)
 		}
 	}
 }

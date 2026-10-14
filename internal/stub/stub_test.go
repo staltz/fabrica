@@ -267,3 +267,17 @@ func TestDescribeModel(t *testing.T) {
 		}
 	}
 }
+
+func TestModelIsCalledWhatTheRuntimeCallsIt(t *testing.T) {
+	// Cursor calls GLM 5.3 glm-5p3, but blueprints use its maker's name.
+	f := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: glm-5.3, effort: low }]")})
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+	if !e.OK() || e.Model.Name != "glm-5.3" || e.Shape.Model != "glm-5p3" || e.Shape.Effort != "low" {
+		t.Errorf("picked %s, shape model %s (%s): %s", e.Model, e.Shape.Model, e.Shape.Effort, e.Diags)
+	}
+	f = load(t, map[string]string{"routines/pr-review.md": withModels("[glm-5p3]")})
+	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "glm-5p3 is what the runtime calls glm-5.3") {
+		t.Errorf("want an error pointing at glm-5.3, got:\n%s", e.Diags)
+	}
+}

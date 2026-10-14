@@ -103,6 +103,52 @@ targets: [github.com/acme/app]
 	}
 }
 
+func TestAllRoutinesWithExceptions(t *testing.T) {
+	yaml := `blueprint: { git: github.com/acme/blueprint, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud, cursor-cloud]
+routines:
+  - { routine: "*", runtimes: [claude-code-cloud] }
+  - { routine: release-notes, runtimes: [cursor-cloud] }
+  - { routine: weekly-report, runtimes: [] }
+targets: [github.com/acme/app]
+`
+	h := openHome(t, false, map[string]string{"factories/x.yaml": yaml})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	d := h.Factories["x"]
+	if !d.AllRoutines || strings.Join(d.Routines, ",") != "release-notes,weekly-report" {
+		t.Fatalf("all = %v, routines = %v", d.AllRoutines, d.Routines)
+	}
+	for _, c := range []struct {
+		routine, runtime string
+		want             bool
+	}{
+		{"pr-review", "claude-code-cloud", true}, // through the wildcard
+		{"pr-review", "cursor-cloud", false},
+		{"release-notes", "cursor-cloud", true}, // its own entry wins
+		{"release-notes", "claude-code-cloud", false},
+		{"weekly-report", "claude-code-cloud", false}, // left out
+		{"weekly-report", "cursor-cloud", false},
+	} {
+		if got := d.Runs(c.routine, c.runtime); got != c.want {
+			t.Errorf("Runs(%s, %s) = %v, want %v", c.routine, c.runtime, got, c.want)
+		}
+	}
+
+	// A bare "*" runs everything everywhere.
+	h = openHome(t, false, map[string]string{"factories/x.yaml": strings.Replace(yaml,
+		"  - { routine: \"*\", runtimes: [claude-code-cloud] }\n  - { routine: release-notes, runtimes: [cursor-cloud] }\n  - { routine: weekly-report, runtimes: [] }\n",
+		"  - \"*\"\n", 1)})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	if d := h.Factories["x"]; !d.Runs("anything", "cursor-cloud") || !d.Runs("anything", "claude-code-cloud") || len(d.Routines) != 0 {
+		t.Errorf("routines: [\"*\"] should run every routine on every runtime: %+v", d)
+	}
+}
+
 func TestRoutineRuntimesErrors(t *testing.T) {
 	head := "blueprint: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud, cursor-cloud]\ntargets: [github.com/a/b]\n"
 	cases := map[string]string{
@@ -114,6 +160,9 @@ func TestRoutineRuntimesErrors(t *testing.T) {
 		"a routine entry needs a routine key":                         "routines: [{ runtimes: [cursor-cloud] }]\n",
 		`routines: lists "r" twice`:                                   "routines: [r, { routine: r, runtimes: [cursor-cloud] }]\n",
 		"runtimes: lists claude-code-cloud, but none of the routines": "routines: [{ routine: r, runtimes: [cursor-cloud] }]\n",
+		`runtimes of "*" is empty`:                                    "routines: [{ routine: \"*\", runtimes: [] }]\n",
+		`routines: lists "*" twice`:                                   "routines: [\"*\", { routine: \"*\", runtimes: [cursor-cloud] }]\n",
+		"runtimes: lists cursor-cloud, but none of the routines":      "routines: [{ routine: \"*\", runtimes: [claude-code-cloud] }]\n",
 	}
 	for want, routines := range cases {
 		h := openHome(t, false, map[string]string{"factories/x.yaml": head + routines})

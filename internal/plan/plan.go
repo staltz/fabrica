@@ -97,6 +97,9 @@ type Factory struct {
 	Spec      *home.Factory
 	State     *home.State
 	Blueprint *blueprint.Blueprint
+	// Routines are the blueprint's routines the factory deploys: the ones
+	// it names, then the ones its wildcard adds.
+	Routines []*blueprint.Routine
 	// Resolved is the blueprint ref resolved to a commit.
 	Resolved gitx.Resolved
 	Runtimes []*Runtime
@@ -341,7 +344,8 @@ func (e *Env) loadBlueprint(ctx context.Context, dp *Factory, ref home.Blueprint
 }
 
 // checkRoutinesAndParams checks that every routine exists and every param
-// is declared and set.
+// is declared and set. It returns the routines the factory deploys, with
+// the wildcard expanded, and records them in dp.Routines.
 func checkRoutinesAndParams(dp *Factory, d *home.Factory, f *blueprint.Blueprint) []*blueprint.Routine {
 	var routines []*blueprint.Routine
 	for _, name := range d.Routines {
@@ -356,6 +360,17 @@ func checkRoutinesAndParams(dp *Factory, d *home.Factory, f *blueprint.Blueprint
 		}
 		routines = append(routines, r)
 	}
+	if d.AllRoutines {
+		for _, name := range blueprint.SortedKeys(f.Routines) {
+			r := f.Routines[name]
+			// The init routine runs by itself when the factory is created.
+			if d.Names(name) || len(r.Problems) > 0 || r.IsInit() {
+				continue
+			}
+			routines = append(routines, r)
+		}
+	}
+	dp.Routines = routines
 	declared := map[string]bool{}
 	for _, r := range routines {
 		for _, prm := range r.Params {

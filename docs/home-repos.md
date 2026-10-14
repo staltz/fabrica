@@ -39,7 +39,7 @@ params:
 | `blueprint` | yes | `git` and `ref` (and optionally `path`) of the blueprint, like an import. |
 | `server` | for cloud | The URL of your self-hosted Fabrica server. Must be `https` (plain `http` only for localhost). |
 | `runtimes` | yes | Where to run: built-in runtimes, or ones from the blueprint's [folder providers](providers.md#folder-providers). A factory is either all cloud or all local. |
-| `routines` | for cloud | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. |
+| `routines` | for cloud | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. `"*"` stands for all of them, see [below](#all-routines). |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
 | `init` | no | `false` never runs the blueprint's [init routine](blueprints.md#init-routines) for this factory. See [Init](#init). |
@@ -71,6 +71,29 @@ This creates 3 remote resources: `pr-review` on both runtimes, and `release-note
 - In a cloud factory, every runtime must have at least one routine running on it. A runtime with none is an error, since it would install nothing.
 - Narrowing a routine to fewer runtimes works like removing a runtime: `plan` shows its stubs on the other runtimes as deletes, and the server refuses their runs straight away.
 - Locally, it decides which tools get the routine's hook or scheduled task. Every runtime of a local factory still serves its blueprint over MCP.
+
+### All routines
+
+To deploy every routine of the blueprint, write `"*"` (quoted, like the target wildcard) instead of naming them. It takes `runtimes` too, and any routine you name is an exception to it:
+
+```yaml
+# factories/acme-app.yaml
+blueprint: { git: github.com/acme/blueprint, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud, cursor-cloud]
+routines:
+  - { routine: "*", runtimes: [claude-code-cloud] }        # everything on Claude…
+  - { routine: release-notes, runtimes: [cursor-cloud] }   # …but this one on Cursor
+  - { routine: review-before-push, runtimes: [] }          # …and this one nowhere
+targets: [github.com/acme/app]
+```
+
+- **A routine you name follows its own entry,** never the wildcard's. `release-notes` runs only on `cursor-cloud`, not on both.
+- **`runtimes: []` leaves a routine out.** Use it for routines that can't run here, like a local routine in a cloud factory. It's only allowed next to `"*"`.
+- **`routines: ["*"]`** runs every routine on every runtime of the factory.
+- **It follows the blueprint.** A routine added to the blueprint is deployed by the next apply, and one removed from it is deleted, without editing the factory. `plan` shows both. With a frozen `ref`, that only happens when you move the `ref`.
+- **The init routine isn't included.** It runs by itself when the factory is created (see [Init](#init)).
+- Since `plan` can't know what `"*"` covers until it reads the blueprint, it checks then that every runtime still gets at least one routine (`factory.idle-runtime`).
 
 ### Params
 

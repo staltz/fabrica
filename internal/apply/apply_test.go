@@ -3,8 +3,11 @@ package apply_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -408,6 +411,74 @@ func TestRoutineOnSomeRuntimes(t *testing.T) {
 		if !strings.Contains(r.Identity, "#triage@") {
 			t.Errorf("only triage should be left on toy, got %+v", r)
 		}
+	}
+}
+
+func TestAllRoutinesWithExceptions(t *testing.T) {
+	h := newHarness(t)
+	h.w.UpdateBlueprint(map[string]string{
+		// Only claude-code-cloud has release-notes' trigger.
+		"routines/release-notes.md": "---\ntrigger: { on: github.release.published }\nconnectors: [github]\n---\nWrite the release notes.\n",
+		// The wildcard never picks up the init routine.
+		"routines/onboard.md": onboardRoutine("[toy]"),
+	})
+	// Everything on toy, except release-notes on claude-code-cloud, and
+	// review-before-push (a local routine) nowhere.
+	routines := "routines:\n  - { routine: \"*\", runtimes: [toy] }\n  - { routine: release-notes, runtimes: [claude-code-cloud] }\n  - { routine: review-before-push, runtimes: [] }\ninit: false"
+	factory := strings.Replace(testkit.PRReviewFactory, "routines: [pr-review]", routines, 1)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": factory}).CommitPush("add")
+
+	where := func(p *plan.Plan) []string {
+		var out []string
+		for _, c := range p.Factory("pr-review").Changes {
+			out = append(out, fmt.Sprintf("%s %s on %s @ %s", c.Action, c.Routine, c.Key.Runtime, c.Repo))
+		}
+		sort.Strings(out)
+		return out
+	}
+	p := h.plan()
+	want := []string{
+		"create pr-review on toy @ github.com/acme/api",
+		"create pr-review on toy @ github.com/acme/app",
+		"create release-notes on claude-code-cloud @ github.com/acme/api",
+		"create release-notes on claude-code-cloud @ github.com/acme/app",
+	}
+	if got := where(p); p.ExitCode() != 2 || !slices.Equal(got, want) {
+		t.Fatalf("changes = %v, want %v\n%s", got, want, render(p))
+	}
+	h.apply()
+
+	// A routine added to the blueprint joins the wildcard, with no edit to
+	// the factory.
+	h.w.Home.Pull()
+	h.w.UpdateBlueprint(map[string]string{"routines/triage.md": "---\ntrigger: { on: github.pull_request.synchronize }\nconnectors: [github]\n---\nLabel the PR.\n"})
+	p = h.plan()
+	want = []string{"create triage on toy @ github.com/acme/api", "create triage on toy @ github.com/acme/app"}
+	if got := where(p); !slices.Equal(got, want) {
+		t.Fatalf("changes = %v, want %v\n%s", got, want, render(p))
+	}
+	h.apply()
+
+	// And one removed from the blueprint leaves it.
+	h.w.Home.Pull()
+	h.w.UpdateBlueprint(map[string]string{"routines/triage.md!rm": ""})
+	p = h.plan()
+	if n := len(p.Factory("pr-review").Changes); n != 2 {
+		t.Fatalf("want 2 deletes, got %d\n%s", n, render(p))
+	}
+	for _, c := range p.Factory("pr-review").Changes {
+		if c.Action != plan.Delete || c.Routine != "triage" || strings.Join(c.Reasons, "") != "routine triage was removed from the blueprint" {
+			t.Errorf("unexpected change %s %s: %v", c.Action, c.Routine, c.Reasons)
+		}
+	}
+
+	// If the routines the factory names take every runtime but one, and
+	// the wildcard adds nothing, that runtime would install nothing.
+	h.w.Home.Pull()
+	idle := strings.Replace(factory, "{ routine: release-notes, runtimes: [claude-code-cloud] }", "{ routine: release-notes, runtimes: [claude-code-cloud] }\n  - { routine: pr-review, runtimes: [claude-code-cloud] }", 1)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": idle}).CommitPush("idle toy")
+	if p := h.plan(); !p.Factory("pr-review").Diags.HasCode("factory.idle-runtime") {
+		t.Errorf("want a factory.idle-runtime error:\n%s", render(p))
 	}
 }
 

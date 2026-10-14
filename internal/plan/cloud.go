@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -86,6 +87,15 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	if d.AllRoutines {
+		// Without the wildcard, parsing already made sure of this.
+		for _, rt := range dp.Runtimes {
+			if !slices.ContainsFunc(routines, func(r *blueprint.Routine) bool { return d.Runs(r.Ref.Name, rt.Name) }) {
+				dp.Diags.Errorf("factory.idle-runtime", d.File, "runtimes: lists %s, but none of the blueprint's routines run on it: the routines it names run elsewhere, and \"*\" adds no others", rt.Name).
+					Hintf("remove %s, or add it to a routine's runtimes", rt.Name)
+			}
+		}
+	}
 	e.planInit(dp, d, f)
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
@@ -552,6 +562,8 @@ func (e *Env) whyGone(dp *Factory, r home.Resource) string {
 		return fmt.Sprintf("runtime %s was removed from the factory", r.Runtime)
 	case !d.HasRoutine(r.Routine):
 		return fmt.Sprintf("routine %s was removed from the factory", r.Routine)
+	case !d.Names(r.Routine) && dp.Blueprint != nil && dp.Blueprint.Routines[r.Routine] == nil:
+		return fmt.Sprintf("routine %s was removed from the blueprint", r.Routine)
 	case !d.Runs(r.Routine, r.Runtime):
 		return fmt.Sprintf("routine %s no longer runs on runtime %s", r.Routine, r.Runtime)
 	case !d.Covers(r.Repo):

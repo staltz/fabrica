@@ -24,7 +24,7 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A local factory in a team home repo | ❌ error | — | — | `factory.invalid` |
 | A cloud factory without `server:` | ❌ error | — | — | `factory.invalid` |
 | A factory mixing cloud and local runtimes | ❌ error | — | — | `factory.invalid` |
-| A routine's `runtimes` names one the factory doesn't list, or a cloud runtime has no routines | ❌ error | — | — | `factory.invalid` |
+| A routine's `runtimes` names one the factory doesn't list, or a cloud runtime has no routines | ❌ error | — | — | `factory.invalid`, `factory.idle-runtime` (when `"*"` adds none there) |
 | A param that no routine declares, or a required param that isn't set | ❌ error | — | — | `factory.unknown-param`, `factory.missing-param` |
 | A ref that's both a branch and a tag | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `blueprint.resolve` |
 | A trigger, connector or side effect a runtime doesn't support (including `github.pr_autofix` anywhere it isn't native, and a native side effect on a local hook or an init routine) | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |

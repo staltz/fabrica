@@ -463,9 +463,9 @@ func DescribeMemory(needed bool, support provider.Support) string {
 func DescribeSideEffect(name, setting string) string {
 	switch {
 	case name == provider.PRAutofix && setting == SideEffectOn:
-		return "turn auto-fix for pull requests **on**: after a run opens a pull request, the runtime keeps watching its CI and review comments, and pushes fixes"
+		return "turn **Auto-fix pull requests** **on**: after a run opens a pull request, the runtime keeps watching its CI and review comments, and pushes fixes"
 	case name == provider.PRAutofix:
-		return "turn auto-fix for pull requests **off**: this routine doesn't list " + name + ", so nothing should push to its pull requests after a run ends"
+		return "turn **Auto-fix pull requests** **off**: this routine doesn't list " + name + ", so nothing should push to its pull requests after a run ends"
 	case setting == SideEffectOn:
 		return fmt.Sprintf("turn the runtime's own `%s` **on**: this routine lists it", name)
 	}

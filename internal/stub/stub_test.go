@@ -259,8 +259,8 @@ func TestNativeSideEffectsLocally(t *testing.T) {
 
 func TestDescribeSideEffect(t *testing.T) {
 	for _, c := range []struct{ name, setting, want string }{
-		{provider.PRAutofix, stub.SideEffectOn, "turn auto-fix for pull requests **on**"},
-		{provider.PRAutofix, stub.SideEffectOff, "turn auto-fix for pull requests **off**"},
+		{provider.PRAutofix, stub.SideEffectOn, "turn **Auto-fix pull requests** **on**"},
+		{provider.PRAutofix, stub.SideEffectOff, "turn **Auto-fix pull requests** **off**"},
 		{"github.issue_comment", stub.SideEffectOn, "turn the runtime's own `github.issue_comment` **on**"},
 		{"github.issue_comment", stub.SideEffectOff, "turn the runtime's own `github.issue_comment` **off**"},
 	} {

@@ -241,7 +241,7 @@ func TestAutofixReachesTheStubs(t *testing.T) {
 		t.Fatalf("handoffs = %v, want 2", res.Handoffs)
 	}
 	handoff, _ := os.ReadFile(res.Handoffs[0])
-	if !strings.Contains(string(handoff), "8. Settings:\n   - turn auto-fix for pull requests **off**") {
+	if !strings.Contains(string(handoff), "8. Under **Advanced settings**, on the **Behavior** tab:\n   - turn **Auto-fix pull requests** **off**") {
 		t.Errorf("claude-code-cloud handoff should turn auto-fix off:\n%s", handoff)
 	}
 	for _, pend := range h.state().Pending {
@@ -263,7 +263,7 @@ func TestAutofixReachesTheStubs(t *testing.T) {
 	}
 	res = h.apply()
 	handoff, _ = os.ReadFile(res.Handoffs[0])
-	if !strings.Contains(string(handoff), "8. Settings:\n   - turn auto-fix for pull requests **on**") {
+	if !strings.Contains(string(handoff), "8. Under **Advanced settings**, on the **Behavior** tab:\n   - turn **Auto-fix pull requests** **on**") {
 		t.Errorf("claude-code-cloud handoff should turn auto-fix on:\n%s", handoff)
 	}
 

@@ -268,7 +268,7 @@ side_effects:
   - github.pr_autofix
 ```
 
-- **Claude routines and Claude Code's desktop scheduled tasks** have it natively. Their stubs turn auto-fix on for routines that list `github.pr_autofix` and off for every other routine, including the ones whose repository has it on by default (installing the Claude GitHub app turns it on).
+- **Claude routines and Claude Code's desktop scheduled tasks** have it natively: it's the **Auto-fix pull requests** toggle, under **Advanced settings** on the **Behavior** tab ("Watch CI and review comments on PRs this scheduled task opens, and let Claude push fixes"). Their stubs turn it on for routines that list `github.pr_autofix` and off for every other routine, so a toggle flipped by hand doesn't outlive the next apply.
 - **Every other runtime** can't run a routine that lists it. Fabrica can't watch a pull request after the run ends, so it can't be emulated.
 - **Local hooks** use the session you have open: turn on auto-fix there (in Claude Code's desktop app, it's under **CI** in the session's status bar).
 

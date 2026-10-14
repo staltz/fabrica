@@ -185,7 +185,7 @@ func TaskSetup(cur, want []Task, now time.Time) []string {
 				out = append(out, fmt.Sprintf("Change the schedule of %s to %s.", id, schedule))
 			}
 			if old.Autofix != t.Autofix && t.Autofix != "" {
-				out = append(out, fmt.Sprintf("Turn auto-fix for pull requests **%s** for %s.", t.Autofix, id))
+				out = append(out, fmt.Sprintf("Turn **Auto-fix pull requests** %s for %s (under Advanced settings, on the Behavior tab).", t.Autofix, id))
 			}
 		} else {
 			// The app only runs tasks it created itself, so a new one has
@@ -193,7 +193,7 @@ func TaskSetup(cur, want []Task, now time.Time) []string {
 			// its SKILL.md apply on the next run.
 			prompt := fmt.Sprintf("Create a scheduled task from ~/.claude/scheduled-tasks/%s/SKILL.md. Keep its task ID (`%s`), description and prompt exactly as they are in that file, and schedule it on %s.", id, id, schedule)
 			if t.Autofix != "" {
-				prompt += fmt.Sprintf(" Turn its auto-fix for pull requests %s.", t.Autofix)
+				prompt += fmt.Sprintf(" Turn its Auto-fix pull requests setting (under Advanced settings, on the Behavior tab) %s.", t.Autofix)
 			}
 			out = append(out, fmt.Sprintf("Register %s: in a desktop session on your checkout of %s, send Claude this prompt:\n%s", id, t.Repo, promptblock.Wrap(prompt)))
 		}

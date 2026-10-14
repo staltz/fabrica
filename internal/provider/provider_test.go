@@ -301,7 +301,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 				ConfirmCommand: "fabrica confirm h_abc --remote-id <id>",
 			}
 			if p.Matrix.SideEffect(PRAutofix) == Native {
-				data.SideEffects = []HandoffSideEffect{{Name: PRAutofix, Setting: "off", Setup: "turn auto-fix for pull requests **off**"}}
+				data.SideEffects = []HandoffSideEffect{{Name: PRAutofix, Setting: "off", Setup: "turn **Auto-fix pull requests** **off**"}}
 			}
 			out, err := p.RenderHandoff(data)
 			if err != nil {
@@ -319,7 +319,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			if action != "delete" && len(p.Matrix.Models) > 0 && !strings.Contains(out, "7. Model: pick model `m`, with effort `high`.") {
 				t.Errorf("%s %s: handoff doesn't say which model to pick:\n%s", name, action, out)
 			}
-			if action != "delete" && len(data.SideEffects) > 0 && !strings.Contains(out, "8. Settings:\n   - turn auto-fix for pull requests **off**.\n9. Prompt.") {
+			if action != "delete" && len(data.SideEffects) > 0 && !strings.Contains(out, "8. Under **Advanced settings**, on the **Behavior** tab:\n   - turn **Auto-fix pull requests** **off**.\n9. Prompt.") {
 				t.Errorf("%s %s: handoff doesn't say what to do with auto-fix:\n%s", name, action, out)
 			}
 		}

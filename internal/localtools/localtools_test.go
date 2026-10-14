@@ -367,11 +367,11 @@ func TestTaskSetup(t *testing.T) {
 	// Auto-fix is set in the app, like the schedule.
 	a2 := a
 	a2.Autofix, a2.Fingerprint = "off", "2"
-	if got := strings.Join(TaskSetup([]Task{a}, []Task{a2}, now), "\n"); got != "Turn auto-fix for pull requests **off** for "+TaskID(a)+"." {
+	if got := strings.Join(TaskSetup([]Task{a}, []Task{a2}, now), "\n"); got != "Turn **Auto-fix pull requests** off for "+TaskID(a)+" (under Advanced settings, on the Behavior tab)." {
 		t.Errorf("unexpected setup for an auto-fix change:\n%s", got)
 	}
 	a2.Autofix = "on"
-	if got := strings.Join(TaskSetup(nil, []Task{a2}, now), "\n"); !strings.Contains(got, "Turn its auto-fix for pull requests on.\n-----END PROMPT-----") {
+	if got := strings.Join(TaskSetup(nil, []Task{a2}, now), "\n"); !strings.Contains(got, "Turn its Auto-fix pull requests setting (under Advanced settings, on the Behavior tab) on.\n-----END PROMPT-----") {
 		t.Errorf("registering a task should set its auto-fix:\n%s", got)
 	}
 

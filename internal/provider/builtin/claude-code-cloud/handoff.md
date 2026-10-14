@@ -19,7 +19,7 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 {{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting, auto-fix setting or model), so the routine on claude.ai needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
-1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}.
+1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}. You can also do this from the Claude Code CLI: run `/schedule`, and give it the settings below.
 2. Name: `{{.Identity}}`
 3. Repository: `{{.Repo}}`
 4. Trigger: {{.Trigger.Description}}
@@ -30,7 +30,7 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 {{- end}}
 6. Memory: {{if .Memory.Needed}}this routine keeps notes between runs, and Fabrica keeps them for it (they come with `routine_get`), so there's nothing to turn on.{{else}}this routine doesn't use memory.{{end}} If the routine has a memory setting of its own, leave it **off**.
 7. Model: {{.Model.Setup}}.
-8. Settings:
+8. Under **Advanced settings**, on the **Behavior** tab:
 {{- range .SideEffects}}
    - {{.Setup}}.
 {{- end}}

@@ -32,14 +32,21 @@ import (
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
 // see docs/run-history.md.
 const Schema = schemaV1 + schemaV2
 
 // migrations[i] takes a database from schema version i to i+1.
-var migrations = []string{schemaV1, schemaV2}
+var migrations = []func(*sql.Tx) error{execSchema(schemaV1), execSchema(schemaV2), renameDeployments}
+
+func execSchema(schema string) func(*sql.Tx) error {
+	return func(tx *sql.Tx) error {
+		_, err := tx.Exec(schema)
+		return err
+	}
+}
 
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
@@ -103,6 +110,32 @@ CREATE TABLE memories (
 );
 `
 
+// renameDeployments is version 3. Before deployments were renamed to
+// factories, versions 1 and 2 had a deployment column where they now have
+// factory, and factory_sha where they now have blueprint_sha. Databases
+// made since then already have the new names, so this only renames the
+// columns it finds. SQLite rewrites run_overview to match.
+func renameDeployments(tx *sql.Tx) error {
+	renames := []struct{ table, from, to string }{
+		{"runs", "deployment", "factory"},
+		{"runs", "factory_sha", "blueprint_sha"},
+		{"memories", "deployment", "factory"},
+	}
+	for _, r := range renames {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, r.table, r.from).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			continue
+		}
+		if _, err := tx.Exec(fmt.Sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s", r.table, r.from, r.to)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DB is a run-history database.
 type DB struct {
 	db *sql.DB
@@ -145,7 +178,7 @@ func (d *DB) migrate() error {
 	}
 	defer tx.Rollback()
 	for _, step := range migrations[version:] {
-		if _, err := tx.Exec(step); err != nil {
+		if err := step(tx); err != nil {
 			return err
 		}
 	}

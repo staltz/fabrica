@@ -123,6 +123,50 @@ func TestMigratesFromV1(t *testing.T) {
 	}
 }
 
+// TestMigratesFromBeforeTheRename opens a version 2 database made before
+// deployments were renamed to factories, which still has the old column
+// names.
+func TestMigratesFromBeforeTheRename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.db")
+	raw, _ := sql.Open("sqlite", path)
+	old := strings.NewReplacer(
+		"  factory       TEXT,", "  deployment    TEXT,",
+		"blueprint_sha", "factory_sha",
+		"r.factory,", "r.deployment,",
+		"  factory    TEXT NOT NULL,", "  deployment TEXT NOT NULL,",
+		"PRIMARY KEY (factory,", "PRIMARY KEY (deployment,",
+	).Replace(schemaV1 + schemaV2)
+	if _, err := raw.Exec(old + "PRAGMA user_version = 2;"); err != nil {
+		t.Fatal(err)
+	}
+	raw.Exec(`INSERT INTO runs (run_id, started_at, intent, deployment, factory_sha, served_by) VALUES ('run_old', '2026-10-01T00:00:00Z', 'old run', 'my-default', 'abc', 'local')`)
+	raw.Exec(`INSERT INTO memories (deployment, routine, repo, content, updated_at, updated_by) VALUES ('my-default', 'deps', 'github.com/acme/app', 'note', '2026-10-01T00:00:00Z', 'run_old')`)
+	raw.Close()
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if r, err := db.Get(ctx, "run_old"); err != nil || r.Factory != "my-default" || r.BlueprintSHA != "abc" {
+		t.Errorf("old runs keep their factory and blueprint: %+v, %v", r, err)
+	}
+	if m, err := db.Memory(ctx, "my-default", "deps", "github.com/acme/app"); err != nil || m.Content != "note" {
+		t.Errorf("old memories survive the migration: %+v, %v", m, err)
+	}
+	now := time.Now()
+	if err := db.Begin(ctx, Run{ID: NewID(now), StartedAt: now, Intent: "new run", Factory: "my-default", BlueprintSHA: "def", ServedBy: ServedLocal}); err != nil {
+		t.Errorf("new runs record after the migration: %v", err)
+	}
+	raw, _ = sql.Open("sqlite", path)
+	defer raw.Close()
+	var factory string
+	if err := raw.QueryRow("SELECT factory FROM run_overview WHERE run_id = 'run_old'").Scan(&factory); err != nil || factory != "my-default" {
+		t.Errorf("run_overview follows the rename: %q, %v", factory, err)
+	}
+}
+
 func TestNewerSchemaIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.db")
 	raw, _ := sql.Open("sqlite", path)

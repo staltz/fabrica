@@ -16,7 +16,7 @@ What the values mean:
 - **Triggers** are `native` or `unsupported`. Triggers can't be emulated.
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
 - **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`.
-- **Models** list the models a stub can ask the runtime to run its routine on, each with the efforts it can run at (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; an empty list means the runtime has no effort setting for it). A routine runs on the first of its [`models:`](blueprints.md#models) the runtime lists. A runtime that doesn't list any picks its model itself, and only a routine's `default` entry matches it. Models go by their makers' IDs, like blueprints name them; **model IDs** (`model_ids:`) say what the runtime calls the ones it calls something else.
+- **Models** list the models a stub can ask the runtime to run its routine on, each with the efforts it can run at (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; an empty list means the runtime has no effort setting for it). A routine runs on the first of its [`models:`](blueprints.md#models) the runtime lists. A runtime that doesn't list any picks its model itself, and only a routine's `default` entry matches it. Models go by their makers' IDs, like blueprints name them; **model IDs** (`model_ids:`) say what the runtime calls the ones it calls something else. **Fast models** (`fast_models:`) are the ones the runtime can run in a fast mode: a stub for one of them always sets fast mode, on when the routine's entry says `fast: true` and off otherwise, so the runtime's own default never decides.
 - **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](blueprints.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
 - Anything a matrix doesn't list is unsupported.
 
@@ -63,7 +63,7 @@ Each stub becomes one automation:
 - **Trigger** on the stub's repo: `github.pull_request.opened` is Cursor's *Pull request opened* (which also fires when a draft is marked ready for review), `synchronize` is *Pull request pushed*, `labeled` is *Pull request label changed* (when any label is added), `github.push` is *Push to branch*, and `schedule` is a cron schedule. Cursor has no trigger for a reopened pull request.
 - **Tools:** the Fabrica MCP server, plus one tool per connector: `github` turns on *Comment on pull request*, `slack` turns on *Send to Slack* for any channel (routines name their channels in params, which are served live), and every MCP connector, including `linear` through its fallback, adds its MCP server.
 - **Memory:** the automation's memory tool is on for routines with `memory: true` and off for the rest.
-- **Model:** the routine's model, as one of the variants in Cursor's model catalog: the routine's effort as the model's effort parameter (Cursor calls it `effort`, `reasoning` or `reasoning_effort`, depending on the model), and Cursor's defaults for the rest (context window, fast mode, thinking). Without one, Cursor picks (Auto).
+- **Model:** the routine's model, as one of the variants in Cursor's model catalog: the routine's effort as the model's effort parameter (Cursor calls it `effort`, `reasoning` or `reasoning_effort`, depending on the model), fast mode on if the routine's entry says `fast: true` and off otherwise (Cursor runs Grok, Composer, GPT-5.2 and GPT-5.3 Codex fast by default; GPT-5.4 and 5.5 only run fast with the 272k context window), and Cursor's defaults for the rest (context window, thinking). Without one, Cursor picks (Auto).
 - **Prompt:** the stub prompt. **Repository:** the stub's repo.
 
 Automations keep Cursor's default sharing setting, so they belong to whoever owns the API key. In CI, use a key that isn't tied to one person's account if you can.
@@ -151,6 +151,7 @@ memory: emulated                     # native, emulated or unsupported (the defa
 models:                              # optional: the models a stub can pick, with their efforts
   acme-large: [low, medium, high]
   acme-small: []                     # no effort setting
+fast_models: [acme-large]            # optional: the models with a fast mode
 model_ids:                           # optional: the runtime's own ID for a model it calls something else
   acme-small: acme-small-v2
 credentials:                         # optional: what the api program needs
@@ -198,7 +199,7 @@ A `resource` looks like this:
 
 On runtimes with `memory: native`, a resource also has `"memory": "on"` or `"off"`: what to set the runtime's own memory feature to, mirroring the routine's `memory:` key.
 
-On runtimes that list `models:`, a resource whose routine picked one of them also has `"model": {"name": "acme-large", "effort": "high"}`, with the runtime's own ID for the model (from `model_ids:`, if it's there) (without `effort` for the model's default effort). Without `model`, leave the runtime's default.
+On runtimes that list `models:`, a resource whose routine picked one of them also has `"model": {"name": "acme-large", "effort": "high", "fast": "off"}`, with the runtime's own ID for the model (from `model_ids:`, if it's there) (without `effort` for the model's default effort). `fast` is `"on"` or `"off"` for the models in `fast_models:`, and missing for the rest. Without `model`, leave the runtime's default.
 
 Your program must store the `identity` somewhere it can read back (a name or a metadata field), so `list` can return it. If it can also store the `fingerprint`, return it from `list`, which helps `plan` spot drift. The `fabrica.token` is a secret: never log it. When `placement` is `url`, the token is already in `fabrica.url`.
 
@@ -217,7 +218,7 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.Connectors` | A list, each with `.Name` and `.Setup` (a sentence saying how to set it up). |
 | `.Memory.Needed`, `.Memory.Support`, `.Memory.Setup` | Whether the routine has `memory: true`, how the runtime provides memory (`native`, `emulated` or `unsupported`), and a sentence saying what to do with the runtime's own memory setting. Every handoff should have a memory step, so the runtime mirrors the routine. |
 | `.Fabrica.URL`, `.Fabrica.Header` | The Fabrica server URL (with the token in it, for URL placement) and the `Authorization` header value (for header placement). |
-| `.Model.Name`, `.Model.Effort`, `.Model.Setup` | The model to pick (the runtime's own ID for it) and its effort (both empty for the runtime's default, and the effort alone for the model's default effort), and a sentence saying what to pick. |
+| `.Model.Name`, `.Model.Effort`, `.Model.Fast`, `.Model.Setup` | The model to pick (the runtime's own ID for it) and its effort (both empty for the runtime's default, and the effort alone for the model's default effort), its fast mode (`on` or `off` for the models in `fast_models:`, empty for the rest), and a sentence saying what to pick. |
 | `.Prompt`, `.Fingerprint` | The stub prompt to paste in, and its fingerprint. |
 | `.ConfirmCommand` | The exact `fabrica confirm …` line to end with. |
 

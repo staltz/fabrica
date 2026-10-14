@@ -298,7 +298,7 @@ func parseSideEffect(node *yaml.Node) (SideEffect, error) {
 }
 
 // parseModel reads one entry of a routine's models: either a model's name
-// (or default), or `{ model: name, effort: level }`.
+// (or default), or `{ model: name, effort: level, fast: true }`.
 func parseModel(node *yaml.Node) (Model, error) {
 	var m Model
 	switch node.Kind {
@@ -315,8 +315,16 @@ func parseModel(node *yaml.Node) (Model, error) {
 				m.Name = v.Value
 			case "effort":
 				m.Effort = v.Value
+			case "fast":
+				switch v.Value {
+				case "true":
+					m.Fast = true
+				case "false":
+				default:
+					return m, fmt.Errorf("line %d: fast is %q; use true or false", v.Line, v.Value)
+				}
 			default:
-				return m, fmt.Errorf("line %d: unknown key %q (an entry only has model and effort)", k.Line, k.Value)
+				return m, fmt.Errorf("line %d: unknown key %q (an entry only has model, effort and fast)", k.Line, k.Value)
 			}
 		}
 		if m.Name == "" {
@@ -328,6 +336,9 @@ func parseModel(node *yaml.Node) (Model, error) {
 	if m.IsDefault() {
 		if m.Effort != "" {
 			return m, fmt.Errorf("line %d: default can't have an effort: it means whatever the runtime picks, effort included", node.Line)
+		}
+		if m.Fast {
+			return m, fmt.Errorf("line %d: default can't be fast: it means whatever the runtime picks, fast mode included", node.Line)
 		}
 		return m, nil
 	}

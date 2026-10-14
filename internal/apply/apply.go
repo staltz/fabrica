@@ -483,7 +483,7 @@ func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Re
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
 	}
 	if shape.Model != "" {
-		res.Model = &provider.ResourceModel{Name: shape.Model, Effort: shape.Effort}
+		res.Model = &provider.ResourceModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast}
 	}
 	for _, c := range shape.Connectors {
 		rc := provider.ResourceConnector{Name: c.Name, Kind: c.Kind}
@@ -514,7 +514,7 @@ func recordFor(r *plan.Resource, remoteID string, dp *plan.Factory, now time.Tim
 }
 
 func stateShape(s stub.Shape) home.Shape {
-	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Model: s.Model, Effort: s.Effort, Fingerprint: s.Fingerprint()}
+	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
 }
 
 func blueprintCommit(dp *plan.Factory) string {
@@ -555,7 +555,7 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		needed := r.Eval.Routine != nil && r.Eval.Routine.Memory
 		support := c.Provider.Matrix.Memory
 		data.Memory = provider.HandoffMemory{Needed: needed, Support: string(support), Setup: stub.DescribeMemory(needed, support)}
-		data.Model = provider.HandoffModel{Name: shape.Model, Effort: shape.Effort, Setup: stub.DescribeModel(shape)}
+		data.Model = provider.HandoffModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast, Setup: stub.DescribeModel(shape)}
 		data.Fabrica = provider.HandoffFabrica{URL: fabricaURL(r.Endpoint, c.Provider, tok)}
 		if c.Provider.Matrix.TokenPlacement() == provider.TokenInHeader {
 			data.Fabrica.Header = "Bearer " + tok

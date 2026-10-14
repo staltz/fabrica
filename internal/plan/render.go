@@ -216,6 +216,9 @@ func describeEvaluation(ev *stub.Evaluation) string {
 	if ev.Memory.Support != "" {
 		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
 	}
+	if ev.Shape.Autofix != "" {
+		parts = append(parts, "auto-fix "+ev.Shape.Autofix)
+	}
 	if ev.Model.Name != "" {
 		parts = append(parts, "model "+ev.Model.String())
 	}

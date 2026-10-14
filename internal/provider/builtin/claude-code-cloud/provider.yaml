@@ -39,6 +39,11 @@ side_effects:
 # that needs memory gets it from Fabrica (memory_save, and the memory that
 # routine_get shows).
 memory: emulated
+# Each routine has an "Auto-fix pull requests" setting: after a run opens a
+# pull request, Claude keeps watching its CI and review comments, and pushes
+# fixes. The stub turns it on for routines with autofix: true and off for
+# the rest, so no routine pushes to its pull requests unasked.
+autofix: native
 # The models a routine can pick (Opus, Sonnet, Haiku and Fable) and their
 # effort levels, as claude.ai shows them as of October 2026.
 models:

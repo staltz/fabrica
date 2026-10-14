@@ -479,7 +479,7 @@ func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Re
 	res := provider.Resource{
 		Identity: r.Key.ID, Factory: r.Factory, Routine: r.Routine, Repo: r.Repo,
 		Trigger: provider.ResourceTrigger{On: shape.Trigger, Cron: shape.Cron},
-		Memory:  shape.Memory, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
+		Memory:  shape.Memory, Autofix: shape.Autofix, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
 	}
 	if shape.Model != "" {
@@ -514,7 +514,7 @@ func recordFor(r *plan.Resource, remoteID string, dp *plan.Factory, now time.Tim
 }
 
 func stateShape(s stub.Shape) home.Shape {
-	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
+	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, Autofix: s.Autofix, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
 }
 
 func blueprintCommit(dp *plan.Factory) string {
@@ -555,6 +555,7 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		needed := r.Eval.Routine != nil && r.Eval.Routine.Memory
 		support := c.Provider.Matrix.Memory
 		data.Memory = provider.HandoffMemory{Needed: needed, Support: string(support), Setup: stub.DescribeMemory(needed, support)}
+		data.Autofix = provider.HandoffAutofix{Setting: shape.Autofix, Setup: stub.DescribeAutofix(shape.Autofix)}
 		data.Model = provider.HandoffModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast, Setup: stub.DescribeModel(shape)}
 		data.Fabrica = provider.HandoffFabrica{URL: fabricaURL(r.Endpoint, c.Provider, tok)}
 		if c.Provider.Matrix.TokenPlacement() == provider.TokenInHeader {
@@ -649,7 +650,7 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 			fmt.Fprintln(out, "  Codex skips new or changed hooks until you trust them: open Codex and approve them in /hooks.")
 		}
 		if setup := localtools.TaskSetup(rt.Current.Tasks, rt.Desired.Tasks, time.Now()); len(setup) > 0 {
-			fmt.Fprintln(out, "  The Claude desktop app keeps a scheduled task's schedule and folder itself, so finish in the app (Code tab → Routines):")
+			fmt.Fprintln(out, "  The Claude desktop app keeps a scheduled task's schedule, folder and auto-fix setting itself, so finish in the app (Code tab → Routines):")
 			for _, s := range setup {
 				fmt.Fprintf(out, "    • %s\n", s)
 			}

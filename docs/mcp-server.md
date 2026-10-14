@@ -22,7 +22,7 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 | `skills_list()` | Names and descriptions of all skills. Remotely, skills that need their folder on disk are marked unavailable, with the reason. Also lists the skills the blueprint expects the repo to provide. |
 | `skill_load(name)` | A skill's `SKILL.md` and its file list. Locally, also the folder where the skill was unpacked. |
 | `skill_file(name, path)` | One text file from a skill. |
-| `routine_get(name)` | A routine's full definition: its prompt with params filled in, its skills and connectors, its allowed side effects (and how to do each on this runtime), its memory, and the rules. |
+| `routine_get(name)` | A routine's full definition: its prompt with params filled in, its skills and connectors, its allowed side effects (and how to do each on this runtime), its memory, what happens to the pull requests it opens (auto-fix), and the rules. |
 | `memory_save(run_id, content)` | Replaces the memory of the run's routine, for its next runs on the same repo (at most 16 KiB of Markdown; empty forgets everything). Only for routines with `memory: true`, on runtimes where Fabrica keeps the memory, and only from the session that began the run. |
 
 Skills over MCP aren't a standard yet, so Fabrica emulates them with these plain tools. The server's MCP instructions, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how relative paths in a skill work. When native skills over MCP arrive, the emulation can go away.

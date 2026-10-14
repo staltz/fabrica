@@ -18,8 +18,8 @@ import (
 
 // Claude Code desktop scheduled tasks live in
 // ~/.claude/scheduled-tasks/<id>/SKILL.md: a name and description in the
-// frontmatter, and the prompt as the body. The schedule and the folder the
-// task runs in aren't in the file. The app keeps those itself, and it only
+// frontmatter, and the prompt as the body. The schedule, the folder the
+// task runs in and its auto-fix setting aren't in the file. The app keeps those itself, and it only
 // runs tasks it created, so after Fabrica writes a new task you register it
 // in the app once (see TaskSetup). Later edits to the file apply on the
 // task's next run.
@@ -40,11 +40,15 @@ func slug(s string) string {
 }
 
 func taskDescription(t Task) string {
-	return fmt.Sprintf("Fabrica routine `%s` from factory `%s` on `%s` (stub `%s`), cron `%s` in UTC",
+	desc := fmt.Sprintf("Fabrica routine `%s` from factory `%s` on `%s` (stub `%s`), cron `%s` in UTC",
 		t.Routine, t.Factory, t.Repo, t.Fingerprint, t.Cron)
+	if t.Autofix != "" {
+		desc += ", auto-fix " + t.Autofix
+	}
+	return desc
 }
 
-var taskDescriptionRe = regexp.MustCompile("^Fabrica routine `([^`]+)` from factory `([^`]+)` on `([^`]+)` \\(stub `([^`]*)`\\), cron `([^`]+)` in UTC$")
+var taskDescriptionRe = regexp.MustCompile("^Fabrica routine `([^`]+)` from factory `([^`]+)` on `([^`]+)` \\(stub `([^`]*)`\\), cron `([^`]+)` in UTC(?:, auto-fix (on|off))?$")
 
 func renderTask(t Task) []byte {
 	name, _ := json.Marshal(TaskID(t))
@@ -74,7 +78,7 @@ func parseTask(data []byte) (Task, bool) {
 	if m == nil {
 		return Task{}, false
 	}
-	return Task{Routine: m[1], Factory: m[2], Repo: m[3], Fingerprint: m[4], Cron: m[5], Prompt: strings.TrimSpace(body)}, true
+	return Task{Routine: m[1], Factory: m[2], Repo: m[3], Fingerprint: m[4], Cron: m[5], Autofix: m[6], Prompt: strings.TrimSpace(body)}, true
 }
 
 // unquoteYAML undoes the quoting Fabrica (or the app, if it rewrites the
@@ -168,7 +172,7 @@ func TaskSetup(cur, want []Task, now time.Time) []string {
 		id := TaskID(t)
 		wantIDs[id] = true
 		old, had := byID[id]
-		if had && old.Cron == t.Cron {
+		if had && old.Cron == t.Cron && old.Autofix == t.Autofix {
 			continue // the app picks up prompt changes on the next run
 		}
 		schedule := fmt.Sprintf("cron `%s` (that's UTC; the app reads cron in local time)", t.Cron)
@@ -177,12 +181,20 @@ func TaskSetup(cur, want []Task, now time.Time) []string {
 			schedule = fmt.Sprintf("cron `%s` (`%s` in UTC, at today's offset of UTC%s)", local, t.Cron, formatOffset(offset))
 		}
 		if had {
-			out = append(out, fmt.Sprintf("Change the schedule of %s to %s.", id, schedule))
+			if old.Cron != t.Cron {
+				out = append(out, fmt.Sprintf("Change the schedule of %s to %s.", id, schedule))
+			}
+			if old.Autofix != t.Autofix && t.Autofix != "" {
+				out = append(out, fmt.Sprintf("Turn auto-fix for pull requests **%s** for %s.", t.Autofix, id))
+			}
 		} else {
 			// The app only runs tasks it created itself, so a new one has
 			// to be registered there once. After that, Fabrica's edits to
 			// its SKILL.md apply on the next run.
 			prompt := fmt.Sprintf("Create a scheduled task from ~/.claude/scheduled-tasks/%s/SKILL.md. Keep its task ID (`%s`), description and prompt exactly as they are in that file, and schedule it on %s.", id, id, schedule)
+			if t.Autofix != "" {
+				prompt += fmt.Sprintf(" Turn its auto-fix for pull requests %s.", t.Autofix)
+			}
 			out = append(out, fmt.Sprintf("Register %s: in a desktop session on your checkout of %s, send Claude this prompt:\n%s", id, t.Repo, promptblock.Wrap(prompt)))
 		}
 	}

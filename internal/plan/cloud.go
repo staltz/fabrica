@@ -474,6 +474,9 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		if cur.Memory != shape.Memory {
 			reasons = append(reasons, fmt.Sprintf("the runtime's memory should be %s", describeMemory(shape.Memory)))
 		}
+		if cur.Autofix != shape.Autofix {
+			reasons = append(reasons, "auto-fix for pull requests should be "+shape.Autofix)
+		}
 		if cur.Model != shape.Model || cur.Effort != shape.Effort || cur.Fast != shape.Fast {
 			reasons = append(reasons, "the model should be "+describeModel(shape.Model, shape.Effort, shape.Fast))
 		}

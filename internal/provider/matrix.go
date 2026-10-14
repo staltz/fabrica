@@ -106,6 +106,12 @@ type Matrix struct {
 	// off to match the routine; Emulated means Fabrica keeps the memory
 	// itself and serves it over MCP. Not listed means unsupported.
 	Memory Support
+	// Autofix says whether the runtime can keep watching the pull requests
+	// a run opens, and push fixes for failing CI and review comments:
+	// Native means it has an auto-fix setting, which a stub turns on or off
+	// to match the routine. Fabrica can't watch pull requests for a
+	// runtime, so it's never emulated. Not listed means unsupported.
+	Autofix Support
 	// Models are the models a stub can ask the runtime to run its routine
 	// on, each with the efforts it can run at (empty when the runtime has
 	// no effort setting for it). A routine runs on the first of its models:
@@ -162,6 +168,7 @@ type matrixFile struct {
 	Connectors     map[string]Support        `yaml:"connectors"`
 	SideEffects    map[string]Support        `yaml:"side_effects"`
 	Memory         Support                   `yaml:"memory"`
+	Autofix        Support                   `yaml:"autofix"`
 	Models         map[string][]string       `yaml:"models"`
 	FastModels     []string                  `yaml:"fast_models"`
 	ModelIDs       map[string]string         `yaml:"model_ids"`
@@ -234,6 +241,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		Connectors:     orEmpty(f.Connectors),
 		SideEffects:    orEmpty(f.SideEffects),
 		Memory:         f.Memory,
+		Autofix:        f.Autofix,
 	}
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -325,6 +333,16 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		m.Memory = Unsupported
 	} else if !m.Memory.valid() {
 		add("memory: is %q; use native, emulated or unsupported", f.Memory)
+	}
+
+	switch m.Autofix {
+	case "":
+		m.Autofix = Unsupported
+	case Native, Unsupported:
+	case Emulated:
+		add("autofix: can't be emulated (Fabrica can't watch pull requests for a runtime); use native or unsupported")
+	default:
+		add("autofix: is %q; use native or unsupported", f.Autofix)
 	}
 
 	m.Models = parseModels(f.Models, add)

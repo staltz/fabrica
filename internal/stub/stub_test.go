@@ -197,6 +197,72 @@ func TestMemoryOnRuntimeWithoutIt(t *testing.T) {
 	}
 }
 
+func withAutofix(routine string) string {
+	return strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nautofix: true\n", 1)
+}
+
+func TestAutofixMirrorsTheRoutine(t *testing.T) {
+	// On a runtime with an auto-fix setting, the stub sets it either way,
+	// so the runtime's own default never decides.
+	plain := load(t, map[string]string{"routines/pr-review.md": routine})
+	fixing := load(t, map[string]string{"routines/pr-review.md": withAutofix(routine)})
+	off := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "claude-code-cloud"))
+	on := stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "claude-code-cloud"))
+	if !off.OK() || !on.OK() || off.Shape.Autofix != stub.AutofixOff || on.Shape.Autofix != stub.AutofixOn || on.Autofix.Support != provider.Native {
+		t.Errorf("claude-code-cloud auto-fix: off=%q on=%q (%s) %s %s", off.Shape.Autofix, on.Shape.Autofix, on.Autofix.Support, off.Diags, on.Diags)
+	}
+	if off.Shape.Fingerprint() == on.Shape.Fingerprint() {
+		t.Error("turning auto-fix on should change the stub's fingerprint")
+	}
+
+	// Runtimes without one bake nothing in, and can't run a routine that
+	// asks for it.
+	cursor := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "cursor-cloud"))
+	if !cursor.OK() || cursor.Shape.Autofix != "" {
+		t.Errorf("cursor-cloud has no auto-fix setting, so the shape shouldn't have one: %q %s", cursor.Shape.Autofix, cursor.Diags)
+	}
+	cursor = stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "cursor-cloud"))
+	if cursor.OK() || !strings.Contains(cursor.Diags.String(), "can't auto-fix the pull requests") || cursor.Autofix.Support != provider.Unsupported {
+		t.Errorf("auto-fix on cursor-cloud should be an error: %s", cursor.Diags)
+	}
+}
+
+func TestAutofixLocally(t *testing.T) {
+	// Claude Code's desktop scheduled tasks have an auto-fix setting.
+	const scheduled = "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\nskills: [pr-review]\n---\nUpdate.\n"
+	f := load(t, map[string]string{"routines/pr-review.md": withAutofix(scheduled), "routines/plain.md": scheduled})
+	if e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local")); !e.OK() || e.Shape.Autofix != stub.AutofixOn {
+		t.Errorf("a scheduled task should get auto-fix on: %q %s", e.Shape.Autofix, e.Diags)
+	}
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.Autofix != stub.AutofixOff {
+		t.Errorf("a scheduled task should get auto-fix off: %q %s", e.Shape.Autofix, e.Diags)
+	}
+
+	// Hooks run inside the session you have open, which has its own
+	// setting.
+	const hook = "---\ntrigger: { on: session.stop }\nskills: [pr-review]\n---\nCheck.\n"
+	f = load(t, map[string]string{"routines/pr-review.md": withAutofix(hook), "routines/plain.md": hook})
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.Autofix != "" {
+		t.Errorf("a hook has no auto-fix setting: %q %s", e.Shape.Autofix, e.Diags)
+	}
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "runs as a hook inside the session you have open") {
+		t.Errorf("a hook routine with autofix: true should be an error: %s", e.Diags)
+	}
+}
+
+func TestDescribeAutofix(t *testing.T) {
+	if got := stub.DescribeAutofix(stub.AutofixOn); !strings.HasPrefix(got, "turn auto-fix for pull requests **on**") {
+		t.Errorf("on: %q", got)
+	}
+	if got := stub.DescribeAutofix(stub.AutofixOff); !strings.HasPrefix(got, "turn auto-fix for pull requests **off**") {
+		t.Errorf("off: %q", got)
+	}
+	if got := stub.DescribeAutofix(""); got != "" {
+		t.Errorf("runtimes without auto-fix need no step: %q", got)
+	}
+}
+
 func withModels(models string) string {
 	return strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nmodels: "+models+"\n", 1)
 }

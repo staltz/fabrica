@@ -295,6 +295,20 @@ func TestClaudeTaskShape(t *testing.T) {
 	if err != nil || len(got.Tasks) != 1 || got.Tasks[0] != task {
 		t.Errorf("read back %+v (%v), want %+v", got.Tasks, err, task)
 	}
+
+	// The auto-fix setting lives in the app, so the description records
+	// it.
+	task.Autofix = "on"
+	if err := tool.Write(Config{Tasks: []Task{task}}); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(file); !strings.Contains(string(data), "in UTC, auto-fix on\"") {
+		t.Errorf("the description should record auto-fix:\n%s", data)
+	}
+	got, err = tool.Read()
+	if err != nil || len(got.Tasks) != 1 || got.Tasks[0] != task {
+		t.Errorf("read back %+v (%v), want %+v", got.Tasks, err, task)
+	}
 }
 
 func TestLocalCron(t *testing.T) {
@@ -350,6 +364,17 @@ func TestTaskSetup(t *testing.T) {
 	if strings.Contains(got, TaskID(b)) {
 		t.Errorf("a prompt change needs nothing in the app:\n%s", got)
 	}
+	// Auto-fix is set in the app, like the schedule.
+	a2 := a
+	a2.Autofix, a2.Fingerprint = "off", "2"
+	if got := strings.Join(TaskSetup([]Task{a}, []Task{a2}, now), "\n"); got != "Turn auto-fix for pull requests **off** for "+TaskID(a)+"." {
+		t.Errorf("unexpected setup for an auto-fix change:\n%s", got)
+	}
+	a2.Autofix = "on"
+	if got := strings.Join(TaskSetup(nil, []Task{a2}, now), "\n"); !strings.Contains(got, "Turn its auto-fix for pull requests on.\n-----END PROMPT-----") {
+		t.Errorf("registering a task should set its auto-fix:\n%s", got)
+	}
+
 	got = strings.Join(TaskSetup(nil, []Task{a}, now), "\n")
 	wantPrompt := "send Claude this prompt:\n-----BEGIN PROMPT-----\nCreate a scheduled task from ~/.claude/scheduled-tasks/" + TaskID(a) + "/SKILL.md."
 	if !strings.Contains(got, "Register "+TaskID(a)+": in a desktop session on your checkout of github.com/x/y") || !strings.Contains(got, wantPrompt) ||

@@ -10,10 +10,11 @@
 // What a stub bakes into the runtime is its shape: the trigger, plus the
 // connectors and their definitions (including connectors that emulated side
 // effects need), plus the runtime's memory setting where it has its own
-// memory feature, plus the model the routine runs on where the runtime lets
-// a stub pick one, plus the address of the Fabrica server. A short
-// fingerprint of the shape goes into the stub, and the server compares it
-// on every run to catch stubs that went stale.
+// memory feature, plus its auto-fix setting for pull requests where it has
+// one, plus the model the routine runs on where the runtime lets a stub
+// pick one, plus the address of the Fabrica server. A short fingerprint of
+// the shape goes into the stub, and the server compares it on every run to
+// catch stubs that went stale.
 package stub
 
 import (
@@ -50,6 +51,12 @@ type Shape struct {
 	// with a native memory feature: elsewhere Fabrica keeps the memory, and
 	// nothing about it is baked into the runtime.
 	Memory string `json:"memory,omitempty"`
+	// Autofix is the runtime's auto-fix setting for the stub, "on" or
+	// "off", mirroring the routine's autofix: key: whether the runtime keeps
+	// watching the pull requests a run opens and pushes fixes. It's only set
+	// on runtimes with an auto-fix setting (autofix: native), and not for
+	// local hooks, which run inside a session you already have open.
+	Autofix string `json:"autofix,omitempty"`
 	// Model and Effort are the model the runtime runs the routine on, the
 	// first of the routine's models: that the runtime has, and the effort
 	// to run it at. Model is the runtime's own ID for it, which isn't
@@ -86,6 +93,12 @@ type ShapeConnector struct {
 const (
 	MemoryOn  = "on"
 	MemoryOff = "off"
+)
+
+// Auto-fix settings in a shape.
+const (
+	AutofixOn  = "on"
+	AutofixOff = "off"
 )
 
 // Fast mode settings in a shape.
@@ -132,6 +145,9 @@ type Evaluation struct {
 	// Memory is how the runtime gives the routine its memory. Its Support
 	// is empty when the routine doesn't use memory.
 	Memory Use
+	// Autofix is how the runtime auto-fixes the routine's pull requests.
+	// Its Support is empty when the routine doesn't ask for auto-fix.
+	Autofix Use
 	// Model is the entry of the routine's models: the runtime runs it on.
 	// Its Name is empty when the routine lists no models, and
 	// provider.DefaultModel when the runtime picks one itself.
@@ -241,6 +257,28 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		if m.Memory != provider.Native && m.Memory != provider.Emulated {
 			e.Diags.Errorf("capability.memory", where, "runtime %s can't give routine %s the memory it asks for", rt, r.Ref.Name).
 				Hintf("drop memory: true from the routine if it can run without remembering anything, or deploy it to a runtime whose capability matrix has memory: native or emulated")
+		}
+	}
+
+	// A local hook runs inside a session you already have open, so the
+	// session's own auto-fix setting decides, not the stub.
+	hook := m.Scope == provider.Local && r.Trigger.On != "schedule"
+	if m.Autofix == provider.Native && !hook {
+		shape.Autofix = AutofixOff
+		if r.Autofix {
+			shape.Autofix = AutofixOn
+		}
+	}
+	if r.Autofix {
+		e.Autofix = Use{Name: "autofix", Support: m.Autofix}
+		switch {
+		case m.Autofix != provider.Native:
+			e.Diags.Errorf("capability.autofix", where, "runtime %s can't auto-fix the pull requests routine %s opens", rt, r.Ref.Name).
+				Hintf("drop autofix: true from the routine if it can do without, or deploy it to a runtime whose capability matrix has autofix: native")
+		case hook:
+			e.Autofix.Support = provider.Unsupported
+			e.Diags.Errorf("capability.autofix", where, "routine %s runs as a hook inside the session you have open in %s, so it has no auto-fix setting of its own", r.Ref.Name, rt).
+				Hintf("drop autofix: true from the routine, and turn on auto-fix in that session when you want it; on %s, only schedule routines get their own auto-fix setting", rt)
 		}
 	}
 
@@ -403,6 +441,19 @@ func DescribeMemory(needed bool, support provider.Support) string {
 	default:
 		return "leave the runtime's own memory **off**, if it has one: this routine doesn't use memory"
 	}
+}
+
+// DescribeAutofix says what to do with the runtime's auto-fix setting, for
+// handoff instructions, given the shape's Autofix. It's empty for runtimes
+// without one.
+func DescribeAutofix(setting string) string {
+	switch setting {
+	case AutofixOn:
+		return "turn auto-fix for pull requests **on**: after a run opens a pull request, the runtime keeps watching its CI and review comments, and pushes fixes"
+	case AutofixOff:
+		return "turn auto-fix for pull requests **off**: this routine doesn't ask for it, so nothing should push to its pull requests after a run ends"
+	}
+	return ""
 }
 
 // DescribeModel says which model to pick, for handoff instructions.

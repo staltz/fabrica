@@ -76,6 +76,25 @@ func TestMemorySupport(t *testing.T) {
 	}
 }
 
+func TestAutofixSupport(t *testing.T) {
+	want := map[string]Support{
+		"claude-code-cloud": Native, "cursor-cloud": Unsupported, "codex": Unsupported, "copilot-cloud": Unsupported,
+		"claude-code-local": Native, "cursor-local": Unsupported, "codex-cli": Unsupported, "copilot-local": Unsupported,
+	}
+	for name, w := range want {
+		p, _ := Builtin(name)
+		if p.Matrix.Autofix != w {
+			t.Errorf("%s: autofix = %s, want %s", name, p.Matrix.Autofix, w)
+		}
+	}
+	const base = "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\n"
+	for value, problem := range map[string]string{"emulated": "can't be emulated", "sometimes": `autofix: is "sometimes"`} {
+		if _, err := ParseMatrix("x", []byte(base+"autofix: "+value+"\n")); err == nil || !strings.Contains(err.Error(), problem) {
+			t.Errorf("autofix: %s should be rejected with %q, got %v", value, problem, err)
+		}
+	}
+}
+
 func TestModels(t *testing.T) {
 	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [low, high], composer-2.5: []}\nfast_models: [composer-2.5]\n"))
 	if err != nil {
@@ -260,7 +279,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 	for _, name := range []string{"claude-code-cloud", "cursor-cloud", "codex", "copilot-cloud"} {
 		p, _ := Builtin(name)
 		for _, action := range []string{"create", "update", "delete"} {
-			out, err := p.RenderHandoff(HandoffData{
+			data := HandoffData{
 				ID: "h_abc", Action: action, Runtime: name, Factory: "pr-review",
 				Identity: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app",
 				Routine:  "pr-review", Repo: "github.com/acme/app", RemoteID: "trig_1",
@@ -270,7 +289,11 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 				Model:          HandoffModel{Name: "m", Effort: "high", Setup: "pick model `m`, with effort `high`"},
 				Prompt:         "line one\nline two",
 				ConfirmCommand: "fabrica confirm h_abc --remote-id <id>",
-			})
+			}
+			if p.Matrix.Autofix == Native {
+				data.Autofix = HandoffAutofix{Setting: "off", Setup: "turn auto-fix for pull requests **off**"}
+			}
+			out, err := p.RenderHandoff(data)
 			if err != nil {
 				t.Fatalf("%s %s: %v", name, action, err)
 			}
@@ -285,6 +308,9 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			}
 			if action != "delete" && len(p.Matrix.Models) > 0 && !strings.Contains(out, "7. Model: pick model `m`, with effort `high`.") {
 				t.Errorf("%s %s: handoff doesn't say which model to pick:\n%s", name, action, out)
+			}
+			if action != "delete" && p.Matrix.Autofix == Native && !strings.Contains(out, "8. Auto-fix: turn auto-fix for pull requests **off**.") {
+				t.Errorf("%s %s: handoff doesn't say what to do with auto-fix:\n%s", name, action, out)
 			}
 		}
 	}

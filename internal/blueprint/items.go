@@ -156,6 +156,12 @@ type Routine struct {
 	// turned on where the routine needs it and off where it doesn't, and
 	// Fabrica keeps the memory itself where the runtime has none.
 	Memory bool
+	// Autofix says the runtime should keep watching the pull requests the
+	// routine opens, and push fixes for failing CI and review comments.
+	// Like Memory, it's the source of truth on every runtime that has an
+	// auto-fix setting: on where the routine asks for it, off everywhere
+	// else.
+	Autofix bool
 	// Models are the models the routine would like to run on, in order of
 	// preference: each runtime runs it on the first one it has. Empty means
 	// every runtime uses its own default model.

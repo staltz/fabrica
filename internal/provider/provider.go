@@ -197,6 +197,7 @@ type HandoffData struct {
 	Trigger     HandoffTrigger
 	Connectors  []HandoffConnector
 	Memory      HandoffMemory
+	Autofix     HandoffAutofix
 	Model       HandoffModel
 	Fabrica     HandoffFabrica
 	Prompt      string
@@ -232,6 +233,17 @@ type HandoffMemory struct {
 	Support string
 	// Setup is a one-line description of what to set, like "turn the
 	// runtime's own memory **off**: …".
+	Setup string
+}
+
+// HandoffAutofix describes what to do with the runtime's auto-fix setting
+// for pull requests, mirroring the routine's autofix: key.
+type HandoffAutofix struct {
+	// Setting is "on" or "off" on runtimes with an auto-fix setting
+	// (autofix: native), and empty elsewhere, where there's nothing to set.
+	Setting string
+	// Setup is a one-line description of what to set, like "turn auto-fix
+	// for pull requests **off**: …", or empty with Setting.
 	Setup string
 }
 

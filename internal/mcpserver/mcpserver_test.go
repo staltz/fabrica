@@ -380,7 +380,7 @@ func TestRemoteRoutineRun(t *testing.T) {
 	args := map[string]any{"intent": "review PR 7 on the app", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/api", "stub": fp}
 	runID := c.runID(c.ok("run_begin", args))
 	routine := c.ok("routine_get", map[string]any{"name": "pr-review"})
-	for _, want := range []string{"for repo github.com/acme/api", "slack_channel = #api", "slack.notify (channel: #api): do it with the tools of the slack connector", "then tell #api"} {
+	for _, want := range []string{"for repo github.com/acme/api", "slack_channel = #api", "slack.notify (channel: #api): do it with the tools of the slack connector", "then tell #api", "This routine doesn't auto-fix its pull requests"} {
 		if !strings.Contains(routine, want) {
 			t.Errorf("routine_get is missing %q:\n%s", want, routine)
 		}
@@ -473,6 +473,19 @@ func TestRemoteRoutineMemory(t *testing.T) {
 	other.ok("run_begin", apiArgs)
 	if r := other.ok("routine_get", map[string]any{"name": "pr-review"}); strings.Contains(r, "spec/") {
 		t.Errorf("memories are per repo:\n%s", r)
+	}
+}
+
+func TestRemoteRoutineAutofix(t *testing.T) {
+	rw := newRemoteWorld(t)
+	rw.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nautofix: true\n", 1)})
+	if err := rw.srv.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+	c.ok("run_begin", map[string]any{"intent": "review PR 7", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/app", "stub": rw.remoteStub(t)})
+	if r := c.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(r, "## Auto-fix\n\nThe runtime auto-fixes the pull requests this routine opens") || !strings.Contains(r, "finish the run without waiting for CI") {
+		t.Errorf("routine_get should say the runtime auto-fixes the routine's pull requests:\n%s", r)
 	}
 }
 

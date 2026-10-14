@@ -257,6 +257,21 @@ func TestNativeSideEffectsLocally(t *testing.T) {
 	}
 }
 
+func TestNativeSideEffectsInInitSessions(t *testing.T) {
+	// An init routine runs in a one-off session, which has no stub to set
+	// the runtime's own features.
+	const initRoutine = "---\ntrigger: { on: init }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nSet up.\n"
+	f := load(t, map[string]string{"routines/plain.md": initRoutine})
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-cloud")); !e.OK() || e.Shape.SideEffects != nil {
+		t.Errorf("an init session has no settings of its own: %v %s", e.Shape.SideEffects, e.Diags)
+	}
+	f = load(t, map[string]string{"routines/fixing.md": withAutofix(initRoutine)})
+	e := stub.Evaluate(f, f.Routines["fixing"], target(t, "claude-code-cloud"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "is an init routine, which runs in a one-off session Fabrica starts") {
+		t.Errorf("an init routine with github.pr_autofix should be an error: %s", e.Diags)
+	}
+}
+
 func TestDescribeSideEffect(t *testing.T) {
 	for _, c := range []struct{ name, setting, want string }{
 		{provider.PRAutofix, stub.SideEffectOn, "turn **Auto-fix pull requests** **on**"},

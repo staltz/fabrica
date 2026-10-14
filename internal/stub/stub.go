@@ -257,9 +257,19 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		e.Connectors = append(e.Connectors, use)
 	}
 
-	// A local hook runs inside a session you already have open, so the stub
-	// can't set the runtime's own features: the session's settings decide.
-	hook := m.Scope == provider.Local && r.Trigger.On != "schedule"
+	// The stub sets the runtime's own features for its native side effects,
+	// but some routines run in a session instead, where the session's own
+	// settings decide: a local hook inside the session you already have
+	// open, and an init routine in the one-off session Fabrica starts.
+	var session, sessionHint string
+	switch {
+	case r.Trigger.On == blueprint.InitTrigger:
+		session = "is an init routine, which runs in a one-off session Fabrica starts"
+		sessionHint = "drop it from side_effects:, and turn it on in that session when you want it"
+	case m.Scope == provider.Local && r.Trigger.On != "schedule":
+		session = "runs as a hook inside the session you have open"
+		sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it; on %s, only schedule routines get settings of their own", rt)
+	}
 	listed := map[string]bool{}
 	for _, se := range r.SideEffects {
 		use := Use{Name: se.Name, Support: m.SideEffect(se.Name)}
@@ -273,16 +283,16 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 			if why, ok := provider.BuiltInOnly(se.Name); ok {
 				d.Hintf("%s can't be emulated, because %s; drop it from side_effects:, or deploy this routine to a runtime whose capability matrix has %s: native", se.Name, why, se.Name)
 			}
-		case use.Support == provider.Native && hook:
+		case use.Support == provider.Native && session != "":
 			use.Support = provider.Unsupported
-			e.Diags.Errorf("capability.side-effect", where, "routine %s runs as a hook inside the session you have open in %s, so Fabrica can't turn on the runtime's own %s for it", r.Ref.Name, rt, se.Name).
-				Hintf("drop it from side_effects:, and turn it on in that session when you want it; on %s, only schedule routines get settings of their own", rt)
+			e.Diags.Errorf("capability.side-effect", where, "routine %s %s in %s, so Fabrica can't turn on the runtime's own %s for it", r.Ref.Name, session, rt, se.Name).
+				Hintf("%s", sessionHint)
 		case use.Support == provider.Native:
 			listed[se.Name] = true
 		}
 		e.SideEffects = append(e.SideEffects, use)
 	}
-	if !hook {
+	if session == "" {
 		for _, name := range m.NativeSideEffects() {
 			if shape.SideEffects == nil {
 				shape.SideEffects = map[string]string{}

@@ -69,7 +69,7 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 	if r == nil {
 		return
 	}
-	if d.HasRoutine(r.Ref.Name) {
+	if d.Names(r.Ref.Name) {
 		dp.Diags.Errorf("factory.init-routine", d.File, "routine %s is the blueprint's init routine: it runs by itself when the factory is created, so it doesn't go under routines:", r.Ref.Name).
 			Hintf("remove it from routines:")
 		return

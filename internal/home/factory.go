@@ -28,7 +28,8 @@ import (
 )
 
 // Wildcard is the target that matches every repo not matched by
-// another local factory.
+// another local factory, and the routine that stands for every routine of
+// the blueprint that the factory doesn't name.
 const Wildcard = "*"
 
 // BlueprintRef says which blueprint a factory uses.
@@ -61,9 +62,16 @@ type Factory struct {
 	Blueprint BlueprintRef
 	Server    string
 	Runtimes  []string
-	Routines  []string
-	// RoutineRuntimes narrows routines to some of the factory's
-	// runtimes. A routine that isn't in it runs on all of them.
+	// Routines are the routines the factory names under routines:.
+	Routines []string
+	// AllRoutines is a "*" entry under routines:. It deploys every
+	// routine of the blueprint that isn't in Routines, except its init
+	// routine. Which ones that is depends on the blueprint.
+	AllRoutines bool
+	// RoutineRuntimes narrows routines (and Wildcard, for AllRoutines) to
+	// some of the factory's runtimes. A routine that isn't in it runs on
+	// all of them; one with an empty list, which leaves it out of the
+	// wildcard, runs on none.
 	RoutineRuntimes map[string][]string
 	Targets         []Target
 	Params          map[string]string
@@ -107,20 +115,31 @@ func (d *Factory) target(repo string) (Target, bool) {
 // HasRuntime reports whether the factory runs on a runtime.
 func (d *Factory) HasRuntime(rt string) bool { return contains(d.Runtimes, rt) }
 
-// HasRoutine reports whether the factory includes a routine.
-func (d *Factory) HasRoutine(r string) bool { return contains(d.Routines, r) }
+// HasRoutine reports whether the factory includes a routine, by name or
+// through the wildcard. It doesn't know whether the blueprint has it.
+func (d *Factory) HasRoutine(r string) bool { return d.Names(r) || d.AllRoutines }
+
+// Names reports whether the factory names a routine under routines:.
+func (d *Factory) Names(r string) bool { return contains(d.Routines, r) }
 
 // Runs reports whether the factory runs a routine on a runtime: both are
-// in the factory, and the routine isn't narrowed to other runtimes.
+// in the factory, and the routine isn't narrowed to other runtimes. A
+// routine the factory names follows its own entry; any other follows the
+// wildcard's.
 func (d *Factory) Runs(routine, runtime string) bool {
 	if !d.HasRoutine(routine) || !d.HasRuntime(runtime) {
 		return false
 	}
-	only, ok := d.RoutineRuntimes[routine]
+	entry := routine
+	if !d.Names(routine) {
+		entry = Wildcard
+	}
+	only, ok := d.RoutineRuntimes[entry]
 	return !ok || contains(only, runtime)
 }
 
-// RoutinesOn lists the routines the factory runs on a runtime.
+// RoutinesOn lists the routines the factory names that run on a runtime.
+// The ones the wildcard adds depend on the blueprint, so they aren't here.
 func (d *Factory) RoutinesOn(runtime string) []string {
 	var out []string
 	for _, r := range d.Routines {
@@ -248,12 +267,21 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 			return fail("routines: lists %q twice", r)
 		}
 		seen[r] = true
-		d.Routines = append(d.Routines, r)
+		if r == Wildcard {
+			d.AllRoutines = true
+		} else {
+			d.Routines = append(d.Routines, r)
+		}
 		if only != nil {
 			if d.RoutineRuntimes == nil {
 				d.RoutineRuntimes = map[string][]string{}
 			}
 			d.RoutineRuntimes[r] = only
+		}
+	}
+	for _, r := range d.Routines {
+		if only, ok := d.RoutineRuntimes[r]; ok && len(only) == 0 && !d.AllRoutines {
+			return fail(`routines: runtimes of %s is empty; list where it should run, or write just its name to run it on every runtime (an empty list only leaves a routine out of "*")`, r)
 		}
 	}
 
@@ -295,11 +323,11 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		if seen[Wildcard] {
 			return fail(`targets: the wildcard "*" is only allowed for local runtimes; cloud factories must name each repo`)
 		}
-		if len(d.Routines) == 0 {
-			return fail("routines: is empty; a cloud factory exists to run routines, so list at least one")
+		if len(d.Routines) == 0 && !d.AllRoutines {
+			return fail(`routines: is empty; a cloud factory exists to run routines, so list at least one, or ["*"] for all of them`)
 		}
 		for _, rt := range d.Runtimes {
-			if len(d.RoutinesOn(rt)) == 0 {
+			if len(d.RoutinesOn(rt)) == 0 && !d.Runs(Wildcard, rt) {
 				return fail("runtimes: lists %s, but none of the routines run on it; remove it, or add it to a routine's runtimes", rt)
 			}
 		}
@@ -334,9 +362,9 @@ func missingServerHint(file string, personal bool) string {
 	return strings.Join(steps, "\n  ")
 }
 
-// parseRoutineEntry reads one entry under routines:, which is a name, or
-// `{ routine, runtimes }` to run it on only some of the factory's
-// runtimes. only is nil when the routine runs on all of them.
+// parseRoutineEntry reads one entry under routines:, which is a name (or
+// the wildcard "*"), or `{ routine, runtimes }` to run it on only some of
+// the factory's runtimes. only is nil when the routine runs on all of them.
 func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []string, err error) {
 	switch node.Kind {
 	case yaml.ScalarNode:
@@ -362,8 +390,8 @@ func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []
 			return "", nil, fmt.Errorf("line %d: a routine entry needs a routine key", node.Line)
 		}
 		if hasRuntimes {
-			if len(rf.Runtimes) == 0 {
-				return "", nil, fmt.Errorf("runtimes of %s is empty; list where it should run, or write just its name to run it on every runtime", name)
+			if len(rf.Runtimes) == 0 && name == Wildcard {
+				return "", nil, fmt.Errorf(`runtimes of "*" is empty; list where the routines should run, or write just "*" to run them on every runtime`)
 			}
 			only = []string{}
 			for _, rt := range rf.Runtimes {
@@ -381,6 +409,9 @@ func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []
 		}
 	default:
 		return "", nil, fmt.Errorf("line %d: each routine is a name like pr-review, or `{ routine: …, runtimes: […] }`", node.Line)
+	}
+	if name == Wildcard {
+		return name, only, nil
 	}
 	if err := names.Validate(name); err != nil {
 		return "", nil, err

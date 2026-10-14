@@ -220,8 +220,9 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 		if rtPlan == nil {
 			continue
 		}
-		for _, routine := range dp.Spec.RoutinesOn(rt) {
-			ev := rtPlan.Evaluations[routine]
+		for _, r := range dp.Routines {
+			routine := r.Ref.Name
+			ev := rtPlan.Evaluations[routine] // only there when it runs on rt
 			if ev == nil || !ev.OK() {
 				continue
 			}

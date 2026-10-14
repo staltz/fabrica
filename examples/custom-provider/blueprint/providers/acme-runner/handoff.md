@@ -20,13 +20,17 @@
    - **{{.Name}}**: {{.Setup}}
 {{- end}}
 5. Memory: {{.Memory.Setup}}.
-6. Prompt, exactly:
+6. Built-in actions:
+{{- range .SideEffects}}
+   - {{.Setup}}.
+{{- end}}
+7. Prompt, exactly:
 
    ```
 {{indent 3 .Prompt}}
    ```
 
-7. Save it, then run:
+8. Save it, then run:
 
    ```
    {{.ConfirmCommand}}

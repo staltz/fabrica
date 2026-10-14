@@ -100,7 +100,6 @@ type routineFile struct {
 	SideEffects []yaml.Node          `yaml:"side_effects"`
 	Params      map[string]paramFile `yaml:"params"`
 	Memory      bool                 `yaml:"memory"`
-	Autofix     bool                 `yaml:"autofix"`
 	Models      []yaml.Node          `yaml:"models"`
 }
 
@@ -140,7 +139,6 @@ func parseRoutine(data []byte, name, file string) *Routine {
 	}
 	r.Description = strings.TrimSpace(f.Description)
 	r.Memory = f.Memory
-	r.Autofix = f.Autofix
 	r.Prompt = strings.TrimSpace(fm.Body)
 	if r.Prompt == "" {
 		return fail("the routine has no prompt; write its instructions below the frontmatter")

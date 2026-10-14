@@ -14,6 +14,7 @@ import (
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
+	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/testkit"
 	"github.com/staltz/fabrica/internal/token"
 )
@@ -233,14 +234,14 @@ func TestAutofixReachesTheStubs(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": strings.Replace(testkit.PRReviewFactory, "[claude-code-cloud, toy]", "[claude-code-cloud]", 1)}).CommitPush("add pr-review")
 
-	// Claude routines have an auto-fix setting, which the stub turns off
-	// unless the routine asks for it.
+	// Claude routines auto-fix pull requests themselves, which the stub
+	// turns off unless the routine lists github.pr_autofix.
 	res := h.apply()
 	if len(res.Handoffs) != 2 {
 		t.Fatalf("handoffs = %v, want 2", res.Handoffs)
 	}
 	handoff, _ := os.ReadFile(res.Handoffs[0])
-	if !strings.Contains(string(handoff), "8. Auto-fix: turn auto-fix for pull requests **off**") {
+	if !strings.Contains(string(handoff), "8. Settings:\n   - turn auto-fix for pull requests **off**") {
 		t.Errorf("claude-code-cloud handoff should turn auto-fix off:\n%s", handoff)
 	}
 	for _, pend := range h.state().Pending {
@@ -249,26 +250,27 @@ func TestAutofixReachesTheStubs(t *testing.T) {
 		}
 	}
 	for _, r := range h.state().Resources {
-		if r.Shape.Autofix != "off" {
-			t.Errorf("%s stub records auto-fix %q, want off", r.Runtime, r.Shape.Autofix)
+		if r.Shape.SideEffects[provider.PRAutofix] != "off" {
+			t.Errorf("%s stub records %v, want auto-fix off", r.Runtime, r.Shape.SideEffects)
 		}
 	}
 
-	// Asking for it is an update, with a handoff that turns it on.
-	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "skills: [pr-review]\n", "skills: [pr-review]\nautofix: true\n", 1)})
+	// Listing it is an update, with a handoff that turns it on.
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "  - github.pr_comment\n", "  - github.pr_comment\n  - github.pr_autofix\n", 1)})
 	p := h.plan()
-	if text := render(p); p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 2 || !strings.Contains(text, "auto-fix for pull requests should be on") {
-		t.Fatalf("after turning auto-fix on:\n%s", text)
+	if text := render(p); p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 2 || !strings.Contains(text, "the runtime's own github.pr_autofix should be on") {
+		t.Fatalf("after listing github.pr_autofix:\n%s", text)
 	}
 	res = h.apply()
 	handoff, _ = os.ReadFile(res.Handoffs[0])
-	if !strings.Contains(string(handoff), "8. Auto-fix: turn auto-fix for pull requests **on**") {
+	if !strings.Contains(string(handoff), "8. Settings:\n   - turn auto-fix for pull requests **on**") {
 		t.Errorf("claude-code-cloud handoff should turn auto-fix on:\n%s", handoff)
 	}
 
-	// A runtime without an auto-fix setting can't run the routine.
+	// A runtime that can't auto-fix can't run the routine, even with
+	// "*": emulated.
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add toy")
-	if text := render(h.plan()); !strings.Contains(text, "runtime toy can't auto-fix the pull requests routine pr-review opens") {
+	if text := render(h.plan()); !strings.Contains(text, "runtime toy doesn't support side effect github.pr_autofix") {
 		t.Errorf("plan should say toy can't auto-fix:\n%s", text)
 	}
 }

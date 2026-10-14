@@ -474,8 +474,10 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		if cur.Memory != shape.Memory {
 			reasons = append(reasons, fmt.Sprintf("the runtime's memory should be %s", describeMemory(shape.Memory)))
 		}
-		if cur.Autofix != shape.Autofix {
-			reasons = append(reasons, "auto-fix for pull requests should be "+shape.Autofix)
+		for _, name := range sortedSettings(shape.SideEffects) {
+			if want := shape.SideEffects[name]; cur.SideEffects[name] != want {
+				reasons = append(reasons, fmt.Sprintf("the runtime's own %s should be %s", name, want))
+			}
 		}
 		if cur.Model != shape.Model || cur.Effort != shape.Effort || cur.Fast != shape.Fast {
 			reasons = append(reasons, "the model should be "+describeModel(shape.Model, shape.Effort, shape.Fast))
@@ -489,6 +491,15 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 		}
 	}
 	return reasons
+}
+
+func sortedSettings(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func describeMemory(setting string) string {

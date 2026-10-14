@@ -55,7 +55,8 @@ type Task struct {
 	Cron        string
 	Fingerprint string
 	// Autofix is the task's auto-fix setting for pull requests, "on" or
-	// "off" (see stub.Shape.Autofix). Like the schedule, the app keeps it
+	// "off": the setting of the native side effect github.pr_autofix (see
+	// stub.Shape.SideEffects). Like the schedule, the app keeps it
 	// outside SKILL.md, so it's recorded in the description, and changing
 	// it is a step in the app (see TaskSetup).
 	Autofix string

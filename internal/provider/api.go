@@ -35,10 +35,11 @@ type Resource struct {
 	// (memory: native), mirroring the routine's memory: key, and empty
 	// elsewhere.
 	Memory string `json:"memory,omitempty"`
-	// Autofix is "on" or "off" on runtimes with an auto-fix setting for
-	// pull requests (autofix: native), mirroring the routine's autofix:
-	// key, and empty elsewhere.
-	Autofix string `json:"autofix,omitempty"`
+	// SideEffects are the runtime's own features for the side effects its
+	// matrix names as native, each "on" when the routine lists it and "off"
+	// otherwise, like {"github.pr_autofix": "off"}. Empty when the matrix
+	// names none.
+	SideEffects map[string]string `json:"side_effects,omitempty"`
 	// Model is the model to run the stub on, on runtimes whose matrix lists
 	// models; nil means the runtime's default.
 	Model       *ResourceModel `json:"model,omitempty"`

@@ -33,16 +33,16 @@ connectors:
   slack: emulated
   linear: emulated
 side_effects:
+  # Desktop app scheduled tasks have an "Auto-fix pull requests" setting,
+  # like Claude routines, which the stub turns on for routines that list
+  # this side effect and off for the rest. Hooks run inside the session you
+  # already have open, so they get no setting of their own, and a hook
+  # routine that lists it is an error.
+  github.pr_autofix: native
   "*": emulated
 # Local tools' own memories are per project, not per routine, so a routine
 # that needs memory gets it from Fabrica, in runs.db.
 memory: emulated
-# Desktop app scheduled tasks have an "Auto-fix pull requests" setting, like
-# Claude routines, which the stub turns on or off to mirror the routine's
-# autofix: key. Hooks run inside the session you already have open, so
-# they get no setting of their own, and a hook routine with autofix: true
-# is an error.
-autofix: native
 # Hooks run inside the session you already have open, on its model, and
 # scheduled tasks on the model the desktop app is set to, so there's no
 # models: list, and only a routine's `default` entry matches.

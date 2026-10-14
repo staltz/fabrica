@@ -225,7 +225,7 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 			if tr := ev.Routine.Trigger; tr.On == "schedule" {
 				for _, repo := range dp.Spec.SpecificTargets() {
 					cfg.Tasks = append(cfg.Tasks, localtools.Task{
-						Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(), Autofix: ev.Shape.Autofix,
+						Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(), Autofix: ev.Shape.SideEffects[provider.PRAutofix],
 						Prompt: stub.LocalPrompt(routine, dp.Name, rt, repo, ev.Shape.Fingerprint()),
 					})
 				}

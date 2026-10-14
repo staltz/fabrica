@@ -30,7 +30,10 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 {{- end}}
 6. Memory: {{if .Memory.Needed}}this routine keeps notes between runs, and Fabrica keeps them for it (they come with `routine_get`), so there's nothing to turn on.{{else}}this routine doesn't use memory.{{end}} If the routine has a memory setting of its own, leave it **off**.
 7. Model: {{.Model.Setup}}.
-8. Auto-fix: {{.Autofix.Setup}}.
+8. Settings:
+{{- range .SideEffects}}
+   - {{.Setup}}.
+{{- end}}
 9. Prompt. Replace the whole prompt with this, exactly:
 
    ```

@@ -196,7 +196,7 @@ Skills often mention other skills in their text (`/changelog`, "use the `test` s
 
 ## Routines
 
-A routine is **trigger + skills + connectors + side effects + params + a prompt** (and, if you like, the models to run it on, and whether its pull requests get auto-fixed), written as abstract intent, independent of any runtime.
+A routine is **trigger + skills + connectors + side effects + params + a prompt** (and, if you like, the models to run it on), written as abstract intent, independent of any runtime.
 
 ```markdown
 <!-- routines/pr-review.md -->
@@ -211,7 +211,6 @@ side_effects:
 params:
   slack_channel: { required: false, default: "#eng", description: Where to post a summary }
 memory: false                                       # optional; true keeps notes between runs
-autofix: false                                      # optional; true has the runtime fix the PRs it opens
 models:                                             # optional; the first one a runtime has wins
   - { model: claude-opus-5-5, effort: high }
   - { model: gpt-5.6-sol, effort: high }
@@ -229,7 +228,6 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | `side_effects` | What the routine may do to the outside world. Each is `connector.action`, optionally with settings. Its connector must be in `connectors:`. |
 | `params` | Values factories can set. Each has `required` (default false), `default` and `description`. A required param can't have a default. |
 | `memory` | Optional. `true` if the routine keeps notes between runs; default `false`. See [Memory](#memory). |
-| `autofix` | Optional. `true` if, after a run opens a pull request, the runtime should keep watching its CI and review comments and push fixes; default `false`. See [Auto-fix](#auto-fix). |
 | `models` | Optional. The models to run the routine on, each with an effort, in order of preference. See [Models](#models). |
 
 The Markdown body is the routine's prompt. It must not be empty.
@@ -251,9 +249,30 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 
 Each provider maps every side effect to **native** (the runtime does it itself), **emulated** (Fabrica turns it into prompt instructions, plus the connector that carries it out) or **unsupported** (an error). Settings like `channel:` are filled in when the routine is served, with `{{params.x}}` replaced.
 
+A native side effect is one of the runtime's own features, so the routine file is its source of truth: the stub turns it **on** for routines that list it and **off** for every other routine, even where the runtime turns it on by default. That makes native side effects part of the stub's [shape](concepts.md#stubs-and-shapes): adding one to a routine, or removing it, means a re-apply on runtimes that have it, and `plan` shows the stub as an update. (Emulated side effects are only prompt instructions, so changing them takes effect on the next run.) Local hooks run inside the session you already have open, so the stub can't set them up there: a hook routine that lists a native side effect is an error.
+
+Some side effects can only be native, because they outlive the run, so no prompt instruction can do them. A runtime has them only if its capability matrix names them exactly: `"*": emulated` doesn't cover them, so on every other runtime they're an error in `check` and `plan`. In v0.1 there's one: `github.pr_autofix`.
+
 When an optional connector isn't available on a runtime, the routine still runs there, and its side effects through that connector are skipped. The agent is told so.
 
 Side effects are listed in what the agent sees as "allowed side effects", and it's told not to do anything else to the outside world. Be aware that this is an honor system: the real limit is what each connector's credentials allow.
+
+#### Auto-fixing pull requests
+
+Some routines open pull requests: a weekly dependency update, a fix for a flaky test. Some runtimes can then **auto-fix** them: after the pull request opens, the runtime keeps watching its CI and review comments, and pushes fixes, so the pull request gets to green without anyone running the routine again. Claude calls this *Auto-fix pull requests*. A routine asks for it with the `github.pr_autofix` side effect:
+
+```yaml
+connectors: [github]
+side_effects:
+  - github.open_pr
+  - github.pr_autofix
+```
+
+- **Claude routines and Claude Code's desktop scheduled tasks** have it natively. Their stubs turn auto-fix on for routines that list `github.pr_autofix` and off for every other routine, including the ones whose repository has it on by default (installing the Claude GitHub app turns it on).
+- **Every other runtime** can't run a routine that lists it. Fabrica can't watch a pull request after the run ends, so it can't be emulated.
+- **Local hooks** use the session you have open: turn on auto-fix there (in Claude Code's desktop app, it's under **CI** in the session's status bar).
+
+`routine_get` tells each run what happens to its pull requests: with auto-fix on, to finish the run once the pull request is open rather than wait for CI; with it off, not to push fixes if the runtime wakes it up anyway.
 
 ### Params
 
@@ -274,22 +293,6 @@ The routine file is the source of truth, and every runtime mirrors it:
 - A runtime whose matrix doesn't list `memory` can't run a routine with `memory: true`: that's an error in `check` and `plan`.
 
 Fabrica's memories are capped at 16 KiB each, since every run reads the whole thing. Agents are told to keep notes, not logs; never to keep secrets; and never to keep instructions that came from untrusted input. Your blueprint's own process (what to remember, and when) belongs in the routine's prompt.
-
-### Auto-fix
-
-Some routines open pull requests: a weekly dependency update, a fix for a flaky test. Some runtimes can then **auto-fix** those pull requests: after the pull request opens, the runtime keeps watching its CI and review comments, and pushes fixes, so the pull request gets to green without anyone running the routine again. Claude calls this *Auto-fix pull requests*. The routine decides, with one key:
-
-```yaml
-autofix: true
-```
-
-Like memory, the routine file is the source of truth, and every runtime with an auto-fix setting mirrors it:
-
-- **Runtimes with an auto-fix setting** (`autofix: native` in the [capability matrix](providers.md#capability-matrices): Claude routines, and Claude Code's desktop scheduled tasks) get it turned **on** for routines with `autofix: true` and **off** for every other routine, even where the runtime would turn it on by default (installing the Claude GitHub app turns it on for the repository). It's part of the stub's [shape](concepts.md#stubs-and-shapes), so changing `autofix:` means a re-apply there, and `plan` shows the stub as an update.
-- **Runtimes without one** can't run a routine with `autofix: true`: that's an error in `check` and `plan`. Fabrica can't watch a pull request on a runtime's behalf, so auto-fix is never emulated. Deploy such a routine only to runtimes that have it, or drop `autofix: true` if the routine can do without.
-- **Local hooks** run inside the session you already have open, so they have no auto-fix setting of their own, and a hook routine with `autofix: true` is an error: turn on auto-fix in that session instead (in Claude Code's desktop app, it's under **CI** in the session's status bar).
-
-`routine_get` tells each run what happens to its pull requests: with auto-fix on, to finish the run once the pull request is open rather than wait for CI; with it off, not to push fixes if the runtime wakes it up anyway.
 
 ### Models
 

@@ -28,7 +28,6 @@ Fabrica sits beside git. It never wraps it. Blueprints and home repos are plain 
 | **Connector** | An integration the agent needs: a runtime's built-in one, like GitHub, or an MCP server. |
 | **Models** | The models a routine would like to run on, with an effort for each, in order of preference. Each runtime runs it on the first one it has. |
 | **Memory** | Notes a routine keeps for its own next runs, when its routine file says `memory: true`. Kept by the runtime where it has a memory feature, and by Fabrica everywhere else. |
-| **Auto-fix** | Whether the runtime keeps watching the pull requests a routine opens, and pushes fixes for failing CI and review comments, when its routine file says `autofix: true`. Only runtimes with an auto-fix setting can do it. |
 | **Provider** | The piece that translates Fabrica's ideas for one specific runtime. |
 | **Factory** | A deployment of a blueprint: a file in the home repo that says "run *this* blueprint's routines on *these* targets in *these* runtimes". |
 | **Target** | A product repo that a factory runs its blueprint on. A factory lists them under `targets:`. |
@@ -76,16 +75,16 @@ Fabrica never installs a routine's real content into a runtime. It installs a **
 
 > You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude-code-cloud`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
 
-Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or side effects takes effect on the next run. You only re-apply when the stub itself has to change.
+Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or (emulated) side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
-What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), its auto-fix setting for pull requests (only on runtimes that have one), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
+What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the runtime's own features for its native side effects, like auto-fixing pull requests (on for the ones the routine lists, off for the rest), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
 
 ### Stale stubs
 
 The home repo and the blueprint can change at any time, but a stub stays installed until `apply` changes it. So before a routine run starts, `run_begin` checks two things, in this order:
 
 1. **The stub is still deployed.** In the latest home repo, the factory must still include the stub's routine, target and runtime, and run that routine on that runtime. Remove any of them (or delete the factory) and the stub stops as soon as the server sees the change, even before `apply` gets around to deleting it.
-2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector, memory or auto-fix setting, or model.
+2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector, memory setting, native side effect or model.
 
 If either check fails, the server refuses the run, records it as `failed`, and tells the agent the factory needs `fabrica apply`. A stub never runs a routine that's no longer deployed for its repo, expects a different trigger, or needs a connector the stub doesn't have.
 

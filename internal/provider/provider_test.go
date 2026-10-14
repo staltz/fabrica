@@ -76,22 +76,32 @@ func TestMemorySupport(t *testing.T) {
 	}
 }
 
-func TestAutofixSupport(t *testing.T) {
+func TestBuiltInOnlySideEffects(t *testing.T) {
+	// Only Claude auto-fixes pull requests, and the others' "*": emulated
+	// doesn't match it.
 	want := map[string]Support{
 		"claude-code-cloud": Native, "cursor-cloud": Unsupported, "codex": Unsupported, "copilot-cloud": Unsupported,
 		"claude-code-local": Native, "cursor-local": Unsupported, "codex-cli": Unsupported, "copilot-local": Unsupported,
 	}
 	for name, w := range want {
 		p, _ := Builtin(name)
-		if p.Matrix.Autofix != w {
-			t.Errorf("%s: autofix = %s, want %s", name, p.Matrix.Autofix, w)
+		if got := p.Matrix.SideEffect(PRAutofix); got != w {
+			t.Errorf("%s: %s = %s, want %s", name, PRAutofix, got, w)
+		}
+		if got := p.Matrix.SideEffect("github.pr_comment"); got != Emulated {
+			t.Errorf("%s: github.pr_comment = %s, want emulated", name, got)
 		}
 	}
 	const base = "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\n"
-	for value, problem := range map[string]string{"emulated": "can't be emulated", "sometimes": `autofix: is "sometimes"`} {
-		if _, err := ParseMatrix("x", []byte(base+"autofix: "+value+"\n")); err == nil || !strings.Contains(err.Error(), problem) {
-			t.Errorf("autofix: %s should be rejected with %q, got %v", value, problem, err)
-		}
+	if _, err := ParseMatrix("x", []byte(base+"side_effects: {github.pr_autofix: emulated}\n")); err == nil || !strings.Contains(err.Error(), "can't be emulated") {
+		t.Errorf("an emulated github.pr_autofix should be rejected, got %v", err)
+	}
+	m, err := ParseMatrix("x", []byte(base+"side_effects: {github.*: native, github.issue_comment: native, github.pr_autofix: native, \"*\": emulated}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(m.NativeSideEffects(), ","); got != "github.issue_comment,github.pr_autofix" {
+		t.Errorf("NativeSideEffects = %q: only exact names are the runtime's own features", got)
 	}
 }
 
@@ -290,8 +300,8 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 				Prompt:         "line one\nline two",
 				ConfirmCommand: "fabrica confirm h_abc --remote-id <id>",
 			}
-			if p.Matrix.Autofix == Native {
-				data.Autofix = HandoffAutofix{Setting: "off", Setup: "turn auto-fix for pull requests **off**"}
+			if p.Matrix.SideEffect(PRAutofix) == Native {
+				data.SideEffects = []HandoffSideEffect{{Name: PRAutofix, Setting: "off", Setup: "turn auto-fix for pull requests **off**"}}
 			}
 			out, err := p.RenderHandoff(data)
 			if err != nil {
@@ -309,7 +319,7 @@ func TestRenderBuiltinHandoffs(t *testing.T) {
 			if action != "delete" && len(p.Matrix.Models) > 0 && !strings.Contains(out, "7. Model: pick model `m`, with effort `high`.") {
 				t.Errorf("%s %s: handoff doesn't say which model to pick:\n%s", name, action, out)
 			}
-			if action != "delete" && p.Matrix.Autofix == Native && !strings.Contains(out, "8. Auto-fix: turn auto-fix for pull requests **off**.") {
+			if action != "delete" && len(data.SideEffects) > 0 && !strings.Contains(out, "8. Settings:\n   - turn auto-fix for pull requests **off**.\n9. Prompt.") {
 				t.Errorf("%s %s: handoff doesn't say what to do with auto-fix:\n%s", name, action, out)
 			}
 		}

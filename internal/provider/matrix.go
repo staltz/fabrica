@@ -106,12 +106,6 @@ type Matrix struct {
 	// off to match the routine; Emulated means Fabrica keeps the memory
 	// itself and serves it over MCP. Not listed means unsupported.
 	Memory Support
-	// Autofix says whether the runtime can keep watching the pull requests
-	// a run opens, and push fixes for failing CI and review comments:
-	// Native means it has an auto-fix setting, which a stub turns on or off
-	// to match the routine. Fabrica can't watch pull requests for a
-	// runtime, so it's never emulated. Not listed means unsupported.
-	Autofix Support
 	// Models are the models a stub can ask the runtime to run its routine
 	// on, each with the efforts it can run at (empty when the runtime has
 	// no effort setting for it). A routine runs on the first of its models:
@@ -168,7 +162,6 @@ type matrixFile struct {
 	Connectors     map[string]Support        `yaml:"connectors"`
 	SideEffects    map[string]Support        `yaml:"side_effects"`
 	Memory         Support                   `yaml:"memory"`
-	Autofix        Support                   `yaml:"autofix"`
 	Models         map[string][]string       `yaml:"models"`
 	FastModels     []string                  `yaml:"fast_models"`
 	ModelIDs       map[string]string         `yaml:"model_ids"`
@@ -241,7 +234,6 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		Connectors:     orEmpty(f.Connectors),
 		SideEffects:    orEmpty(f.SideEffects),
 		Memory:         f.Memory,
-		Autofix:        f.Autofix,
 	}
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -327,22 +319,15 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		if !s.valid() {
 			add("side_effects.%s: is %q; use native, emulated or unsupported", key, s)
 		}
+		if why, ok := BuiltInOnly(key); ok && s == Emulated {
+			add("side_effects.%s: can't be emulated (%s); use native or unsupported", key, why)
+		}
 	}
 
 	if m.Memory == "" {
 		m.Memory = Unsupported
 	} else if !m.Memory.valid() {
 		add("memory: is %q; use native, emulated or unsupported", f.Memory)
-	}
-
-	switch m.Autofix {
-	case "":
-		m.Autofix = Unsupported
-	case Native, Unsupported:
-	case Emulated:
-		add("autofix: can't be emulated (Fabrica can't watch pull requests for a runtime); use native or unsupported")
-	default:
-		add("autofix: is %q; use native or unsupported", f.Autofix)
 	}
 
 	m.Models = parseModels(f.Models, add)
@@ -483,12 +468,49 @@ func (m *Matrix) SideEffect(name string) Support {
 	if s, ok := m.SideEffects[name]; ok {
 		return s
 	}
+	if _, ok := BuiltInOnly(name); ok {
+		return Unsupported // wildcards never match these
+	}
 	if conn, _, ok := strings.Cut(name, "."); ok {
 		if s, ok := m.SideEffects[conn+".*"]; ok {
 			return s
 		}
 	}
 	return lookup(m.SideEffects, "*")
+}
+
+// PRAutofix is the side effect of auto-fixing the pull requests a run
+// opens: after the run, the runtime keeps watching each one's CI and review
+// comments, and pushes fixes. Claude calls it "Auto-fix pull requests".
+const PRAutofix = "github.pr_autofix"
+
+// builtInOnly are the side effects that only a runtime's own feature can
+// do, with why: they outlive the run, so prompt instructions can't emulate
+// them.
+var builtInOnly = map[string]string{
+	PRAutofix: "the runtime keeps watching the pull request after the run ends",
+}
+
+// BuiltInOnly reports whether only a runtime's own feature can do a side
+// effect, and why. A matrix must list such a side effect as native by its
+// exact name: it's never emulated, and wildcards don't match it.
+func BuiltInOnly(name string) (string, bool) {
+	why, ok := builtInOnly[name]
+	return why, ok
+}
+
+// NativeSideEffects lists, sorted, the side effects the matrix names
+// exactly as native: the runtime's own features, which a stub turns on for
+// routines that list them and off for the rest.
+func (m *Matrix) NativeSideEffects() []string {
+	var out []string
+	for name, s := range m.SideEffects {
+		if s == Native && !strings.Contains(name, "*") {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func lookup(m map[string]Support, key string) Support {

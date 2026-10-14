@@ -48,7 +48,7 @@ The arrows only point down: `blueprint` never imports `plan`, `plan` never impor
 
 **The apply lock is a git compare-and-swap.** Git only accepts a push on top of the latest commit. Taking the lock is "commit a `lock:` entry, push"; losing the race means the push is rejected, so we take our commit back (`reset --keep`, which never touches other work) and look again. No lock server needed.
 
-**Shapes, not content, live in runtimes.** A stub bakes in its shape (trigger, connectors and their settings, the runtime's memory setting where it has its own, its auto-fix setting where it has one, the model where the runtime lets it pick one, server address). Everything else is served live. The shape's fingerprint is a hash of its canonical JSON, and both the planner and the MCP server compute it the same way (`stub.Evaluate`), which is what makes stale-stub detection work.
+**Shapes, not content, live in runtimes.** A stub bakes in its shape (trigger, connectors and their settings, the runtime's memory setting where it has its own, the runtime's own features for its native side effects, the model where the runtime lets it pick one, server address). Everything else is served live. The shape's fingerprint is a hash of its canonical JSON, and both the planner and the MCP server compute it the same way (`stub.Evaluate`), which is what makes stale-stub detection work.
 
 **Sessions pin a commit.** The MCP server uses stateful sessions: each session resolves its snapshot (factory and blueprint at a commit) once and keeps it. Stale-stub checks, on the other hand, always look at the *latest* home repo.
 

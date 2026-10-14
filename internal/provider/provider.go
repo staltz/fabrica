@@ -197,7 +197,7 @@ type HandoffData struct {
 	Trigger     HandoffTrigger
 	Connectors  []HandoffConnector
 	Memory      HandoffMemory
-	Autofix     HandoffAutofix
+	SideEffects []HandoffSideEffect
 	Model       HandoffModel
 	Fabrica     HandoffFabrica
 	Prompt      string
@@ -236,14 +236,16 @@ type HandoffMemory struct {
 	Setup string
 }
 
-// HandoffAutofix describes what to do with the runtime's auto-fix setting
-// for pull requests, mirroring the routine's autofix: key.
-type HandoffAutofix struct {
-	// Setting is "on" or "off" on runtimes with an auto-fix setting
-	// (autofix: native), and empty elsewhere, where there's nothing to set.
+// HandoffSideEffect describes one of the runtime's own features for a side
+// effect its matrix names as native, to turn on or off.
+type HandoffSideEffect struct {
+	// Name is the side effect, like github.pr_autofix.
+	Name string
+	// Setting is "on" when the routine lists the side effect, and "off"
+	// otherwise.
 	Setting string
 	// Setup is a one-line description of what to set, like "turn auto-fix
-	// for pull requests **off**: …", or empty with Setting.
+	// for pull requests **off**: …".
 	Setup string
 }
 

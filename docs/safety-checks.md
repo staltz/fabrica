@@ -27,14 +27,13 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A routine's `runtimes` names one the factory doesn't list, or a cloud runtime has no routines | ❌ error | — | — | `factory.invalid` |
 | A param that no routine declares, or a required param that isn't set | ❌ error | — | — | `factory.unknown-param`, `factory.missing-param` |
 | A ref that's both a branch and a tag | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `blueprint.resolve` |
-| A trigger, connector or side effect a runtime doesn't support | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |
-| A routine's trigger, connectors, memory setting (on runtimes with their own memory), auto-fix setting (on runtimes that have one) or model changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
+| A trigger, connector or side effect a runtime doesn't support (including `github.pr_autofix` anywhere it isn't native, and a native side effect on a local hook) | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |
+| A routine's trigger, connectors, memory setting (on runtimes with their own memory), native side effects or model changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | A routine, repo or runtime was removed from a factory (or a routine no longer runs on a runtime), but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | The server secret was rotated | 🔧 update in `plan` (when it has the secret) | — | ❌ old tokens get `401` | — |
 | The server secret you have isn't the one the server uses | ❌ `fabrica auth` and `fabrica auth login` (the server refuses its tokens) | — | ❌ tokens get `401` | — |
 | A credential a runtime's API needs isn't set | `plan` notes it, and the runtime falls back to handoffs; ❌ error when it has no other apply mode | — | — | `provider.no-mode` |
 | The credentials file can be read by other users | ❌ Fabrica won't use it until you `chmod 600` it | — | — | — |
-| A routine has `autofix: true`, but the runtime has no auto-fix setting (or the routine is a local hook) | ❌ error | — | — | `capability.autofix` |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses | `capability.skill` |
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |
 | Another apply holds the factory's lock | ❌ `apply` stops, names the holder | — | — | `factory.locked` |

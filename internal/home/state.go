@@ -45,15 +45,17 @@ type StateBlueprint struct {
 // Shape is the part of a stub's shape that state records: enough to show
 // what's installed and its fingerprint.
 type Shape struct {
-	Trigger     string   `yaml:"trigger"`
-	Cron        string   `yaml:"cron,omitempty"`
-	Connectors  []string `yaml:"connectors"`
-	Memory      string   `yaml:"memory,omitempty"`
-	Autofix     string   `yaml:"autofix,omitempty"`
-	Model       string   `yaml:"model,omitempty"`
-	Effort      string   `yaml:"effort,omitempty"`
-	Fast        string   `yaml:"fast,omitempty"`
-	Fingerprint string   `yaml:"fingerprint"`
+	Trigger    string   `yaml:"trigger"`
+	Cron       string   `yaml:"cron,omitempty"`
+	Connectors []string `yaml:"connectors"`
+	Memory     string   `yaml:"memory,omitempty"`
+	// SideEffects are the runtime's own features for its native side
+	// effects, each "on" or "off" (see stub.Shape.SideEffects).
+	SideEffects map[string]string `yaml:"side_effects,omitempty"`
+	Model       string            `yaml:"model,omitempty"`
+	Effort      string            `yaml:"effort,omitempty"`
+	Fast        string            `yaml:"fast,omitempty"`
+	Fingerprint string            `yaml:"fingerprint"`
 }
 
 // Resource is one stub installed in one runtime.

@@ -35,8 +35,15 @@ connectors:
   mcp.sse: native
   mcp.stdio: unsupported
 side_effects:
-  # Claude acts through its connectors' tools, so every side effect turns
-  # into prompt instructions plus the connector that carries it out.
+  # Each routine has an "Auto-fix pull requests" setting: after a run opens
+  # a pull request, Claude keeps watching its CI and review comments, and
+  # pushes fixes. The stub turns it on for routines that list this side
+  # effect and off for the rest, so no routine pushes to its pull requests
+  # unasked.
+  github.pr_autofix: native
+  # Otherwise Claude acts through its connectors' tools, so every side
+  # effect turns into prompt instructions plus the connector that carries
+  # it out.
   "*": emulated
 # Routines have no documented memory setting of their own, so a routine
 # that needs memory gets it from Fabrica (memory_save, and the memory that

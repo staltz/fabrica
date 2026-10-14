@@ -76,16 +76,16 @@ Fabrica never installs a routine's real content into a runtime. It installs a **
 
 > You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude-code-cloud`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
 
-Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or side effects takes effect on the next run. You only re-apply when the stub itself has to change.
+Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or (emulated) side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
-What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
+What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the runtime's own features for its native side effects, like auto-fixing pull requests (on for the ones the routine lists, off for the rest), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
 
 ### Stale stubs
 
 The home repo and the blueprint can change at any time, but a stub stays installed until `apply` changes it. So before a routine run starts, `run_begin` checks two things, in this order:
 
 1. **The stub is still deployed.** In the latest home repo, the factory must still include the stub's routine, target and runtime, and run that routine on that runtime. Remove any of them (or delete the factory) and the stub stops as soon as the server sees the change, even before `apply` gets around to deleting it.
-2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector, memory setting or model.
+2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares fingerprints. This catches a changed trigger, connector, memory setting, native side effect or model.
 
 If either check fails, the server refuses the run, records it as `failed`, and tells the agent the factory needs `fabrica apply`. A stub never runs a routine that's no longer deployed for its repo, expects a different trigger, or needs a connector the stub doesn't have.
 

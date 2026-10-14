@@ -15,7 +15,7 @@ What the values mean:
 
 - **Triggers** are `native` or `unsupported`. Triggers can't be emulated.
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
-- **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`.
+- **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`. A side effect named exactly as `native` is one of the runtime's own features: each stub turns it on for routines that list it and off for the rest. Some side effects can only be native, because they outlive the run (`github.pr_autofix`, which auto-fixes the pull requests a run opens): wildcards never match them, and listing one as `emulated` is an error.
 - **Models** list the models a stub can ask the runtime to run its routine on, each with the efforts it can run at (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; an empty list means the runtime has no effort setting for it). A routine runs on the first of its [`models:`](blueprints.md#models) the runtime lists. A runtime that doesn't list any picks its model itself, and only a routine's `default` entry matches it. Models go by their makers' IDs, like blueprints name them; **model IDs** (`model_ids:`) say what the runtime calls the ones it calls something else. **Fast models** (`fast_models:`) are the ones the runtime can run in a fast mode: a stub for one of them always sets fast mode, on when the routine's entry says `fast: true` and off otherwise, so the runtime's own default never decides.
 - **Launch modes** say how Fabrica can start a one-off session there, for an [init routine](blueprints.md#init-routines): `api` (it starts the session itself) and `handoff` (it writes instructions for a person). A runtime without them can't run init routines. See [Init sessions](#init-sessions).
 - **Memory** is `native` (the runtime has its own memory feature, which each stub turns on or off to mirror the routine's [`memory:`](blueprints.md#memory) key), `emulated` (Fabrica keeps the memory and serves it over MCP) or `unsupported` (routines with `memory: true` can't run there).
@@ -44,14 +44,16 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 | `github.release.published` | native | — | — | — |
 | Built-in connectors | github, slack, linear, notion | github, slack (linear through its fallback) | github | github |
 | MCP servers | http, sse | http | http | http, sse, stdio |
-| Side effects | all emulated | all emulated | all emulated | all emulated |
+| Side effects | `github.pr_autofix` native (*Auto-fix pull requests*), the rest emulated | all emulated | all emulated | all emulated |
 | Memory | emulated | native (the automation's memory tool) | emulated | emulated |
 | Models | Claude's: Fable, Opus, Sonnet and Haiku, at `low` to `max` | Cursor's whole cloud agent catalog, Auto for `default` | OpenAI's GPT models, at `low` to `xhigh` | — (always Auto) |
 | Init sessions | handoff (a Claude Code session on the web) | api, as a cloud agent, with a Cursor API key; handoff without | handoff (a Codex cloud task) | — |
 
 Cursor's memory tool is on by default, so every Cursor automation gets it turned on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
-Three of these four have no API for creating triggered automations yet, so they use **handoff** mode: Claude routines can only be fired through their API; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. Cursor's automations do have one, the API behind Cursor's [Terraform provider](https://github.com/cursor/terraform-provider-cursor), so `cursor-cloud` uses `api` mode whenever it has a Cursor API key.
+Claude routines auto-fix the pull requests a run opens when their *Auto-fix pull requests* toggle is on (under **Advanced settings**, on the **Behavior** tab), so every Claude routine gets it turned on or off: on only for routines that list the `github.pr_autofix` side effect. The others have no such setting for their automations, so routines that list it can't run there.
+
+Three of these four have no API for creating triggered automations yet, so they use **handoff** mode: Claude routines can only be fired through their API; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. Cursor's automations do have one, the API behind Cursor's [Terraform provider](https://github.com/cursor/terraform-provider-cursor), so `cursor-cloud` uses `api` mode whenever it has a Cursor API key. A Claude routine's handoff can also be followed from the Claude Code CLI, whose `/schedule` command creates and edits routines.
 
 ### Cursor automations through Cursor's API
 
@@ -91,6 +93,7 @@ Copilot reads MCP servers from the repository's settings (**Settings → Copilot
 | `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) | native (preToolUse on bash) |
 | `schedule` | native (desktop app scheduled task) | — | — | — |
 | Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks | same as Claude Code |
+| Side effects | `github.pr_autofix` native for `schedule` (the scheduled task's setting), the rest emulated | all emulated | all emulated | all emulated |
 | Memory | emulated (in `runs.db`) | emulated | emulated | emulated |
 | Models | — (your session's) | — | — | — |
 | Init sessions | api: `claude -p` on the machine that applies, never in CI | — | — | — |
@@ -103,7 +106,7 @@ A few things worth knowing about local hooks:
 - Copilot CLI drops the output of `userPromptSubmitted` hooks that come from config files, so `prompt.submit` isn't supported there. Its hooks get a file of their own, `~/.copilot/hooks/fabrica.json`, rather than the `hooks` field of `~/.copilot/settings.json`, which can have comments that Fabrica would lose. VS Code also runs the hooks in that folder, so Fabrica's Copilot hooks stay quiet when VS Code calls them, since its MCP server isn't registered there. `COPILOT_HOME`, if set, moves all of `~/.copilot`, and Fabrica follows it.
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
 
-A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
+A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). The app keeps a task's *Auto-fix pull requests* toggle (under **Advanced settings**, on the **Behavior** tab) outside the file too, so the registration prompt asks for it to be turned on for routines that list `github.pr_autofix` and off for the rest, and when that changes, the apply tells you to flip it in the app. Fabrica records the setting at the end of the task's description, so it knows what it last asked for. Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
 
 ## Init sessions
 
@@ -167,7 +170,7 @@ connectors:
   github: native
   mcp.http: native
 side_effects:
-  github.pr_comment: native
+  github.pr_comment: native          # its own feature: each stub turns it on or off
   "*": emulated
 memory: emulated                     # native, emulated or unsupported (the default)
 models:                              # optional: the models a stub can pick, with their efforts
@@ -222,6 +225,8 @@ A `resource` looks like this:
 
 On runtimes with `memory: native`, a resource also has `"memory": "on"` or `"off"`: what to set the runtime's own memory feature to, mirroring the routine's `memory:` key.
 
+On runtimes whose matrix names side effects as `native`, a resource also has `"side_effects"`, like `{"github.pr_comment": "off"}`: what to set each of the runtime's own features to, `on` when the routine lists that side effect and `off` otherwise.
+
 On runtimes that list `models:`, a resource whose routine picked one of them also has `"model": {"name": "acme-large", "effort": "high", "fast": "off"}`, with the runtime's own ID for the model (from `model_ids:`, if it's there) (without `effort` for the model's default effort). `fast` is `"on"` or `"off"` for the models in `fast_models:`, and missing for the rest. Without `model`, leave the runtime's default.
 
 A `session` is an [init session](#init-sessions) to start. It has the same `identity`, `factory`, `routine`, `repo`, `connectors`, `fabrica`, `model`, `prompt` and `fingerprint` fields as a resource, plus `id`, the init's ID, and `repos`, every target of the factory (`repo`, where the session starts, first). `launch` must never start a second session for an `id` it already started one for: return the first one's `session_id` instead.
@@ -241,6 +246,7 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.RemoteID` | The runtime's own ID, for updates and deletes, when known. |
 | `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. |
 | `.Connectors` | A list, each with `.Name` and `.Setup` (a sentence saying how to set it up). |
+| `.SideEffects` | A list of the runtime's own features for its native side effects, each with `.Name` (like `github.pr_autofix`), `.Setting` (`on` or `off`) and `.Setup` (a sentence saying what to set). Handoffs for runtimes with native side effects should have a step for them, so the runtime mirrors the routine. |
 | `.Memory.Needed`, `.Memory.Support`, `.Memory.Setup` | Whether the routine has `memory: true`, how the runtime provides memory (`native`, `emulated` or `unsupported`), and a sentence saying what to do with the runtime's own memory setting. Every handoff should have a memory step, so the runtime mirrors the routine. |
 | `.Fabrica.URL`, `.Fabrica.Header` | The Fabrica server URL (with the token in it, for URL placement) and the `Authorization` header value (for header placement). |
 | `.Model.Name`, `.Model.Effort`, `.Model.Fast`, `.Model.Setup` | The model to pick (the runtime's own ID for it) and its effort (both empty for the runtime's default, and the effort alone for the model's default effort), its fast mode (`on` or `off` for the models in `fast_models:`, empty for the rest), and a sentence saying what to pick. |

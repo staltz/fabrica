@@ -340,6 +340,9 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		if !s.valid() {
 			add("side_effects.%s: is %q; use native, emulated or unsupported", key, s)
 		}
+		if why, ok := BuiltInOnly(key); ok && s == Emulated {
+			add("side_effects.%s: can't be emulated (%s); use native or unsupported", key, why)
+		}
 	}
 
 	if m.Memory == "" {
@@ -486,12 +489,49 @@ func (m *Matrix) SideEffect(name string) Support {
 	if s, ok := m.SideEffects[name]; ok {
 		return s
 	}
+	if _, ok := BuiltInOnly(name); ok {
+		return Unsupported // wildcards never match these
+	}
 	if conn, _, ok := strings.Cut(name, "."); ok {
 		if s, ok := m.SideEffects[conn+".*"]; ok {
 			return s
 		}
 	}
 	return lookup(m.SideEffects, "*")
+}
+
+// PRAutofix is the side effect of auto-fixing the pull requests a run
+// opens: after the run, the runtime keeps watching each one's CI and review
+// comments, and pushes fixes. Claude calls it "Auto-fix pull requests".
+const PRAutofix = "github.pr_autofix"
+
+// builtInOnly are the side effects that only a runtime's own feature can
+// do, with why: they outlive the run, so prompt instructions can't emulate
+// them.
+var builtInOnly = map[string]string{
+	PRAutofix: "the runtime keeps watching the pull request after the run ends",
+}
+
+// BuiltInOnly reports whether only a runtime's own feature can do a side
+// effect, and why. A matrix must list such a side effect as native by its
+// exact name: it's never emulated, and wildcards don't match it.
+func BuiltInOnly(name string) (string, bool) {
+	why, ok := builtInOnly[name]
+	return why, ok
+}
+
+// NativeSideEffects lists, sorted, the side effects the matrix names
+// exactly as native: the runtime's own features, which a stub turns on for
+// routines that list them and off for the rest.
+func (m *Matrix) NativeSideEffects() []string {
+	var out []string
+	for name, s := range m.SideEffects {
+		if s == Native && !strings.Contains(name, "*") {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func lookup(m map[string]Support, key string) Support {

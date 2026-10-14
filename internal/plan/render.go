@@ -253,6 +253,13 @@ func describeEvaluation(ev *stub.Evaluation) string {
 	if ev.Memory.Support != "" {
 		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
 	}
+	if len(ev.Shape.SideEffects) > 0 {
+		var settings []string
+		for _, name := range sortedSettings(ev.Shape.SideEffects) {
+			settings = append(settings, name+" "+ev.Shape.SideEffects[name])
+		}
+		parts = append(parts, "runtime's own "+strings.Join(settings, ", "))
+	}
 	if ev.Model.Name != "" {
 		parts = append(parts, "model "+ev.Model.String())
 	}

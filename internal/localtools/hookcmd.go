@@ -54,6 +54,12 @@ type Task struct {
 	// Cron is the routine's schedule, in UTC like everywhere in Fabrica.
 	Cron        string
 	Fingerprint string
+	// Autofix is the task's auto-fix setting for pull requests, "on" or
+	// "off": the setting of the native side effect github.pr_autofix (see
+	// stub.Shape.SideEffects). Like the schedule, the app keeps it
+	// outside SKILL.md, so it's recorded in the description, and changing
+	// it is a step in the app (see TaskSetup).
+	Autofix string
 	// Prompt is what the task tells the agent each time it runs.
 	Prompt string
 }

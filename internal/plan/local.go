@@ -228,7 +228,7 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 			if tr := ev.Routine.Trigger; tr.On == "schedule" {
 				for _, repo := range dp.Spec.SpecificTargets() {
 					cfg.Tasks = append(cfg.Tasks, localtools.Task{
-						Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(),
+						Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(), Autofix: ev.Shape.SideEffects[provider.PRAutofix],
 						Prompt: stub.LocalPrompt(routine, dp.Name, rt, repo, ev.Shape.Fingerprint()),
 					})
 				}
@@ -350,9 +350,9 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 		old, ok := curTasks[id]
 		switch {
 		case !ok:
-			out = append(out, fmt.Sprintf("+ add scheduled task %s for routine %s/%s on %s (cron `%s` UTC)", id, t.Factory, t.Routine, t.Repo, t.Cron))
+			out = append(out, fmt.Sprintf("+ add scheduled task %s for routine %s/%s on %s (cron `%s` UTC%s)", id, t.Factory, t.Routine, t.Repo, t.Cron, taskAutofix(t)))
 		case old != t:
-			out = append(out, fmt.Sprintf("~ update scheduled task %s for routine %s/%s (cron `%s` UTC, stub %s)", id, t.Factory, t.Routine, t.Cron, t.Fingerprint))
+			out = append(out, fmt.Sprintf("~ update scheduled task %s for routine %s/%s (cron `%s` UTC%s, stub %s)", id, t.Factory, t.Routine, t.Cron, taskAutofix(t), t.Fingerprint))
 		}
 	}
 	for _, t := range cur.Tasks {
@@ -361,6 +361,14 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 		}
 	}
 	return out
+}
+
+// taskAutofix describes a scheduled task's auto-fix setting, if it has one.
+func taskAutofix(t localtools.Task) string {
+	if t.Autofix == "" {
+		return ""
+	}
+	return ", auto-fix " + t.Autofix
 }
 
 func sortedNames(m map[string]bool) []string {

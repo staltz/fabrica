@@ -197,6 +197,94 @@ func TestMemoryOnRuntimeWithoutIt(t *testing.T) {
 	}
 }
 
+func withAutofix(routine string) string {
+	return strings.Replace(routine, "  - github.pr_comment\n", "  - github.pr_comment\n  - github.pr_autofix\n", 1)
+}
+
+func TestNativeSideEffectsMirrorTheRoutine(t *testing.T) {
+	// On a runtime that auto-fixes pull requests itself, the stub sets it
+	// either way, so the runtime's own default never decides.
+	plain := load(t, map[string]string{"routines/pr-review.md": routine})
+	fixing := load(t, map[string]string{"routines/pr-review.md": withAutofix(routine)})
+	off := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "claude-code-cloud"))
+	on := stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "claude-code-cloud"))
+	if !off.OK() || !on.OK() || off.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff || on.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
+		t.Errorf("claude-code-cloud auto-fix: off=%v on=%v %s %s", off.Shape.SideEffects, on.Shape.SideEffects, off.Diags, on.Diags)
+	}
+	if u, _ := on.SideEffect(provider.PRAutofix); u.Support != provider.Native {
+		t.Errorf("auto-fix should be native on claude-code-cloud, got %+v", u)
+	}
+	if off.Shape.Fingerprint() == on.Shape.Fingerprint() {
+		t.Error("turning auto-fix on should change the stub's fingerprint")
+	}
+	if got := strings.Join(off.Shape.NativeSideEffectsOff(), ","); got != provider.PRAutofix {
+		t.Errorf("NativeSideEffectsOff = %q", got)
+	}
+
+	// Runtimes without one bake nothing in, and their "*": emulated
+	// doesn't match it: it can't be emulated.
+	cursor := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "cursor-cloud"))
+	if !cursor.OK() || cursor.Shape.SideEffects != nil {
+		t.Errorf("cursor-cloud has no native side effects, so the shape shouldn't have any: %v %s", cursor.Shape.SideEffects, cursor.Diags)
+	}
+	cursor = stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "cursor-cloud"))
+	if cursor.OK() || !strings.Contains(cursor.Diags.String(), "doesn't support side effect github.pr_autofix") || !strings.Contains(cursor.Diags.String(), "can't be emulated") {
+		t.Errorf("auto-fix on cursor-cloud should be an error: %s", cursor.Diags)
+	}
+}
+
+func TestNativeSideEffectsLocally(t *testing.T) {
+	// Claude Code's desktop scheduled tasks have an auto-fix setting.
+	const scheduled = "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nUpdate.\n"
+	f := load(t, map[string]string{"routines/pr-review.md": withAutofix(scheduled), "routines/plain.md": scheduled})
+	if e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
+		t.Errorf("a scheduled task should get auto-fix on: %v %s", e.Shape.SideEffects, e.Diags)
+	}
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff {
+		t.Errorf("a scheduled task should get auto-fix off: %v %s", e.Shape.SideEffects, e.Diags)
+	}
+
+	// Hooks run inside the session you have open, which has its own
+	// settings.
+	hook := strings.Replace(scheduled, `{ on: schedule, cron: "0 9 * * 1" }`, "{ on: session.stop }", 1)
+	f = load(t, map[string]string{"routines/pr-review.md": withAutofix(hook), "routines/plain.md": hook})
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects != nil {
+		t.Errorf("a hook has no settings of its own: %v %s", e.Shape.SideEffects, e.Diags)
+	}
+	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "runs as a hook inside the session you have open") {
+		t.Errorf("a hook routine with github.pr_autofix should be an error: %s", e.Diags)
+	}
+}
+
+func TestNativeSideEffectsInInitSessions(t *testing.T) {
+	// An init routine runs in a one-off session, which has no stub to set
+	// the runtime's own features.
+	const initRoutine = "---\ntrigger: { on: init }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nSet up.\n"
+	f := load(t, map[string]string{"routines/plain.md": initRoutine})
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-cloud")); !e.OK() || e.Shape.SideEffects != nil {
+		t.Errorf("an init session has no settings of its own: %v %s", e.Shape.SideEffects, e.Diags)
+	}
+	f = load(t, map[string]string{"routines/fixing.md": withAutofix(initRoutine)})
+	e := stub.Evaluate(f, f.Routines["fixing"], target(t, "claude-code-cloud"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "is an init routine, which runs in a one-off session Fabrica starts") {
+		t.Errorf("an init routine with github.pr_autofix should be an error: %s", e.Diags)
+	}
+}
+
+func TestDescribeSideEffect(t *testing.T) {
+	for _, c := range []struct{ name, setting, want string }{
+		{provider.PRAutofix, stub.SideEffectOn, "turn **Auto-fix pull requests** **on**"},
+		{provider.PRAutofix, stub.SideEffectOff, "turn **Auto-fix pull requests** **off**"},
+		{"github.issue_comment", stub.SideEffectOn, "turn the runtime's own `github.issue_comment` **on**"},
+		{"github.issue_comment", stub.SideEffectOff, "turn the runtime's own `github.issue_comment` **off**"},
+	} {
+		if got := stub.DescribeSideEffect(c.name, c.setting); !strings.HasPrefix(got, c.want) {
+			t.Errorf("DescribeSideEffect(%s, %s) = %q, want it to start with %q", c.name, c.setting, got, c.want)
+		}
+	}
+}
+
 func withModels(models string) string {
 	return strings.Replace(routine, "skills: [pr-review]\n", "skills: [pr-review]\nmodels: "+models+"\n", 1)
 }

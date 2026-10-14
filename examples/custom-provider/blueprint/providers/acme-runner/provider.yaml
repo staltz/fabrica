@@ -29,6 +29,8 @@ connectors:
   mcp.http: native
 
 side_effects:
+  # Acme Runner can post an issue comment by itself. The stub turns that on
+  # for routines that list github.issue_comment, and off for the rest.
   github.issue_comment: native
   "*": emulated
 

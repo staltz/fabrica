@@ -10,10 +10,12 @@
 // What a stub bakes into the runtime is its shape: the trigger, plus the
 // connectors and their definitions (including connectors that emulated side
 // effects need), plus the runtime's memory setting where it has its own
-// memory feature, plus the model the routine runs on where the runtime lets
-// a stub pick one, plus the address of the Fabrica server. A short
-// fingerprint of the shape goes into the stub, and the server compares it
-// on every run to catch stubs that went stale.
+// memory feature, plus the settings of the runtime's own features for the
+// side effects it does natively (like auto-fixing pull requests), plus the
+// model the routine runs on where the runtime lets a stub
+// pick one, plus the address of the Fabrica server. A short fingerprint of
+// the shape goes into the stub, and the server compares it on every run to
+// catch stubs that went stale.
 package stub
 
 import (
@@ -22,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/staltz/fabrica/internal/blueprint"
@@ -50,6 +53,12 @@ type Shape struct {
 	// with a native memory feature: elsewhere Fabrica keeps the memory, and
 	// nothing about it is baked into the runtime.
 	Memory string `json:"memory,omitempty"`
+	// SideEffects are the runtime's own features for the side effects its
+	// matrix names as native (see provider.Matrix.NativeSideEffects), each
+	// "on" when the routine lists it and "off" otherwise, so the runtime's
+	// own default never decides. Local hooks have none: they run inside a
+	// session you already have open, whose settings decide.
+	SideEffects map[string]string `json:"side_effects,omitempty"`
 	// Model and Effort are the model the runtime runs the routine on, the
 	// first of the routine's models: that the runtime has, and the effort
 	// to run it at. Model is the runtime's own ID for it, which isn't
@@ -88,6 +97,12 @@ const (
 	MemoryOff = "off"
 )
 
+// Native side effect settings in a shape.
+const (
+	SideEffectOn  = "on"
+	SideEffectOff = "off"
+)
+
 // Fast mode settings in a shape.
 const (
 	FastOn  = "on"
@@ -103,6 +118,19 @@ func (s Shape) Fingerprint() string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+// NativeSideEffectsOff lists, sorted, the native side effects the stub
+// turns off.
+func (s Shape) NativeSideEffectsOff() []string {
+	var out []string
+	for name, setting := range s.SideEffects {
+		if setting == SideEffectOff {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ConnectorNames lists the shape's connector names.
@@ -229,6 +257,20 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		e.Connectors = append(e.Connectors, use)
 	}
 
+	// The stub sets the runtime's own features for its native side effects,
+	// but some routines run in a session instead, where the session's own
+	// settings decide: a local hook inside the session you already have
+	// open, and an init routine in the one-off session Fabrica starts.
+	var session, sessionHint string
+	switch {
+	case r.Trigger.On == blueprint.InitTrigger:
+		session = "is an init routine, which runs in a one-off session Fabrica starts"
+		sessionHint = "drop it from side_effects:, and turn it on in that session when you want it"
+	case m.Scope == provider.Local && r.Trigger.On != "schedule":
+		session = "runs as a hook inside the session you have open"
+		sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it; on %s, only schedule routines get settings of their own", rt)
+	}
+	listed := map[string]bool{}
 	for _, se := range r.SideEffects {
 		use := Use{Name: se.Name, Support: m.SideEffect(se.Name)}
 		switch {
@@ -237,9 +279,29 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 			// the side effect.
 			use.Dropped = true
 		case use.Support == provider.Unsupported:
-			e.Diags.Errorf("capability.side-effect", where, "runtime %s doesn't support side effect %s", rt, se.Name)
+			d := e.Diags.Errorf("capability.side-effect", where, "runtime %s doesn't support side effect %s", rt, se.Name)
+			if why, ok := provider.BuiltInOnly(se.Name); ok {
+				d.Hintf("%s can't be emulated, because %s; drop it from side_effects:, or deploy this routine to a runtime whose capability matrix has %s: native", se.Name, why, se.Name)
+			}
+		case use.Support == provider.Native && session != "":
+			use.Support = provider.Unsupported
+			e.Diags.Errorf("capability.side-effect", where, "routine %s %s in %s, so Fabrica can't turn on the runtime's own %s for it", r.Ref.Name, session, rt, se.Name).
+				Hintf("%s", sessionHint)
+		case use.Support == provider.Native:
+			listed[se.Name] = true
 		}
 		e.SideEffects = append(e.SideEffects, use)
+	}
+	if session == "" {
+		for _, name := range m.NativeSideEffects() {
+			if shape.SideEffects == nil {
+				shape.SideEffects = map[string]string{}
+			}
+			shape.SideEffects[name] = SideEffectOff
+			if listed[name] {
+				shape.SideEffects[name] = SideEffectOn
+			}
+		}
 	}
 
 	if m.Memory == provider.Native {
@@ -447,6 +509,21 @@ func DescribeMemory(needed bool, support provider.Support) string {
 	default:
 		return "leave the runtime's own memory **off**, if it has one: this routine doesn't use memory"
 	}
+}
+
+// DescribeSideEffect says what to do with the runtime's own feature for a
+// native side effect, for handoff instructions, given its setting in the
+// shape.
+func DescribeSideEffect(name, setting string) string {
+	switch {
+	case name == provider.PRAutofix && setting == SideEffectOn:
+		return "turn **Auto-fix pull requests** **on**: after a run opens a pull request, the runtime keeps watching its CI and review comments, and pushes fixes"
+	case name == provider.PRAutofix:
+		return "turn **Auto-fix pull requests** **off**: this routine doesn't list " + name + ", so nothing should push to its pull requests after a run ends"
+	case setting == SideEffectOn:
+		return fmt.Sprintf("turn the runtime's own `%s` **on**: this routine lists it", name)
+	}
+	return fmt.Sprintf("turn the runtime's own `%s` **off**: this routine doesn't list it", name)
 }
 
 // DescribeModel says which model to pick, for handoff instructions.

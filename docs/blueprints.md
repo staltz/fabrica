@@ -251,9 +251,30 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 
 Each provider maps every side effect to **native** (the runtime does it itself), **emulated** (Fabrica turns it into prompt instructions, plus the connector that carries it out) or **unsupported** (an error). Settings like `channel:` are filled in when the routine is served, with `{{params.x}}` replaced.
 
+A native side effect is one of the runtime's own features, so the routine file is its source of truth: the stub turns it **on** for routines that list it and **off** for every other routine, even where the runtime turns it on by default. That makes native side effects part of the stub's [shape](concepts.md#stubs-and-shapes): adding one to a routine, or removing it, means a re-apply on runtimes that have it, and `plan` shows the stub as an update. (Emulated side effects are only prompt instructions, so changing them takes effect on the next run.) Local hooks run inside the session you already have open, and [init routines](#init-routines) in a one-off session Fabrica starts, so there's no stub to set them up: a hook or init routine that lists a native side effect is an error.
+
+Some side effects can only be native, because they outlive the run, so no prompt instruction can do them. A runtime has them only if its capability matrix names them exactly: `"*": emulated` doesn't cover them, so on every other runtime they're an error in `check` and `plan`. In v0.1 there's one: `github.pr_autofix`.
+
 When an optional connector isn't available on a runtime, the routine still runs there, and its side effects through that connector are skipped. The agent is told so.
 
 Side effects are listed in what the agent sees as "allowed side effects", and it's told not to do anything else to the outside world. Be aware that this is an honor system: the real limit is what each connector's credentials allow.
+
+#### Auto-fixing pull requests
+
+Some routines open pull requests: a weekly dependency update, a fix for a flaky test. Some runtimes can then **auto-fix** them: after the pull request opens, the runtime keeps watching its CI and review comments, and pushes fixes, so the pull request gets to green without anyone running the routine again. Claude calls this *Auto-fix pull requests*. A routine asks for it with the `github.pr_autofix` side effect:
+
+```yaml
+connectors: [github]
+side_effects:
+  - github.open_pr
+  - github.pr_autofix
+```
+
+- **Claude routines and Claude Code's desktop scheduled tasks** have it natively: it's the **Auto-fix pull requests** toggle, under **Advanced settings** on the **Behavior** tab ("Watch CI and review comments on PRs this scheduled task opens, and let Claude push fixes"). Their stubs turn it on for routines that list `github.pr_autofix` and off for every other routine, so a toggle flipped by hand doesn't outlive the next apply.
+- **Every other runtime** can't run a routine that lists it. Fabrica can't watch a pull request after the run ends, so it can't be emulated.
+- **Local hooks and init routines** run in a session: turn on auto-fix there when you want it (in Claude Code's desktop app, it's under **CI** in the session's status bar).
+
+`routine_get` tells each run what happens to its pull requests: with auto-fix on, to finish the run once the pull request is open rather than wait for CI; with it off, not to push fixes if the runtime wakes it up anyway.
 
 ### Params
 

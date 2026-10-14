@@ -12,6 +12,15 @@ description: Claude Code (CLI and IDE extensions) on your machine
 apply_modes: [api]
 find_by_identity: true
 skill_transport: directory
+# An init routine's session can run here, on the machine that runs `fabrica
+# apply`: Fabrica clones the repo and starts `claude -p` in it, in the
+# background, connected to the factory's Fabrica server. It needs Claude
+# Code's command line, and never runs in CI.
+launch_modes: [api]
+# How a launched session reaches the factory's Fabrica server: --mcp-config
+# takes request headers.
+mcp_auth:
+  header: native
 triggers:
   session.start: native    # SessionStart hook
   prompt.submit: native    # UserPromptSubmit hook

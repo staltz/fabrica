@@ -2,6 +2,7 @@ package testkit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,14 @@ const (
 	toyModeEnv = "FABRICA_TOY_PROVIDER"
 	toyBinEnv  = "FABRICA_TOY_BIN"
 	toyDBEnv   = "FABRICA_TOY_DB"
+	// ToyLaunchFailEnv, when set, makes the toy runtime refuse to start
+	// sessions, with its value as the error.
+	ToyLaunchFailEnv = "FABRICA_TOY_LAUNCH_FAIL"
 )
+
+// toySessionPrefix starts the file names of sessions in the toy runtime's
+// database folder.
+const toySessionPrefix = "session-"
 
 // ToyProviderFiles are the files of the toy folder provider, ready to drop
 // into a blueprint under providers/toy/.
@@ -29,6 +37,7 @@ var ToyProviderFiles = map[string]string{
 	"providers/toy/provider.yaml": `kind: cloud
 description: A pretend runtime used in Fabrica's tests
 apply_modes: [api]
+launch_modes: [api]
 find_by_identity: true
 skill_transport: text
 mcp_auth: { header: native }
@@ -100,6 +109,43 @@ func (r *ToyRuntime) Resources() []ToyResource {
 	return out
 }
 
+// ToySession is one session started in the toy runtime.
+type ToySession struct {
+	SessionID  string   `json:"session_id"`
+	ID         string   `json:"id"`
+	Identity   string   `json:"identity"`
+	Repo       string   `json:"repo"`
+	Repos      []string `json:"repos"`
+	Prompt     string   `json:"prompt"`
+	FabricaURL string   `json:"fabrica_url"`
+	Token      string   `json:"token"`
+}
+
+// Sessions lists the sessions started in the toy runtime.
+func (r *ToyRuntime) Sessions() []ToySession {
+	r.t.Helper()
+	entries, err := os.ReadDir(r.DB)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	var out []ToySession
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), toySessionPrefix) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(r.DB, e.Name()))
+		if err != nil {
+			r.t.Fatal(err)
+		}
+		var s ToySession
+		if err := json.Unmarshal(data, &s); err != nil {
+			r.t.Fatal(err)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // Put adds a resource directly, like someone creating it by hand (or an
 // apply that crashed before recording it).
 func (r *ToyRuntime) Put(res ToyResource) {
@@ -117,6 +163,9 @@ func toyList(db string) ([]ToyResource, error) {
 	}
 	var out []ToyResource
 	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), toySessionPrefix) {
+			continue
+		}
 		data, err := os.ReadFile(filepath.Join(db, e.Name()))
 		if err != nil {
 			return nil, err
@@ -149,6 +198,17 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 				Token string `json:"token"`
 			} `json:"fabrica"`
 		} `json:"resource"`
+		Session *struct {
+			ID       string   `json:"id"`
+			Identity string   `json:"identity"`
+			Repo     string   `json:"repo"`
+			Repos    []string `json:"repos"`
+			Prompt   string   `json:"prompt"`
+			Fabrica  struct {
+				URL   string `json:"url"`
+				Token string `json:"token"`
+			} `json:"fabrica"`
+		} `json:"session"`
 	}
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return err
@@ -196,6 +256,27 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 			return err
 		}
 		return enc.Encode(map[string]string{})
+	case "launch":
+		if msg := os.Getenv(ToyLaunchFailEnv); msg != "" {
+			return errors.New(msg)
+		}
+		s := req.Session
+		file := filepath.Join(db, toySessionPrefix+s.ID+".json")
+		// One session per init ID, however often Fabrica asks.
+		if data, err := os.ReadFile(file); err == nil {
+			var existing ToySession
+			if err := json.Unmarshal(data, &existing); err != nil {
+				return err
+			}
+			return enc.Encode(map[string]string{"session_id": existing.SessionID})
+		}
+		started := ToySession{SessionID: "toy_session_" + s.ID, ID: s.ID, Identity: s.Identity, Repo: s.Repo, Repos: s.Repos,
+			Prompt: s.Prompt, FabricaURL: s.Fabrica.URL, Token: s.Fabrica.Token}
+		data, _ := json.Marshal(started)
+		if err := os.WriteFile(file, data, 0o644); err != nil {
+			return err
+		}
+		return enc.Encode(map[string]string{"session_id": started.SessionID, "url": "https://toy.example/sessions/" + started.SessionID})
 	}
 	return fmt.Errorf("unknown op %q", op)
 }

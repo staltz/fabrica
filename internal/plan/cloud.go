@@ -48,6 +48,9 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 	if d != nil && !e.Destroy {
 		e.planDesired(ctx, dp, d)
 	}
+	if e.Destroy {
+		planInitReset(dp)
+	}
 	providers := e.providersForCleanup(ctx, dp)
 	current := e.refresh(ctx, dp, providers)
 	e.diff(dp, current, providers)
@@ -83,6 +86,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	e.planInit(dp, d, f)
 	for _, rt := range dp.Runtimes {
 		for _, r := range routines {
 			if !d.Runs(r.Ref.Name, rt.Name) {

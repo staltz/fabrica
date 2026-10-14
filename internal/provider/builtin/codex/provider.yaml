@@ -6,6 +6,9 @@
 kind: cloud
 description: OpenAI Codex cloud tasks
 apply_modes: [handoff]
+# An init routine's session is a one-off Codex cloud task, which launch.md
+# says how to start.
+launch_modes: [handoff]
 find_by_identity: false
 skill_transport: text
 mcp_auth:

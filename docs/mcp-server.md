@@ -15,7 +15,7 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 | Tool | What it does |
 |---|---|
-| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. The intent is a summary of the request in at most 20 words. For a routine run, the stub passes the other four values. Refuses routine runs whose stub is outdated or no longer deployed. |
+| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes the other four values. Refuses routine runs whose stub is outdated or no longer deployed. |
 | `run_report(run_id, summary, status?, links?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. |
 | `rules_get()` | Every always-on rule in full, plus an index of the other rules (name, description, globs). It always starts with the "product knowledge only" rule. |
 | `rule_load(name)` | One rule. |
@@ -121,6 +121,8 @@ Before a routine run starts, `run_begin` checks that its stub is still current. 
 
 1. **The stub is still deployed.** In the latest home repo, the factory being served (remotely, the endpoint's; locally, the one matching the workspace) must still include the stub's routine, repo and runtime.
 2. **The stub's shape still matches.** The server works out the routine's shape at the blueprint commit it's about to serve, and compares its fingerprint with the stub's.
+
+An [init session](blueprints.md#init-routines) carries the same four values in the prompt apply started it with, and gets the same two checks, except that "still deployed" means: the factory still runs its init (no `init: false`), the repo is still one of its targets, and the runtime is still one of the init routine's runtimes. Only the remote server serves init sessions, since only cloud factories run them; an init session started on a local runtime, like `claude -p` on your laptop, still connects to the factory's remote server.
 
 If either check fails, the server refuses: `run_begin` returns an error saying which check failed and that the factory needs `fabrica apply`, the run is recorded as `failed`, and `routine_get` won't serve that routine in that session.
 

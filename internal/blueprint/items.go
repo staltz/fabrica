@@ -179,8 +179,10 @@ func (r *Routine) Param(name string) (Param, bool) {
 // Model is one entry of a routine's models: a model and the effort to run
 // it at.
 type Model struct {
-	// Name is the runtime's model ID, like claude-opus-5-5, or
-	// provider.DefaultModel for the runtime's own default.
+	// Name is the model's ID from its maker, like claude-opus-5-5 or
+	// gpt-5.5, the same on every runtime (each runtime's matrix says what
+	// it calls the model, if that's different), or provider.DefaultModel
+	// for the runtime's own default.
 	Name string
 	// Effort is one of provider.Efforts, or empty for the model's default
 	// effort.

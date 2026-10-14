@@ -41,6 +41,10 @@ func TestParseMatrixRejectsMistakes(t *testing.T) {
 		"bad model name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {Opus 5: []}\n",
 		"unknown effort":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [extra-high]}\n",
 		"effort twice":        "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [high, high]}\n",
+		"id of no model":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {glm-5.3: glm-5p3}\n",
+		"id is the name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {gpt-5.5: gpt-5.5}\n",
+		"id twice":            "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-x, gpt-5.4: gpt-x}\n",
+		"id of another model": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-5.4}\n",
 	}
 	for name, yaml := range cases {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {
@@ -88,6 +92,14 @@ func TestModels(t *testing.T) {
 	}
 	if got := strings.Join(m.ModelNames(), ","); got != "composer-2.5,gpt-5.5" {
 		t.Errorf("ModelNames = %s", got)
+	}
+	// A runtime can call a model something else than its maker does.
+	m, err = ParseMatrix("x", []byte("kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {glm-5.3: [low], gpt-5.5: []}\nmodel_ids: {glm-5.3: glm-5p3}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ModelID("glm-5.3") != "glm-5p3" || m.ModelID("gpt-5.5") != "gpt-5.5" || m.ModelWithID("glm-5p3") != "glm-5.3" || m.ModelWithID("gpt-5.5") != "" {
+		t.Errorf("model IDs = %v", m.ModelIDs)
 	}
 	// Local routines run in the session that's open, on its model.
 	for _, name := range BuiltinNames() {

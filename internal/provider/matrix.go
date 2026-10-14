@@ -110,8 +110,13 @@ type Matrix struct {
 	// on, each with the efforts it can run at (empty when the runtime has
 	// no effort setting for it). A routine runs on the first of its models:
 	// that is listed here. Not listed means the runtime picks the model
-	// itself, so only a routine's `default` entry matches.
+	// itself, so only a routine's `default` entry matches. Models go by the
+	// names blueprints use, their makers' model IDs, whatever the runtime
+	// calls them.
 	Models map[string][]string
+	// ModelIDs are the runtime's own IDs for the models it calls something
+	// else, by the names blueprints use. ModelID translates.
+	ModelIDs map[string]string
 	// Credentials are what the runtime's API needs, like an API key, sorted
 	// by variable name. Without every one of them, api mode is unavailable
 	// and the runtime falls back to its next apply mode.
@@ -152,6 +157,7 @@ type matrixFile struct {
 	SideEffects    map[string]Support        `yaml:"side_effects"`
 	Memory         Support                   `yaml:"memory"`
 	Models         map[string][]string       `yaml:"models"`
+	ModelIDs       map[string]string         `yaml:"model_ids"`
 	Credentials    map[string]credentialFile `yaml:"credentials"`
 }
 
@@ -197,7 +203,7 @@ func CheckModelName(name string) error {
 	case name == DefaultModel:
 		return fmt.Errorf("%q isn't a model, it means the runtime's own default", name)
 	case !modelNameRe.MatchString(name):
-		return fmt.Errorf("%q isn't a valid model name; use the runtime's model ID, in lowercase letters, digits, dots, hyphens and underscores (like claude-opus-5-5 or gpt-5.5)", name)
+		return fmt.Errorf("%q isn't a valid model name; use the model's ID from its maker, in lowercase letters, digits, dots, hyphens and underscores (like claude-opus-5-5 or gpt-5.5)", name)
 	}
 	return nil
 }
@@ -315,6 +321,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 	}
 
 	m.Models = parseModels(f.Models, add)
+	m.ModelIDs = parseModelIDs(f.ModelIDs, m.Models, add)
 
 	m.Credentials = parseCredentials(f.Credentials, add)
 	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API]) {
@@ -348,6 +355,32 @@ func parseModels(in map[string][]string, add func(string, ...any)) map[string][]
 			seen[e] = true
 		}
 		out[name] = efforts
+	}
+	return out
+}
+
+// parseModelIDs checks the model_ids: entries: each one renames a model
+// from models:, to an ID no other model has.
+func parseModelIDs(in map[string]string, models map[string][]string, add func(string, ...any)) map[string]string {
+	out := map[string]string{}
+	owner := map[string]string{} // runtime ID → the model it belongs to
+	for name, id := range in {
+		if _, ok := models[name]; !ok {
+			add("model_ids.%s: isn't in models:", name)
+		}
+		switch err := CheckModelName(id); {
+		case err != nil:
+			add("model_ids.%s: %v", name, err)
+		case id == name:
+			add("model_ids.%s: is the model's own name, so it doesn't need an entry", name)
+		case owner[id] != "":
+			add("model_ids: %s and %s are both %q", owner[id], name, id)
+		}
+		if _, ok := models[id]; ok && id != name {
+			add("model_ids.%s: is %q, which models: lists as another model", name, id)
+		}
+		owner[id] = name
+		out[name] = id
 	}
 	return out
 }
@@ -440,6 +473,26 @@ func (m *Matrix) HasModel(model, effort string) bool {
 		}
 	}
 	return false
+}
+
+// ModelID is what the runtime calls a model: its entry in ModelIDs, or else
+// its name.
+func (m *Matrix) ModelID(name string) string {
+	if id, ok := m.ModelIDs[name]; ok {
+		return id
+	}
+	return name
+}
+
+// ModelWithID is the name of the model the runtime calls id, when that
+// isn't the model's name, and empty otherwise.
+func (m *Matrix) ModelWithID(id string) string {
+	for name, mid := range m.ModelIDs {
+		if mid == id {
+			return name
+		}
+	}
+	return ""
 }
 
 // ModelNames lists the runtime's models, sorted.

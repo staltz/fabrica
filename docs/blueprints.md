@@ -287,7 +287,7 @@ models:
 
 Each runtime runs the routine on the **first** entry it has: that model, at that effort. Runtimes list the models they have, and the efforts each one can run at, in their [capability matrix](providers.md#capability-matrices), so `fabrica plan` shows which one every runtime picked.
 
-- **An entry** is either `{ model: <id>, effort: <level> }`, or a model's ID on its own, which means that model at its default effort. Model IDs are the runtime's own, like `claude-opus-5-5` or `gpt-5.5`.
+- **An entry** is either `{ model: <id>, effort: <level> }`, or a model's ID on its own, which means that model at its default effort. Model IDs are their makers' own, like Anthropic's `claude-opus-5-5` or OpenAI's `gpt-5.5`, and the same on every runtime: where a runtime calls a model something else (Cursor calls GLM 5.3 `glm-5p3`), Fabrica translates.
 - **Efforts** are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. Runtimes call some of them something else (Cursor says `extra-high` for some models), and their providers translate. An entry only matches a runtime that has that model *at that effort*.
 - **`default`** matches every runtime, and means the runtime's own default model. It can only come last, since nothing after it would ever be picked.
 - If a runtime has none of the entries, that's an error in `check` and `plan`, which says what the runtime has instead. End the list with `default` if the routine can run anywhere.

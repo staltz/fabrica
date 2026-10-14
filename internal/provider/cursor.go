@@ -361,27 +361,75 @@ var cursorPRActions = map[string]string{
 	"github.pull_request.synchronize": "GIT_PULL_REQUEST_ACTION_PUSHED",
 }
 
-// cursorEffortParams names each model's effort parameter in Cursor's model
-// catalog, for the models where it isn't "effort".
-var cursorEffortParams = map[string]string{
-	"claude-haiku-5-5":  "reasoning_effort",
-	"claude-sonnet-5-5": "reasoning_effort",
-	"gemini-3.8-flash":  "reasoning_effort",
-	"grok-4.7":          "reasoning_effort",
-	"glm-5.2":           "reasoning",
-	"glm-5p3":           "reasoning",
-	"glm-5p3-flash":     "reasoning",
-	"gpt-5.1":           "reasoning",
-	"gpt-5.2":           "reasoning",
-	"gpt-5.3-codex":     "reasoning",
-	"gpt-5.4":           "reasoning",
-	"gpt-5.4-mini":      "reasoning",
-	"gpt-5.4-nano":      "reasoning",
-	"gpt-5.5":           "reasoning",
-	"gpt-5.6-luna":      "reasoning",
-	"gpt-5.6-sol":       "reasoning",
-	"gpt-5.6-terra":     "reasoning",
-	"kimi-k3":           "reasoning",
+// cursorModelVariants is the default variant of each model in Cursor's
+// model catalog (GET /v1/models, October 2026), by Cursor's model ID.
+// Cursor only takes a model with a whole variant, every parameter of it
+// set ("Model 'grok-4.6' does not match a known variant" otherwise), so a
+// stub's model gets its default variant, with the effort parameter
+// (effort, reasoning or reasoning_effort, whichever the model has) set to
+// the stub's effort. That's a known variant for every effort the catalog
+// lists. Everything else (context, fast, thinking, cyber) stays as Cursor
+// sets it by default.
+var cursorModelVariants = map[string]map[string]string{
+	"claude-fable-5":    {"context": "1m", "thinking": "true", "effort": "high"},
+	"claude-fable-5-1":  {"context": "1m", "thinking": "true", "effort": "high"},
+	"claude-haiku-4-5":  {"thinking": "true"},
+	"claude-haiku-5-5":  {"context": "1m", "thinking": "true", "reasoning_effort": "high"},
+	"claude-opus-4-5":   {"thinking": "true"},
+	"claude-opus-4-6":   {"context": "1m", "thinking": "true", "effort": "high"},
+	"claude-opus-4-7":   {"context": "1m", "thinking": "true", "cyber": "false", "effort": "xhigh", "fast": "false"},
+	"claude-opus-4-8":   {"context": "1m", "thinking": "true", "cyber": "false", "effort": "high", "fast": "false"},
+	"claude-opus-5":     {"context": "1m", "thinking": "true", "cyber": "false", "effort": "high", "fast": "false"},
+	"claude-opus-5-5":   {"context": "1m", "effort": "medium", "fast": "false"},
+	"claude-sonnet-4":   {"context": "200k", "thinking": "false"},
+	"claude-sonnet-4-5": {"context": "200k", "thinking": "true"},
+	"claude-sonnet-4-6": {"context": "1m", "thinking": "true", "effort": "medium"},
+	"claude-sonnet-5":   {"context": "1m", "thinking": "true", "effort": "high"},
+	"claude-sonnet-5-5": {"context": "1m", "reasoning_effort": "high"},
+	"composer-2.5":      {"fast": "true"},
+	"gemini-2.5-flash":  {},
+	"gemini-3-flash":    {},
+	"gemini-3.1-pro":    {},
+	"gemini-3.5-flash":  {},
+	"gemini-3.6-flash":  {"effort": "high"},
+	"gemini-3.7-flash":  {"effort": "high"},
+	"gemini-3.8-flash":  {"reasoning_effort": "high"},
+	"gemini-4-argon":    {"reasoning_effort": "medium"},
+	"glm-5.2":           {"reasoning": "high"},
+	"glm-5p3":           {"reasoning": "max"},
+	"glm-5p3-flash":     {"reasoning": "max"},
+	"gpt-5-mini":        {},
+	"gpt-5.1":           {"reasoning": "medium"},
+	"gpt-5.2":           {"reasoning": "high", "fast": "true"},
+	"gpt-5.3-codex":     {"reasoning": "high", "fast": "true"},
+	"gpt-5.4":           {"context": "1m", "reasoning": "medium", "fast": "false"},
+	"gpt-5.4-mini":      {"reasoning": "medium"},
+	"gpt-5.4-nano":      {"reasoning": "medium"},
+	"gpt-5.5":           {"context": "1m", "reasoning": "medium", "fast": "false"},
+	"gpt-5.6-luna":      {"context": "1m", "reasoning": "medium", "fast": "false"},
+	"gpt-5.6-sol":       {"context": "1m", "reasoning": "medium", "fast": "false"},
+	"gpt-5.6-terra":     {"context": "1m", "reasoning": "medium", "fast": "false"},
+	"grok-4.5":          {"effort": "high", "fast": "true"},
+	"grok-4.6":          {"effort": "high", "fast": "true"},
+	"grok-4.7":          {"context": "500k", "reasoning_effort": "high", "fast": "true"},
+	"kimi-k2.7-code":    {},
+	"kimi-k3":           {"reasoning": "max"},
+	"muse-spark-1.3":    {"context": "1m", "effort": "high"},
+}
+
+// cursorEffortParamNames are what Cursor's models call their effort
+// parameter. Each model has at most one of them.
+var cursorEffortParamNames = []string{"effort", "reasoning", "reasoning_effort"}
+
+// cursorEffortParam is the name of a model's effort parameter in its
+// variant, or empty if it has none.
+func cursorEffortParam(variant map[string]string) string {
+	for _, name := range cursorEffortParamNames {
+		if _, ok := variant[name]; ok {
+			return name
+		}
+	}
+	return ""
 }
 
 // cursorExtraHigh lists the models whose catalog calls xhigh "extra-high".
@@ -389,23 +437,36 @@ var cursorExtraHigh = map[string]bool{
 	"gpt-5.2": true, "gpt-5.3-codex": true, "gpt-5.4": true, "gpt-5.5": true,
 }
 
-// cursorModelSelectionFor is the model selection for a stub's model.
-func cursorModelSelectionFor(m *ResourceModel) *cursorModelSelection {
+// cursorModelSelectionFor is the model selection for a stub's model: a
+// whole variant of it, from cursorModelVariants.
+func cursorModelSelectionFor(m *ResourceModel) (*cursorModelSelection, error) {
 	if m == nil {
-		return nil
+		return nil, nil
 	}
-	sel := &cursorModelSelection{ModelID: m.Name}
+	variant, ok := cursorModelVariants[m.Name]
+	if !ok {
+		return nil, fmt.Errorf("Fabrica doesn't know the variants of Cursor's model %s, so it can't pick one", m.Name)
+	}
+	params := make(map[string]string, len(variant))
+	for id, value := range variant {
+		params[id] = value
+	}
 	if m.Effort != "" {
-		param, value := cursorEffortParams[m.Name], m.Effort
+		param, value := cursorEffortParam(variant), m.Effort
 		if param == "" {
-			param = "effort"
+			return nil, fmt.Errorf("Cursor's model %s has no effort setting, so it can't run at effort %s", m.Name, m.Effort)
 		}
 		if value == "xhigh" && cursorExtraHigh[m.Name] {
 			value = "extra-high"
 		}
-		sel.Parameters = []cursorModelParameter{{ID: param, Value: value}}
+		params[param] = value
 	}
-	return sel
+	sel := &cursorModelSelection{ModelID: m.Name}
+	for id, value := range params {
+		sel.Parameters = append(sel.Parameters, cursorModelParameter{ID: id, Value: value})
+	}
+	sort.Slice(sel.Parameters, func(i, j int) bool { return sel.Parameters[i].ID < sel.Parameters[j].ID })
+	return sel, nil
 }
 
 // cursorWorkflowFor builds the automation for a stub: its trigger on the
@@ -457,7 +518,11 @@ func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
 		enabled := res.Memory == "on"
 		wf.MemoryEnabled = &enabled
 	}
-	wf.ModelSelection = cursorModelSelectionFor(res.Model)
+	sel, err := cursorModelSelectionFor(res.Model)
+	if err != nil {
+		return nil, err
+	}
+	wf.ModelSelection = sel
 	return wf, nil
 }
 

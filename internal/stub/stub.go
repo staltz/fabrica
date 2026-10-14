@@ -52,9 +52,11 @@ type Shape struct {
 	Memory string `json:"memory,omitempty"`
 	// Model and Effort are the model the runtime runs the routine on, the
 	// first of the routine's models: that the runtime has, and the effort
-	// to run it at. Both are empty when the runtime picks (the routine
-	// lists no models, or the runtime matched its default entry); Effort
-	// alone is empty for the model's default effort.
+	// to run it at. Model is the runtime's own ID for it, which isn't
+	// always the name the routine uses (see provider.Matrix.ModelID). Both
+	// are empty when the runtime picks (the routine lists no models, or the
+	// runtime matched its default entry); Effort alone is empty for the
+	// model's default effort.
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	// Endpoint and TokenPlacement describe the connection to the Fabrica
@@ -235,7 +237,7 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		if pick, ok := PickModel(r.Models, m); ok {
 			e.Model = pick
 			if !pick.IsDefault() {
-				shape.Model, shape.Effort = pick.Name, pick.Effort
+				shape.Model, shape.Effort = m.ModelID(pick.Name), pick.Effort
 			}
 		} else {
 			e.Diags.Errorf("capability.model", where, "runtime %s has none of the models routine %s lists (%s)", rt, r.Ref.Name, describeModels(r.Models)).
@@ -281,6 +283,9 @@ func describeModels(models []blueprint.Model) string {
 func modelHint(models []blueprint.Model, m *provider.Matrix) string {
 	const end = "or end models: with default, to run on the runtime's own default model where none of the others are there"
 	for _, want := range models {
+		if name := m.ModelWithID(want.Name); name != "" {
+			return fmt.Sprintf("%s is what the runtime calls %s; blueprints name models the same way on every runtime, so use %s, %s", want.Name, name, name, end)
+		}
 		if efforts, ok := m.Models[want.Name]; ok {
 			if len(efforts) == 0 {
 				return fmt.Sprintf("the runtime has %s, but no effort setting for it; list it without an effort, %s", want.Name, end)

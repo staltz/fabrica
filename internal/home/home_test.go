@@ -65,6 +65,7 @@ func TestFactoryErrors(t *testing.T) {
 		"unknown key":        "blueprint: { git: g.com/a/f, ref: main }\nruntime: [claude-code-local]\ntargets: [\"*\"]\n",
 		"bad repo":           "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [app]\n",
 		"no ref":             "blueprint: { git: g.com/a/f }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
+		"local init":         "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\ninit: false\n",
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -211,6 +212,38 @@ func TestBrokenFileBlocksLocalMatching(t *testing.T) {
 	})
 	if d, reason := h.MatchLocal("github.com/x/y", "claude-code-local"); d != nil || !strings.Contains(reason, "factories/b.yaml") {
 		t.Errorf("a broken factory file might cover the repo, so matching must refuse, got %v %q", d, reason)
+	}
+}
+
+func TestFactoryInit(t *testing.T) {
+	h := openHome(t, false, map[string]string{"factories/pr-review.yaml": cloudFactory, "factories/no-init.yaml": cloudFactory + "init: false\n", "factories/init.yaml": cloudFactory + "init: true\n"})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	if h.Factories["pr-review"].NoInit || h.Factories["init"].NoInit || !h.Factories["no-init"].NoInit {
+		t.Errorf("only init: false turns the init off")
+	}
+}
+
+func TestStateInit(t *testing.T) {
+	dir := t.TempDir()
+	if s, _ := ReadState(dir, "x"); s.Born() {
+		t.Error("a factory with no state was never applied")
+	}
+	s := &State{Init: &Init{ID: "i_1", Routine: "onboard", Runtime: "toy", Repo: "github.com/acme/app", Mode: "api", Status: InitStarted, Session: "s1", At: time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)}}
+	if !s.Born() || !s.Empty() {
+		t.Errorf("an init record means the factory was applied, but it's nothing to clean up: born=%v empty=%v", s.Born(), s.Empty())
+	}
+	destroyed := &State{Blueprint: &StateBlueprint{Git: "github.com/acme/blueprint", Commit: strings.Repeat("a", 40)}, DestroyedAt: &s.Init.At}
+	if destroyed.Born() {
+		t.Error("a destroyed factory doesn't exist, whatever state still remembers about it")
+	}
+	if err := WriteState(dir, "x", s); err != nil {
+		t.Fatal(err)
+	}
+	back, err := ReadState(dir, "x")
+	if err != nil || back.Init == nil || *back.Init != *s.Init {
+		t.Errorf("round trip = %+v, %v", back.Init, err)
 	}
 }
 

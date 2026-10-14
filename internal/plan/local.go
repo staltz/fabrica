@@ -64,6 +64,9 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: "api", Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	if init := f.Init(); init != nil {
+		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s doesn't run here: only cloud factories run their blueprint's init, since they keep state to remember they did", init.Ref.Name))
+	}
 	if d.IsWildcard() {
 		for _, r := range routines {
 			if r.Trigger.On == "schedule" {

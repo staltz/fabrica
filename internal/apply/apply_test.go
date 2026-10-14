@@ -28,18 +28,23 @@ func TestMain(m *testing.M) {
 }
 
 type harness struct {
-	t      *testing.T
-	w      *testkit.World
-	env    *plan.Env
-	out    strings.Builder
-	handof string
+	t        *testing.T
+	w        *testkit.World
+	env      *plan.Env
+	out      strings.Builder
+	handof   string
+	sessions string
 }
+
+// noWait stands in for asking the Fabrica server whether it's ready for an
+// init session: tests have no server.
+func noWait(context.Context, provider.ResourceFabrica) error { return nil }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	w := testkit.NewWorld(t)
 	cache := gitx.NewCache(t.TempDir())
-	h := &harness{t: t, w: w, handof: t.TempDir(), env: &plan.Env{
+	h := &harness{t: t, w: w, handof: t.TempDir(), sessions: t.TempDir(), env: &plan.Env{
 		Loader: blueprint.NewLoader(cache), Git: cache, Secret: testkit.Secret,
 		Binary: "/usr/local/bin/fabrica", UserHome: t.TempDir(), Refresh: true,
 		Now: func() time.Time { return time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC) },
@@ -59,7 +64,8 @@ func (h *harness) plan() *plan.Plan {
 func (h *harness) apply() *apply.Result {
 	h.t.Helper()
 	h.out.Reset()
-	res, err := apply.Run(context.Background(), apply.Options{Plan: h.env, Out: &h.out, HandoffDir: h.handof, Holder: "test-holder"}, h.w.Home.Dir)
+	res, err := apply.Run(context.Background(), apply.Options{Plan: h.env, Out: &h.out, HandoffDir: h.handof, Holder: "test-holder",
+		SessionDir: h.sessions, WaitForServer: noWait}, h.w.Home.Dir)
 	if err != nil {
 		h.t.Fatalf("apply: %v\n%s", err, h.out.String())
 	}

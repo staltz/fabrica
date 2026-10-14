@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/names"
+	"github.com/staltz/fabrica/internal/provider"
 )
 
 // validate checks the merged blueprint as a whole. Items are only checked
@@ -45,6 +47,26 @@ func (f *Blueprint) validate() diag.List {
 					Hintf("%s", f.howToGet(ref))
 			}
 		}
+	}
+
+	// A factory runs one init, so a blueprint has at most one init
+	// routine, and it can only prefer runtimes that exist.
+	var inits []string
+	for _, name := range sortedKeys(f.Routines) {
+		r := f.Routines[name]
+		if len(r.Problems) > 0 || !r.IsInit() {
+			continue
+		}
+		inits = append(inits, r.Where())
+		for _, rt := range r.Runtimes {
+			if !provider.IsBuiltin(rt) && f.Providers[rt] == nil {
+				diags.Errorf("init.unknown-runtime", r.Where(), "runtimes: lists %s, but it isn't built in (%s), and the blueprint has no providers/%s", rt, strings.Join(provider.BuiltinNames(), ", "), rt)
+			}
+		}
+	}
+	if len(inits) > 1 {
+		diags.Errorf("init.ambiguous", ManifestFile, "the blueprint has %d init routines (%s), but a factory runs only one init", len(inits), strings.Join(inits, ", ")).
+			Hintf("keep one: leave the others out of their imports with exclude:, or give them another trigger")
 	}
 
 	// Each import's expects: list must be covered by ours: our list is the
@@ -224,6 +246,24 @@ func (f *Blueprint) Usable() bool {
 		}
 	}
 	return true
+}
+
+// Init returns the blueprint's init routine: the one routine whose
+// trigger is init. It's nil when there's none, when there's more than one
+// (an error the load reports), or when it has problems.
+func (f *Blueprint) Init() *Routine {
+	var found *Routine
+	for _, name := range sortedKeys(f.Routines) {
+		r := f.Routines[name]
+		if len(r.Problems) > 0 || !r.IsInit() {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = r
+	}
+	return found
 }
 
 // SkillNames lists the blueprint's skills, sorted.

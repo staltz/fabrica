@@ -8,6 +8,9 @@
 kind: cloud
 description: Claude Code routines on claude.ai
 apply_modes: [handoff]
+# An init routine's session is a one-off Claude Code session on the web.
+# There's no public API to start one, so launch.md says how.
+launch_modes: [handoff]
 find_by_identity: false
 skill_transport: text
 mcp_auth:

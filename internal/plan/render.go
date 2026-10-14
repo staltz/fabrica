@@ -41,6 +41,12 @@ func (p *Plan) Summary() string {
 		changes += len(d.Changes)
 		errors += len(d.Diags.Only(diag.Error))
 		pending += len(d.Pending)
+		if d.Init.Start() {
+			changes++
+		}
+		if d.Init != nil && d.Init.Waiting != nil {
+			pending++
+		}
 	}
 	if p.Local != nil {
 		errors += len(p.Local.Diags.Only(diag.Error))
@@ -106,16 +112,24 @@ func (d *Factory) Render(w io.Writer) {
 			fmt.Fprintf(w, "    routine %s: %s\n", name, describeEvaluation(rt.Evaluations[name]))
 		}
 	}
-	if len(d.Changes) > 0 {
+	d.Init.render(w)
+	if d.HasWork() {
 		fmt.Fprintln(w, "  Changes:")
 		for _, c := range d.Changes {
 			fmt.Fprintf(w, "    %s\n", c.Describe())
 		}
+		if d.Init.Start() {
+			fmt.Fprintf(w, "    %s\n", d.Init.Describe())
+		}
 	}
-	if len(d.Pending) > 0 {
+	if len(d.Pending) > 0 || d.Init != nil && d.Init.Waiting != nil {
 		fmt.Fprintln(w, "  Waiting for `fabrica confirm`:")
 		for _, p := range d.Pending {
 			fmt.Fprintf(w, "    … %s: %s %s @ %s on %s, issued %s\n", p.ID, p.Action, p.Routine, p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
+		}
+		if d.Init != nil && d.Init.Waiting != nil {
+			st := d.Init.Waiting
+			fmt.Fprintf(w, "    … %s: start init %s @ %s on %s, issued %s\n", st.ID, st.Routine, st.Repo, st.Runtime, st.At.Format("2006-01-02"))
 		}
 	}
 	if d.State != nil {
@@ -133,11 +147,34 @@ func (d *Factory) Render(w io.Writer) {
 		}
 	}
 	renderDiags(w, "  ", d.Diags.Sorted())
-	if len(d.Changes) == 0 && len(d.Pending) == 0 && !d.Diags.HasErrors() && !d.Local() {
+	if !d.HasWork() && len(d.Pending) == 0 && d.Init == nil && !d.Diags.HasErrors() && !d.Local() {
 		if d.Destroy {
 			fmt.Fprintln(w, "  Nothing to destroy.")
 		} else {
 			fmt.Fprintln(w, "  In sync.")
+		}
+	}
+}
+
+// render writes how the init would start: each runtime it would like, and
+// what that runtime can do.
+func (i *Init) render(w io.Writer) {
+	if i == nil || len(i.Candidates) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "  init routine %s (once, on the first of its runtimes Fabrica can start a session on):\n", i.Routine.Ref.Name)
+	for _, c := range i.Candidates {
+		mark := "  "
+		if c == i.Chosen {
+			mark = "→ "
+		}
+		switch c.Mode {
+		case provider.API:
+			fmt.Fprintf(w, "    %s%s: Fabrica starts it\n", mark, c.Runtime)
+		case provider.Handoff:
+			fmt.Fprintf(w, "    %s%s: a person starts it, from a handoff (Fabrica can't by itself: %s)\n", mark, c.Runtime, c.Why)
+		default:
+			fmt.Fprintf(w, "    %s%s: can't start it (%s)\n", mark, c.Runtime, c.Why)
 		}
 	}
 }
@@ -289,6 +326,7 @@ type FactoryJSON struct {
 	Follows         bool         `json:"follows"`
 	Changes         []ChangeJSON `json:"changes"`
 	Pending         []string     `json:"pending,omitempty"`
+	Init            *InitJSON    `json:"init,omitempty"`
 	Diags           diag.List    `json:"diagnostics,omitempty"`
 	Notes           []string     `json:"notes,omitempty"`
 }
@@ -303,6 +341,20 @@ type ChangeJSON struct {
 	Mode        string   `json:"mode"`
 	Fingerprint string   `json:"fingerprint,omitempty"`
 	Reasons     []string `json:"reasons,omitempty"`
+}
+
+// InitJSON is what apply would do about a factory's init, in JSON output.
+type InitJSON struct {
+	// ID is empty before the first attempt to start it.
+	ID      string `json:"id,omitempty"`
+	Routine string `json:"routine"`
+	// Action is "start" when apply starts the session, and "waiting" while
+	// its handoff waits for `fabrica confirm`.
+	Action  string `json:"action"`
+	Runtime string `json:"runtime,omitempty"`
+	Repo    string `json:"repo,omitempty"`
+	Mode    string `json:"mode,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // LocalJSON is one local tool in JSON output.
@@ -331,6 +383,14 @@ func (p *Plan) ToJSON() JSON {
 		}
 		for _, pend := range d.Pending {
 			dj.Pending = append(dj.Pending, pend.ID)
+		}
+		switch in := d.Init; {
+		case in.Start():
+			dj.Init = &InitJSON{ID: in.ID, Routine: in.Routine.Ref.Name, Action: "start", Runtime: in.Chosen.Runtime, Repo: in.Repo, Mode: string(in.Chosen.Mode), Reason: in.Reason}
+		case in != nil && in.Waiting != nil:
+			st := in.Waiting
+			dj.Init = &InitJSON{ID: st.ID, Routine: st.Routine, Action: "waiting", Runtime: st.Runtime, Repo: st.Repo, Mode: st.Mode}
+			dj.Pending = append(dj.Pending, st.ID)
 		}
 		out.Factories = append(out.Factories, dj)
 	}

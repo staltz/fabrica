@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/staltz/fabrica/internal/blueprint"
+	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
 	"github.com/staltz/fabrica/internal/runs"
@@ -385,6 +387,10 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *blueprint.Ro
 	switch {
 	case d == nil:
 		return fmt.Errorf("this stub is no longer deployed: %s. The factory needs `fabrica apply` to remove the stub", why)
+	case r.IsInit():
+		if err := checkInit(snap, d, r, run); err != nil {
+			return err
+		}
 	case !d.HasRoutine(r.Ref.Name):
 		return fmt.Errorf("this stub is no longer deployed: routine %s isn't in factory %s anymore. The factory needs `fabrica apply` to remove the stub", r.Ref.Name, d.Name)
 	case !d.HasRuntime(run.Runtime):
@@ -405,6 +411,27 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *blueprint.Ro
 	ev := stub.Evaluate(snap.Blueprint, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: endpoint})
 	if fp := ev.Shape.Fingerprint(); fp != run.Stub || !ev.OK() {
 		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger, connectors, memory setting, native side effects or model) changed, so the stub (%s) doesn't match the blueprint (%s) anymore. The factory needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
+	}
+	return nil
+}
+
+// checkInit is the first stale-stub check for an init session, whose
+// "stub" is the prompt `fabrica apply` started it with: the factory still
+// runs the init, on this repo and this runtime.
+func checkInit(snap *Snapshot, d *home.Factory, r *blueprint.Routine, run runs.Run) error {
+	runtimes := r.Runtimes
+	if len(runtimes) == 0 {
+		runtimes = d.Runtimes
+	}
+	switch {
+	case !snap.remote() || d.Scope != provider.Cloud:
+		return fmt.Errorf("routine %s is an init routine, and those only run for cloud factories, in the session `fabrica apply` starts when it creates the factory", r.Ref.Name)
+	case d.NoInit:
+		return fmt.Errorf("this init session is no longer deployed: factory %s says init: false", d.Name)
+	case !d.Covers(run.Repo):
+		return fmt.Errorf("this init session is no longer deployed: repo %s isn't in factory %s anymore", run.Repo, d.Name)
+	case !slices.Contains(runtimes, run.Runtime):
+		return fmt.Errorf("this init session is outdated: init routine %s doesn't run on runtime %s anymore", r.Ref.Name, run.Runtime)
 	}
 	return nil
 }

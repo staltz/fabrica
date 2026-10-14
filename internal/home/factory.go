@@ -67,6 +67,9 @@ type Factory struct {
 	RoutineRuntimes map[string][]string
 	Targets         []Target
 	Params          map[string]string
+	// NoInit is `init: false`: the factory never runs its blueprint's init
+	// routine.
+	NoInit bool
 	// Scope is cloud or local, worked out from the runtimes.
 	Scope provider.Scope
 }
@@ -162,6 +165,7 @@ type factoryFile struct {
 	Routines  []yaml.Node          `yaml:"routines"`
 	Targets   []yaml.Node          `yaml:"targets"`
 	Params    map[string]yaml.Node `yaml:"params"`
+	Init      *bool                `yaml:"init"`
 }
 
 type routineFile struct {
@@ -193,7 +197,7 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 	if err := yamlx.DecodeStrict(data, &f); err != nil {
 		return fail("%v", err)
 	}
-	d := &Factory{Name: name, File: file, Server: strings.TrimSpace(f.Server)}
+	d := &Factory{Name: name, File: file, Server: strings.TrimSpace(f.Server), NoInit: f.Init != nil && !*f.Init}
 
 	if f.Blueprint == nil || strings.TrimSpace(f.Blueprint.Git) == "" || strings.TrimSpace(f.Blueprint.Ref) == "" {
 		return fail("blueprint: needs both git and ref, like `blueprint: { git: github.com/acme/blueprint, ref: main }`")
@@ -305,6 +309,9 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		}
 		if d.Server != "" {
 			return fail("server: is only for cloud factories; local runtimes talk to `fabrica mcp` on your machine")
+		}
+		if f.Init != nil {
+			return fail("init: is only for cloud factories; local factories don't run their blueprint's init routine")
 		}
 	}
 	return d, diags

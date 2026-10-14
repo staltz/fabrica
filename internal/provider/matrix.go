@@ -83,6 +83,12 @@ type Matrix struct {
 	Description string
 	// ApplyModes are tried in order; the first one that works is used.
 	ApplyModes []ApplyMode
+	// LaunchModes are how Fabrica can start a one-off session here, for an
+	// init routine: API means it starts the session itself (through the
+	// runtime's API, or a local tool's command line), Handoff means it
+	// writes instructions for a person to start it. Empty means init
+	// routines can't run here.
+	LaunchModes []ApplyMode
 	// FindByIdentity says the runtime's API can list resources and read
 	// their Fabrica identity back, so Fabrica can find (and never
 	// duplicate) what it made, even after a crash.
@@ -96,7 +102,8 @@ type Matrix struct {
 	FindByRemoteID bool
 	SkillTransport SkillTransport
 	// MCPAuth says how the runtime can pass a token to an MCP server:
-	// TokenInHeader and/or TokenInURL. Only cloud runtimes need it.
+	// TokenInHeader and/or TokenInURL. Cloud runtimes need it, and so does
+	// a local runtime that starts init sessions for cloud factories.
 	MCPAuth     map[string]Support
 	Triggers    map[string]Support
 	Connectors  map[string]Support
@@ -154,6 +161,7 @@ type matrixFile struct {
 	Kind           string                    `yaml:"kind"`
 	Description    string                    `yaml:"description"`
 	ApplyModes     []string                  `yaml:"apply_modes"`
+	LaunchModes    []string                  `yaml:"launch_modes"`
 	FindByIdentity bool                      `yaml:"find_by_identity"`
 	FindByRemoteID bool                      `yaml:"find_by_remote_id"`
 	SkillTransport string                    `yaml:"skill_transport"`
@@ -264,6 +272,19 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		seenMode[mode] = true
 		m.ApplyModes = append(m.ApplyModes, mode)
 	}
+	seenLaunch := map[ApplyMode]bool{}
+	for _, raw := range f.LaunchModes {
+		mode := ApplyMode(raw)
+		switch {
+		case mode != API && mode != Handoff:
+			add("launch_modes: has %q; use api or handoff", raw)
+			continue
+		case seenLaunch[mode]:
+			add("launch_modes: lists %q twice", raw)
+		}
+		seenLaunch[mode] = true
+		m.LaunchModes = append(m.LaunchModes, mode)
+	}
 	if seenMode[API] && !m.FindByIdentity && !m.FindByRemoteID {
 		add("apply_modes: has api, but neither find_by_identity nor find_by_remote_id is true; api mode needs an API that can list resources and read their identity back, or at least read one back by its ID, so Fabrica never makes duplicates")
 	}
@@ -335,8 +356,8 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 	m.ModelIDs = parseModelIDs(f.ModelIDs, m.Models, add)
 
 	m.Credentials = parseCredentials(f.Credentials, add)
-	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API]) {
-		add("credentials: are only for a cloud runtime's API, so they need kind: cloud and api in apply_modes")
+	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API] && !seenLaunch[API]) {
+		add("credentials: are only for a cloud runtime's API, so they need kind: cloud and api in apply_modes or launch_modes")
 	}
 
 	if len(problems) > 0 {
@@ -577,6 +598,20 @@ func (m *Matrix) TokenPlacement() string {
 		return TokenInHeader
 	}
 	return TokenInURL
+}
+
+// CanLaunch reports whether Fabrica can start an init session here at
+// all, one way or another.
+func (m *Matrix) CanLaunch() bool { return len(m.LaunchModes) > 0 }
+
+// HasLaunchMode reports whether the provider supports a launch mode.
+func (m *Matrix) HasLaunchMode(mode ApplyMode) bool {
+	for _, have := range m.LaunchModes {
+		if have == mode {
+			return true
+		}
+	}
+	return false
 }
 
 // HasMode reports whether the provider supports an apply mode.

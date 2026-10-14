@@ -37,6 +37,8 @@ Then:
 
 From then on, agents in those tools load your blueprint live over MCP. Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
 
+A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to get its repos ready. It lists where it would like to run, and Fabrica starts it on the first runtime that's available: on your laptop with Claude Code, as a Cursor cloud agent, or with instructions for a person to start it. See [Init routines](docs/blueprints.md#init-routines).
+
 ## Install
 
 Fabrica is a single static binary.
@@ -118,7 +120,7 @@ Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 
 - [Getting started](docs/getting-started.md): a hands-on tutorial, solo and team.
 - [Concepts](docs/concepts.md): blueprints, home repos, stubs, shapes and runs, explained.
-- [Writing a blueprint](docs/blueprints.md): the blueprint format in full (skills, routines, rules, connectors, imports, expects).
+- [Writing a blueprint](docs/blueprints.md): the blueprint format in full (skills, routines, init routines, rules, connectors, imports, expects).
 - [Home repos](docs/home-repos.md): factories, state, the apply lock, handoffs and CI.
 - [Product repos](docs/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
 - [The MCP server](docs/mcp-server.md): the tools agents use, and how to run the remote server.

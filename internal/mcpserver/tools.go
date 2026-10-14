@@ -425,7 +425,7 @@ func checkInit(snap *Snapshot, d *home.Factory, r *blueprint.Routine, run runs.R
 	}
 	switch {
 	case !snap.remote() || d.Scope != provider.Cloud:
-		return fmt.Errorf("routine %s is an init routine, and those only run for cloud factories, in the session `fabrica apply` starts when it first creates the factory", r.Ref.Name)
+		return fmt.Errorf("routine %s is an init routine, and those only run for cloud factories, in the session `fabrica apply` starts when it creates the factory", r.Ref.Name)
 	case d.NoInit:
 		return fmt.Errorf("this init session is no longer deployed: factory %s says init: false", d.Name)
 	case !d.Covers(run.Repo):

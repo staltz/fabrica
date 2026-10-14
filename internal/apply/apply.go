@@ -312,7 +312,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	}
 	setups = writeSetups(out, opts, dp, tok, touched, apis)
 
-	// The factory's init session, the first time it's applied. It comes
+	// The factory's init session, when this apply creates it. It comes
 	// last, once its stubs are in.
 	done := len(dp.Changes) - len(failures)
 	if dp.Init.Start() {
@@ -330,6 +330,15 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		if err == nil {
 			done++
 		}
+	}
+
+	// A destroy ends the factory's life, so the apply that recreates it
+	// runs its init again. One that failed partway hasn't ended it.
+	switch {
+	case env.Destroy && len(failures) == 0:
+		state.Init, state.DestroyedAt = nil, &now
+	case !env.Destroy:
+		state.DestroyedAt = nil
 	}
 
 	// 5. Record and release.

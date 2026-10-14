@@ -104,7 +104,7 @@ type Trigger struct {
 
 func (t Trigger) String() string {
 	if t.On == InitTrigger {
-		return "init (once, when the factory is first applied)"
+		return "init (once, when the factory is created)"
 	}
 	if t.Cron != "" {
 		return t.On + " (" + t.Cron + ")"
@@ -175,7 +175,7 @@ type Routine struct {
 func (r *Routine) withOrigin(o Origin) item { c := *r; c.Origin = o; return &c }
 
 // InitTrigger is the trigger of an init routine. Fabrica fires it itself,
-// once per factory: it starts a session for the routine the first time
+// once per life of a factory: it starts a session for the routine when
 // `fabrica apply` creates the factory.
 const InitTrigger = "init"
 

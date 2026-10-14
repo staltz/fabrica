@@ -37,7 +37,7 @@ Then:
 
 From then on, agents in those tools load your blueprint live over MCP. Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
 
-A blueprint can also have an **init routine**, a one-off session that runs once, the first time `fabrica apply` creates a factory: say, to get its repos ready. It lists where it would like to run, and Fabrica starts it on the first runtime that's available: on your laptop with Claude Code, as a Cursor cloud agent, or with instructions for a person to start it. See [Init routines](docs/blueprints.md#init-routines).
+A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to get its repos ready. It lists where it would like to run, and Fabrica starts it on the first runtime that's available: on your laptop with Claude Code, as a Cursor cloud agent, or with instructions for a person to start it. See [Init routines](docs/blueprints.md#init-routines).
 
 ## Install
 

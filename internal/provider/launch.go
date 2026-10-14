@@ -14,7 +14,7 @@ import (
 )
 
 // An init routine doesn't get a stub that waits for a trigger. It gets one
-// session, started once, the first time `fabrica apply` creates its
+// session, started once, when `fabrica apply` creates (or recreates) its
 // factory. A provider's launch_modes say how Fabrica can start that
 // session on its runtime: by itself (api), through the runtime's API or a
 // local tool's command line, or by writing instructions for a person to

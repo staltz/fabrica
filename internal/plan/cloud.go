@@ -48,6 +48,9 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 	if d != nil && !e.Destroy {
 		e.planDesired(ctx, dp, d)
 	}
+	if e.Destroy {
+		planInitReset(dp)
+	}
 	providers := e.providersForCleanup(ctx, dp)
 	current := e.refresh(ctx, dp, providers)
 	e.diff(dp, current, providers)

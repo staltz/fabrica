@@ -17,8 +17,8 @@ import (
 	"github.com/staltz/fabrica/internal/stub"
 )
 
-// startInit starts the factory's init session, the first time the factory
-// is applied, after its stubs: through the chosen runtime's launcher, or
+// startInit starts the factory's init session, when apply creates (or
+// recreates) the factory, after its stubs: through the chosen runtime's launcher, or
 // with a handoff. It records the outcome in state.Init, which the final
 // commit of the apply saves. A failed attempt is recorded too, and the
 // next apply tries again with the same init ID, which keeps a launcher
@@ -27,7 +27,7 @@ import (
 func startInit(ctx context.Context, opts Options, repo *Repo, env *plan.Env, dp *plan.Factory, state *home.State, tok string, now time.Time, failedChanges int) (string, error) {
 	in, c := dp.Init, dp.Init.Chosen
 	if in.ID == "" {
-		in.ID = plan.NewInitID(dp.Name, in.Identity, now)
+		in.ID = plan.NewInitID()
 	}
 	rec := &home.Init{
 		ID: in.ID, Routine: in.Routine.Ref.Name, Runtime: c.Runtime, Repo: in.Repo,

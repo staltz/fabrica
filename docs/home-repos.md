@@ -80,7 +80,7 @@ If two runtimes need different settings, write two factory files.
 
 ### Init
 
-When the blueprint has an [init routine](blueprints.md#init-routines), the factory's first apply starts a session for it, once, after creating the stubs. `plan` shows where it would run and why:
+When the blueprint has an [init routine](blueprints.md#init-routines), the apply that creates the factory starts a session for it, once, after creating the stubs. `plan` shows where it would run and why:
 
 ```
   init routine onboard (once, on the first of its runtimes Fabrica can start a session on):
@@ -91,7 +91,7 @@ When the blueprint has an [init routine](blueprints.md#init-routines), the facto
     ! init   onboard @ github.com/acme/app on claude-code-local (api; Fabrica starts it): the factory is being applied for the first time
 ```
 
-- **Once, ever.** State records the init, and nothing removes the record, not even `fabrica destroy`. A factory that was applied before its blueprint got an init routine never runs it.
+- **Once per life of the factory.** State records the init, so later applies don't run it again. `fabrica destroy` ends the factory's life: when it removes everything, it forgets the init and records when it destroyed the factory, so the next apply recreates the factory and runs the init again, with a new session. A destroy that failed partway hasn't ended it. A factory that was created before its blueprint got an init routine doesn't run it, until it's destroyed and recreated.
 - **Failures are retried.** If the session can't start (the runtime refused, the Fabrica server wasn't ready, or other changes in the same apply failed), the next apply tries again. Every attempt uses the same init ID, and each runtime uses it to make sure there's never a second session: Cursor refuses a second cloud agent with the same ID, and a local session keeps its folder.
 - **The Fabrica server has to serve the factory first.** It reads the home repo about once a minute, so before starting a session apply waits (up to 3 minutes) until the server answers for the new factory.
 - **A handoff** waits for `fabrica confirm <init ID> --remote-id <the session's ID or URL>`, like any other. Until then, `plan` lists it as waiting, and no apply starts it again.
@@ -166,6 +166,7 @@ resources:
       fingerprint: e128f7aa2995
     applied_at: 2026-10-10T12:01:00Z
 pending: []                              # handoffs waiting for `fabrica confirm`
+destroyed_at: …                          # only after `fabrica destroy`, until the next apply recreates the factory
 init:                                    # the factory's init session, once there's been one
   id: i_3f2a1c9e04                       # the same on every attempt
   routine: onboard
@@ -232,7 +233,7 @@ Some APIs can't set up everything a resource relies on. Cursor automations, for 
 
 `fabrica destroy` is the opposite of `apply`. It removes everything your factories (or the ones you name) installed, and leaves their files alone, so the next `apply` puts it all back.
 
-For a cloud factory, it plans every resource in state as a delete, exactly as if the factory file were gone, and then carries it out like an apply: it takes the lock, refreshes, deletes each resource through the runtime's API or with a delete handoff, and records the results and releases the lock in one commit. For your personal home repo, it also removes what Fabrica installed in your local tools. It shows the plan and asks first; `fabrica plan --destroy` shows the same plan without changing anything.
+For a cloud factory, it plans every resource in state as a delete, exactly as if the factory file were gone, and then carries it out like an apply: it takes the lock, refreshes, deletes each resource through the runtime's API or with a delete handoff, and records the results and releases the lock in one commit. When every delete went through, it also resets the factory's [init](#init), so the next apply, which recreates the factory, runs the init again. For your personal home repo, it also removes what Fabrica installed in your local tools. It shows the plan and asks first; `fabrica plan --destroy` shows the same plan without changing anything.
 
 To stop deploying something for good, delete its factory file and apply instead. The server keeps serving a factory for as long as its file exists, so a destroyed one's stubs still work until their delete handoffs are done.
 

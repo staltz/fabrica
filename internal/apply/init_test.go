@@ -68,8 +68,7 @@ func TestInitStartsOnceWhenTheFactoryIsFirstApplied(t *testing.T) {
 		t.Fatalf("state should record the started init: %+v", st)
 	}
 
-	// It never runs again: not on the next apply, not after a destroy and
-	// a fresh apply.
+	// It doesn't run again while the factory exists.
 	p = h.plan()
 	if p.ExitCode() != 0 || p.Factory("pr-review").Init != nil {
 		t.Fatalf("the init already ran, so there's nothing to do:\n%s", render(p))
@@ -77,17 +76,36 @@ func TestInitStartsOnceWhenTheFactoryIsFirstApplied(t *testing.T) {
 	if !strings.Contains(render(p), "init onboard started on toy on ") {
 		t.Errorf("the plan should say when the init ran:\n%s", render(p))
 	}
+
+	// Destroying the factory ends its life, and the apply that recreates
+	// it runs the init again: a new session, with a new ID.
+	if !strings.Contains(render(h.destroyPlan()), "the factory's init routine, onboard, runs again when the next apply recreates the factory") {
+		t.Errorf("the destroy plan should say the init runs again:\n%s", render(h.destroyPlan()))
+	}
 	if _, err := h.destroy(func(*plan.Plan) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if st := h.state().Init; st == nil || st.Status != home.InitStarted {
-		t.Fatalf("destroy must keep the init record: %+v", st)
+	after := h.state()
+	if after.Init != nil || after.DestroyedAt == nil {
+		t.Fatalf("destroy should reset the init and say when it destroyed the factory: init %+v, destroyed_at %v", after.Init, after.DestroyedAt)
+	}
+	p = h.plan()
+	if in := p.Factory("pr-review").Init; !in.Start() || in.Reason != "the factory is being recreated after `fabrica destroy`" {
+		t.Fatalf("the apply after a destroy should run the init again:\n%s", render(p))
 	}
 	if res := h.apply(); res.ExitCode() != 0 {
 		t.Fatalf("apply failed:\n%s", h.out.String())
 	}
-	if n := len(h.w.Toy.Sessions()); n != 1 {
-		t.Errorf("the init ran again after destroy and apply: %d sessions", n)
+	sessions = h.w.Toy.Sessions()
+	if len(sessions) != 2 || sessions[0].ID == sessions[1].ID {
+		t.Fatalf("recreating the factory should start a second session, with its own ID: %+v", sessions)
+	}
+	after = h.state()
+	if after.Init == nil || after.Init.Status != home.InitStarted || after.Init.ID == st.ID || after.DestroyedAt != nil {
+		t.Errorf("state should record the new init, and forget the destroy: init %+v, destroyed_at %v", after.Init, after.DestroyedAt)
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("once recreated, the factory is in sync:\n%s", render(p))
 	}
 }
 
@@ -226,8 +244,16 @@ func TestInitOnlyRunsForNewFactories(t *testing.T) {
 	if p.ExitCode() != 0 || p.Factory("pr-review").Init != nil {
 		t.Fatalf("an existing factory doesn't run a new init:\n%s", render(p))
 	}
-	if !strings.Contains(render(p), "init routine onboard doesn't run: it only runs the first time a factory is applied") {
+	if !strings.Contains(render(p), "init routine onboard doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it") {
 		t.Errorf("the plan should say why the init doesn't run:\n%s", render(p))
+	}
+
+	// Recreating it after a destroy runs it, like for any new factory.
+	if _, err := h.destroy(func(*plan.Plan) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if in := h.plan().Factory("pr-review").Init; !in.Start() {
+		t.Fatalf("the apply that recreates the factory should run the init:\n%s", render(h.plan()))
 	}
 }
 

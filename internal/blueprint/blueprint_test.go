@@ -530,7 +530,7 @@ func TestInitRoutines(t *testing.T) {
 	if r == nil || !r.IsInit() || strings.Join(r.Runtimes, ",") != "cursor-cloud,claude-code-local" {
 		t.Fatalf("Init = %+v", r)
 	}
-	if got := r.Trigger.String(); got != "init (once, when the factory is first applied)" {
+	if got := r.Trigger.String(); got != "init (once, when the factory is created)" {
 		t.Errorf("Trigger = %q", got)
 	}
 

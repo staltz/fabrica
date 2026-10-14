@@ -245,7 +245,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
 | `git.pre_commit`, `git.pre_push` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
-| `init` | Fired by Fabrica itself, once per factory. See [Init routines](#init-routines). |
+| `init` | Fired by Fabrica itself, each time `fabrica apply` creates a factory. See [Init routines](#init-routines). |
 
 ### Side effects
 
@@ -315,7 +315,7 @@ models: [{ model: claude-opus-5-5, effort: high }, default]
 For each of the factory's repos, check that it provides the skills this blueprint expects, and open one issue listing what's missing.
 ```
 
-Fabrica runs it **once per factory, ever**: `fabrica apply` starts a session for it the first time it creates the factory, right after the factory's stubs. Not on later applies, not after a `fabrica destroy` and a fresh apply, and not for a factory that was first applied before its blueprint had an init routine. The factory's [state](home-repos.md#state) remembers.
+Fabrica runs it **when it creates a factory**: `fabrica apply` starts a session for it the first time it applies the factory, right after the factory's stubs, and again when it recreates the factory after a `fabrica destroy`. Not on the factory's other applies, and not for a factory that was created before its blueprint had an init routine (until it's destroyed and recreated). The factory's [state](home-repos.md#state) remembers.
 
 - **It's a routine like any other**, with skills, connectors, side effects, params and models, served live over MCP. Only its trigger is special: no runtime fires `init`, Fabrica does, by starting a session.
 - **One per blueprint.** Two init routines (say, one of yours and one an import brings) are an error; leave one out with `exclude:`.

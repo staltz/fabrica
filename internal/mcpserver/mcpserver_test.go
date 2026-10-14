@@ -504,7 +504,7 @@ func TestRemoteInitRun(t *testing.T) {
 	args := map[string]any{"intent": "get the factory's repos ready", "routine": "onboard", "runtime": "claude-code-local", "repo": "github.com/acme/app", "stub": fp}
 	runID := c.runID(c.ok("run_begin", args))
 	routine := c.ok("routine_get", map[string]any{"name": "onboard"})
-	for _, want := range []string{"# Routine onboard", "for repo github.com/acme/app", "Trigger: init (once, when the factory is first applied)", "Check the repos are ready"} {
+	for _, want := range []string{"# Routine onboard", "for repo github.com/acme/app", "Trigger: init (once, when the factory is created)", "Check the repos are ready"} {
 		if !strings.Contains(routine, want) {
 			t.Errorf("routine_get is missing %q:\n%s", want, routine)
 		}

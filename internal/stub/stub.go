@@ -368,7 +368,7 @@ func InitPrompt(identity, factory, routine, runtime, repo, fingerprint string, r
 	if len(repos) > 1 {
 		others = fmt.Sprintf(" The factory deploys to %s.", strings.Join(quote(repos), ", "))
 	}
-	return fmt.Sprintf("You are the init session of Fabrica factory `%s` (`%s`): its init routine, `%s`, runs once, now that the factory was applied for the first time.%s Call `run_begin` with routine `%s`, runtime `%s`, repo `%s` and stub `%s`, and an intent that sums up what you're about to do in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.",
+	return fmt.Sprintf("You are the init session of Fabrica factory `%s` (`%s`): its init routine, `%s`, runs once, now that `fabrica apply` created the factory.%s Call `run_begin` with routine `%s`, runtime `%s`, repo `%s` and stub `%s`, and an intent that sums up what you're about to do in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.",
 		factory, identity, routine, others, routine, runtime, repo, fingerprint)
 }
 
@@ -396,7 +396,7 @@ func LocalPrompt(routine, factory, runtime, repo, fingerprint string) string {
 // DescribeTrigger turns a trigger into words for handoff instructions.
 func DescribeTrigger(tr blueprint.Trigger, repo string) string {
 	if tr.On == blueprint.InitTrigger {
-		return "once, when the factory is first applied"
+		return "once, when the factory is created"
 	}
 	if tr.On == "schedule" {
 		return fmt.Sprintf("on a schedule, cron `%s` (UTC)", tr.Cron)

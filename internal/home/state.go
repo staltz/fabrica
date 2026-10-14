@@ -28,9 +28,13 @@ type State struct {
 	// Pending are handoffs waiting for `fabrica confirm`.
 	Pending []Pending `yaml:"pending"`
 	// Init records the factory's init session, once there's been one (or
-	// an attempt at one). A factory runs its init once, ever, so it's
-	// never removed, even by `fabrica destroy`.
+	// an attempt at one). A factory runs its init once per life: it's
+	// only removed by `fabrica destroy`, which ends that life.
 	Init *Init `yaml:"init,omitempty"`
+	// DestroyedAt is when `fabrica destroy` last removed everything the
+	// factory installed. The next apply recreates the factory, so it runs
+	// the init again, and clears this.
+	DestroyedAt *time.Time `yaml:"destroyed_at,omitempty"`
 }
 
 // Init is what state records about a factory's init session.
@@ -71,9 +75,14 @@ const (
 	InitFailed = "failed"
 )
 
-// Born reports whether the factory was ever applied: once it was, it has
-// had its chance at an init, and never gets another.
+// Born reports whether the factory exists: it was applied, and not
+// destroyed since. A factory that exists has had its chance at an init;
+// one that's applied while it doesn't is created (or recreated), and runs
+// its init.
 func (s *State) Born() bool {
+	if s.DestroyedAt != nil {
+		return false
+	}
 	return s.Init != nil || s.Blueprint != nil || len(s.Resources) > 0 || len(s.Pending) > 0
 }
 
@@ -239,8 +248,8 @@ func keyLess(a, b Key) bool {
 }
 
 // Empty reports whether the state records nothing that needs cleaning
-// up. The init record doesn't count: it only matters while the factory
-// exists.
+// up. The init record and DestroyedAt don't count: they only matter while
+// the factory exists.
 func (s *State) Empty() bool {
 	return s.Lock == nil && len(s.Resources) == 0 && len(s.Pending) == 0
 }

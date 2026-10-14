@@ -234,6 +234,10 @@ func TestStateInit(t *testing.T) {
 	if !s.Born() || !s.Empty() {
 		t.Errorf("an init record means the factory was applied, but it's nothing to clean up: born=%v empty=%v", s.Born(), s.Empty())
 	}
+	destroyed := &State{Blueprint: &StateBlueprint{Git: "github.com/acme/blueprint", Commit: strings.Repeat("a", 40)}, DestroyedAt: &s.Init.At}
+	if destroyed.Born() {
+		t.Error("a destroyed factory doesn't exist, whatever state still remembers about it")
+	}
 	if err := WriteState(dir, "x", s); err != nil {
 		t.Fatal(err)
 	}

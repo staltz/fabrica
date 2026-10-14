@@ -1,11 +1,10 @@
 package plan
 
 import (
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
@@ -15,7 +14,8 @@ import (
 )
 
 // A blueprint's init routine runs once per cloud factory: apply starts a
-// session for it the first time it creates the factory. The routine lists
+// session for it when it creates the factory: the first time, and again
+// after `fabrica destroy`. The routine lists
 // the runtimes it would like, in order (or else the factory's own), and
 // the first one Fabrica can start a session on by itself wins. When none
 // can, apply writes a handoff for the first one a person can start it on.
@@ -30,7 +30,7 @@ type Init struct {
 	// there's nothing to start.
 	Chosen *InitCandidate
 	// ID is the init's ID, once an attempt to start it recorded one. The
-	// first attempt gets its ID from apply (see NewInitID).
+	// first attempt gets a new one from apply (see NewInitID).
 	ID string
 	// Identity, Repo, Repos, Prompt and Fingerprint describe the session
 	// to start.
@@ -70,7 +70,7 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 		return
 	}
 	if d.HasRoutine(r.Ref.Name) {
-		dp.Diags.Errorf("factory.init-routine", d.File, "routine %s is the blueprint's init routine: it runs by itself, once, when the factory is first applied, so it doesn't go under routines:", r.Ref.Name).
+		dp.Diags.Errorf("factory.init-routine", d.File, "routine %s is the blueprint's init routine: it runs by itself when the factory is created, so it doesn't go under routines:", r.Ref.Name).
 			Hintf("remove it from routines:")
 		return
 	}
@@ -80,7 +80,7 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s never runs here: the factory says init: false", r.Ref.Name))
 		return
 	case st == nil && dp.State.Born():
-		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s doesn't run: it only runs the first time a factory is applied, and this one was applied before", r.Ref.Name))
+		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it", r.Ref.Name))
 		return
 	case st != nil && st.Status == home.InitStarted:
 		dp.Notes = append(dp.Notes, "init "+describeInitRecord(st))
@@ -93,6 +93,8 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 	in := &Init{Routine: r, Endpoint: d.Endpoint(), Identity: stub.InitIdentity(d.Endpoint(), r.Ref.Name), Repos: d.SpecificTargets()}
 	in.Repo = in.Repos[0]
 	switch {
+	case st == nil && dp.State.DestroyedAt != nil:
+		in.Reason = "the factory is being recreated after `fabrica destroy`"
 	case st == nil:
 		in.Reason = "the factory is being applied for the first time"
 	case st.Status == home.InitStarting:
@@ -132,6 +134,15 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 	}
 	in.Fingerprint = in.Chosen.Eval.Shape.Fingerprint()
 	in.Prompt = stub.InitPrompt(in.Identity, d.Name, r.Ref.Name, in.Chosen.Runtime, in.Repo, in.Fingerprint, in.Repos)
+}
+
+// planInitReset notes, in a destroy plan, that the init runs again once the
+// factory is recreated.
+func planInitReset(dp *Factory) {
+	if dp.Spec == nil || dp.State == nil || dp.State.Init == nil {
+		return
+	}
+	dp.Notes = append(dp.Notes, fmt.Sprintf("the factory's init routine, %s, runs again when the next apply recreates the factory", dp.State.Init.Routine))
 }
 
 // initCandidate checks one runtime an init would like to run on.
@@ -183,12 +194,15 @@ func checkInitParams(dp *Factory, d *home.Factory, r *blueprint.Routine) {
 }
 
 // NewInitID makes the ID of a factory's init, on the first attempt to
-// start it. The time goes in, so a factory that's deleted and made again
-// under the same name gets a new init; later attempts reuse the ID state
-// recorded.
-func NewInitID(factory, identity string, now time.Time) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{factory, identity, now.UTC().Format(time.RFC3339Nano)}, "\x00")))
-	return "i_" + hex.EncodeToString(sum[:])[:10]
+// start it; later attempts reuse the one state recorded. It's random, so a
+// factory that's destroyed (or deleted) and made again gets an init of its
+// own, which no runtime mistakes for the earlier one.
+func NewInitID() string {
+	b := make([]byte, 5)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // crypto/rand doesn't fail on supported platforms
+	}
+	return "i_" + hex.EncodeToString(b)
 }
 
 // describeInitRecord says what happened to an init, like "onboard

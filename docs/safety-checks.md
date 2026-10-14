@@ -34,6 +34,7 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A factory lists its blueprint's init routine under `routines:` | ❌ error | — | — | `factory.init-routine` |
 | An init session for a factory that turned its init off, on a runtime the init routine no longer lists, or from a local factory | — | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | Starting an init session failed, or apply stopped while starting it | 🔧 the next apply tries again, with the same init ID, so the runtime never gets a second session | — | — | — |
+| A factory is recreated after `fabrica destroy` | 🔧 the init runs again, with a new ID (a destroy that failed partway doesn't count) | — | — | — |
 | A routine's trigger, connectors or memory setting (on runtimes with their own memory) changed since apply, to ones the runtime supports (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | A routine, repo or runtime was removed from a factory (or a routine no longer runs on a runtime), but its stub is still installed (stub no longer deployed) | 🔧 delete in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
 | The server secret was rotated | 🔧 update in `plan` (when it has the secret) | — | ❌ old tokens get `401` | — |

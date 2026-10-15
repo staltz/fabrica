@@ -335,7 +335,7 @@ a { color: inherit; }
   gap: clamp(var(--space-8), 5vw, 80px);
   align-items: start;
 }
-.split-head { display: grid; gap: var(--space-6); position: sticky; top: var(--space-8); }
+.split-head { display: grid; gap: var(--space-6); }
 .ruled { list-style: none; margin: 0; padding: 0; border-top: var(--stroke-firm) solid var(--graphite); }
 .ruled li {
   display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--space-2);
@@ -620,7 +620,6 @@ a { color: inherit; }
 @media (max-width: 960px) {
   .hero-sub, .split, .prompt-grid, .section-head--split, .steps, .compose { grid-template-columns: minmax(0, 1fr); }
   .hero-sub .actions { justify-content: flex-start; }
-  .split-head { position: static; }
   .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footer-brand { grid-column: 1 / -1; }
 

@@ -97,9 +97,21 @@ fabrica check        # should say: No problems found.
 git add . && git commit -m "My blueprint"
 ```
 
+> 💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤
 > Optionally, you can use ready-made blueprints from the community. You can even *compose* them together, smaller blueprints into larger ones!
 >
 > - ⭐️ https://github.com/staltz/fabrica-blueprint-refactor
+>
+> You can even import good-old skills repositories into a blueprint!
+> ```
+> imports:
+>   mattpocock-factory-skills:
+>     git: github.com/mattpocock/skills
+>     ref: main                # branch
+>     path: skills/engineering # folder in the repo where the skills are
+>     only: [skills/retro]     # list of skills to import
+> ```
+> 💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤💛🖤
 
 Push it somewhere git can reach, like `github.com/you/my-blueprint`.
 

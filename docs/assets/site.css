@@ -327,6 +327,10 @@ a { color: inherit; }
 .section + .section { padding-top: 0; }
 .section-head { display: grid; gap: var(--space-6); max-width: 760px; margin-bottom: clamp(var(--space-12), 5vw, 72px); }
 .section-head .lead { max-width: 36em; }
+/* A lead that runs the full width, so it stays on one line where it fits */
+.section-head--wide { max-width: none; }
+.section-head--wide h2 { max-width: 760px; }
+.section-head--wide .lead { max-width: none; }
 
 /* Problem: two columns, a ruled list */
 .split {

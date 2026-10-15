@@ -1,12 +1,38 @@
 # Fabrica
 
-Fabrica lets you write down *how your AI agents build software* (skills, routines and rules) **once**, in a git repo, and run that same setup on many AI coding tools: Claude, Cursor, Codex, GitHub Copilot and more.
+> terraform for software factories
 
-Agents fetch your setup live from a small Fabrica server, so improving your process is just a git merge. Every agent run gets recorded, so you can see what happened.
+**_Fabrica_ is a software factory framework.** It lets you write down *how your AI agents build software* (skills, routines and rules) once, in a git repo, and run that same setup on many AI coding tools: Claude, Cursor, Codex, GitHub Copilot and more.
 
-> **Status:** v0.1, early days. The file formats and commands described here work and are tested, but expect rough edges. See [What v0.1 can't do yet](#what-v01-cant-do-yet).
+**Principles**:
 
-## Why
+* A factory is a *composable* collection of skills, rules, routines
+* Generic skills and rules live outside of your product's repository, so your agents cannot change the rules
+* Provisioning routines (a.k.a. "loops", "scheduled tasks") should be easy and independent of AI coding tools
+* Reusing and composing factories should be instant
+* Observability data for all agents in a factory
+
+## Quick start
+
+### 🪄✨ MAGIC PROMPT TO GET STARTED
+
+Paste this into your favorite harness in your project's repository:
+
+```markdown
+I want you to use https://github.com/staltz/fabrica to set up a software factory for my project.
+
+**Instructions:**
+1. Read how Fabrica works
+2. Install the `fabrica` CLI for me
+3. Create a new factory blueprint repository in a suitable location
+4. Extract generic skills and rules from this product repository into the blueprint repository
+5. Configure the factory in the home repo `~/.fabrica`
+6. Use `fabrica plan` and `fabrica apply` to deploy the factory onto the product repository
+7. Verify that it works
+8. Report back to me with a simple summary (written in casual and conversational plain English) on: what changed in my product repository, how the factory was deployed, how it works, and follow ups to improve the factory.
+```
+
+## Motivation
 
 If your team uses AI coding agents, your "how we work" knowledge probably ends up scattered all over the place:
 
@@ -14,30 +40,32 @@ If your team uses AI coding agents, your "how we work" knowledge probably ends u
 - `AGENTS.md` files mix "how this app works" with "how we write code in general".
 - A PR-review bot gets set up by hand in three different tools, and the three slowly drift apart.
 - Nobody knows what the agents actually did last week.
+- There is poor or no version control system for any of the above.
 
-So when you improve your process, you have to update it everywhere. And when you switch tools, you start over.
+So when you improve your process, you have to update it manually everywhere. And when you switch tools, you start over.
 
-Fabrica treats your agent setup as its own versioned thing, called a **blueprint**, kept apart from the software it builds. Your product repo versions your code. Your blueprint repo versions *how that code gets built*. Deploy a blueprint to some product repos (its **targets**) in some tools, and that deployment is a **factory**.
+Fabrica treats your agent setup as its own versioned thing, called a software factory **blueprint**, kept apart from the software it builds. Your product repo versions your code. Your blueprint repo versions the software factory. Deploy a blueprint to some product repos (called **targets**) in some tools, and that deployment is a **factory**.
 
 ## How it works
 
-There are three kinds of repo:
+There are three kinds of repositories:
 
 | Repo | What's in it |
 |---|---|
-| **Blueprint repo** | Skills, routines, rules and connectors: your process. It doesn't know who uses it. |
-| **Home repo** | Factories: "run *this* blueprint on *these* targets in *these* tools". Targets are product repos. This is the only place blueprints and product repos meet. |
-| **Product repo** | Your code. The only Fabrica thing in it is one sentence at the top of its `AGENTS.md`. |
+| 🗺️ **Blueprint repo** | Skills, routines, rules and connectors: your process. It doesn't know who uses it, or what software it is specifically building. |
+| 🏠 **Home repo** | A local (or team) repository that defines the factories: "run *this* blueprint on *these* targets in *these* tools". Targets are product repos. This is the only place blueprints and product repos meet. |
+| 🚀 **Product repo** | Your software's code. The only Fabrica thing in it is one sentence at the top of its `AGENTS.md`. |
 
 Then:
 
-1. You write a blueprint.
-2. You deploy it as a factory in your home repo: which product repos it targets, in which tools.
-3. You run `fabrica apply`.
+1. Write a factory blueprint or use a ready one from the community.
+2. Configure the factory from your home repo `~/.fabrica/factories/my-factory.yaml`
+3. Run `fabrica plan` to see what it will do.
+4. Then run `fabrica apply`.
 
-From then on, agents in those tools load your blueprint live over MCP. Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
+From then on, agents in those tools load your blueprint live over MCP. Even skills will be loaded live over MCP (one day we'll use [Skills Over MCP](https://modelcontextprotocol.io/community/working-groups/skills-over-mcp)). Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
 
-A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to get its repos ready. It lists where it would like to run, and Fabrica starts it on the first runtime that's available: on your laptop with Claude Code, as a Cursor cloud agent, or with instructions for a person to start it. See [Init routines](docs/blueprints.md#init-routines).
+A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to refactor the product repo before feature development. See [Init routines](docs/blueprints.md#init-routines).
 
 ## Install
 
@@ -55,7 +83,7 @@ Prefer building from source? You'll need Go 1.26 or newer:
 go install github.com/staltz/fabrica/cmd/fabrica@latest
 ```
 
-## Try it in five minutes (solo, on your laptop)
+## Getting started
 
 This sets up your own blueprint for every repo you work on, in Claude Code and Cursor.
 
@@ -67,6 +95,10 @@ cd ~/code/my-blueprint
 fabrica check        # should say: No problems found.
 git add . && git commit -m "My blueprint"
 ```
+
+> Optionally, you can use ready-made blueprints from the community. You can even *compose* them together, smaller blueprints into larger ones!
+>
+> - https://github.com/staltz/fabrica-blueprint-refactor
 
 Push it somewhere git can reach, like `github.com/you/my-blueprint`.
 
@@ -133,20 +165,16 @@ Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
 
 Examples live in [examples/](examples/): a [starter blueprint](examples/starter-blueprint/), a [home repo](examples/home/), a [product repo](examples/product-repo/) and a [custom provider](examples/custom-provider/).
 
-## What v0.1 can't do yet
-
-Fabrica is honest about its limits. Here's what v0.1 can't do yet:
+## Limitations
 
 - **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
-- **No hosted service, ever.** You run the remote server yourself.
-
-The design doc, [DESIGN.md](DESIGN.md), has the full list of what's planned for later.
 
 ## Contributing
 
-You need Go 1.26 or newer and `git`. `go test ./...` runs everything, including end-to-end tests that build little git worlds in temp folders, and `make lint` runs `go vet`, `staticcheck` and `gofmt`. [docs/architecture.md](docs/architecture.md) explains how the code is organized and how the tests work.
+- Pull requests are NOT welcome
+- Issues are more than welcome! 🤗
 
 ## License
 

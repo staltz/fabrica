@@ -24,12 +24,13 @@ I want you to use https://github.com/staltz/fabrica to set up a software factory
 **Instructions:**
 1. Read how Fabrica works
 2. Install the `fabrica` CLI for me
-3. Create a new factory blueprint repository in a suitable location
-4. Extract generic skills and rules from this product repository into the blueprint repository
-5. Configure the factory in the home repo `~/.fabrica`
-6. Use `fabrica plan` and `fabrica apply` to deploy the factory onto the product repository
-7. Verify that it works
-8. Report back to me with a simple summary (written in casual and conversational plain English) on: what changed in my product repository, how the factory was deployed, how it works, and follow ups to improve the factory.
+3. Ask me if I want a local-only or a cloud-based factory, and with what AI harnesses
+4. Create a new factory blueprint repository in a suitable location
+5. Extract generic skills and rules from this product repository into the blueprint repository
+6. Configure the factory in the home repo `~/.fabrica`
+7. Use `fabrica plan` and `fabrica apply` to deploy the factory onto the product repository
+8. Verify that it works
+9. Report back to me with a simple summary (written in casual and conversational plain English) on: what changed in my product repository, how the factory was deployed, how it works, and follow ups to improve the factory.
 ```
 
 ## Motivation
@@ -98,7 +99,7 @@ git add . && git commit -m "My blueprint"
 
 > Optionally, you can use ready-made blueprints from the community. You can even *compose* them together, smaller blueprints into larger ones!
 >
-> - https://github.com/staltz/fabrica-blueprint-refactor
+> - ⭐️ https://github.com/staltz/fabrica-blueprint-refactor
 
 Push it somewhere git can reach, like `github.com/you/my-blueprint`.
 

@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fabrica: terraform for software factories</title>
+<meta name="description" content="Write down how your AI agents build software once, in a git repo, and run that same setup in Claude Code, Cursor, Codex and GitHub Copilot.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3f0e9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151413" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Fabrica: terraform for software factories">
+<meta property="og:description" content="Write down how your AI agents build software once, in a git repo, and run that same setup in every AI coding tool.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/ArchivoExpanded-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/Archivo-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="home-link" href="./" aria-label="Fabrica home">
+      <svg class="logo" viewBox="-40 -776 5209 828" aria-hidden="true">
+        <rect class="accent" x="0" y="-736" width="613.74" height="153.44"/>
+        <rect class="ink" x="0" y="-525.03" width="210.97" height="537.03"/>
+        <rect class="ink" x="210.97" y="-371.59" width="268.51" height="153.44"/>
+        <g transform="translate(833.74 0)">
+          <path class="ink" d="M123 0V-402H11V-528H123V-556Q123 -618 148 -658Q172 -698 218 -717Q263 -736 325 -736Q346 -736 372 -734Q397 -732 422 -728Q447 -724 466 -719V-611H400Q347 -611 327 -598Q307 -586 307 -556V-528H466V-402H307V0Z M732 12Q683 12 640 5Q598 -2 566 -20Q535 -37 518 -68Q500 -98 500 -145Q500 -208 534 -244Q568 -281 631 -298Q694 -314 780 -318Q865 -323 968 -323V-339Q968 -370 952 -388Q937 -406 908 -414Q878 -422 834 -422Q802 -422 772 -417Q742 -412 723 -402Q704 -391 704 -373V-365H517Q516 -369 516 -372Q516 -375 516 -380Q516 -427 553 -463Q590 -499 663 -520Q736 -540 843 -540Q943 -540 1012 -522Q1081 -505 1116 -466Q1152 -428 1152 -363V-152Q1152 -135 1160 -124Q1168 -113 1185 -113H1238V-7Q1224 -1 1193 6Q1162 12 1127 12Q1078 12 1048 2Q1018 -8 1004 -26Q989 -43 983 -64H975Q947 -41 910 -24Q872 -6 828 3Q784 12 732 12Z M784 -105Q807 -105 838 -110Q868 -116 898 -127Q928 -138 948 -156Q968 -173 968 -198V-228Q869 -228 806 -220Q743 -212 713 -196Q683 -179 683 -153Q683 -133 698 -122Q712 -112 736 -108Q759 -105 784 -105Z M1673 12Q1613 12 1559 -9Q1505 -30 1466 -82H1457L1443 0H1293V-725H1478V-465H1486Q1508 -491 1540 -508Q1571 -524 1607 -532Q1643 -540 1678 -540Q1756 -540 1818 -510Q1879 -480 1914 -419Q1950 -358 1950 -264Q1950 -170 1914 -108Q1879 -47 1816 -18Q1754 12 1673 12Z M1620 -126Q1667 -126 1699 -142Q1731 -158 1747 -188Q1763 -217 1763 -255V-272Q1763 -311 1747 -340Q1731 -369 1700 -386Q1668 -402 1621 -402Q1585 -402 1558 -392Q1531 -382 1513 -364Q1495 -347 1486 -322Q1477 -297 1477 -267V-260Q1477 -220 1493 -190Q1509 -160 1541 -143Q1573 -126 1620 -126Z M2048 0V-528H2198L2210 -438H2219Q2234 -470 2258 -493Q2283 -516 2314 -528Q2345 -540 2380 -540Q2400 -540 2418 -538Q2437 -535 2453 -528V-383H2365Q2330 -383 2305 -372Q2280 -360 2264 -340Q2248 -321 2240 -296Q2233 -272 2233 -244V0Z M2518 0V-528H2703V0Z M3151 12Q3045 12 2966 -18Q2888 -49 2846 -110Q2803 -171 2803 -264Q2803 -357 2846 -418Q2888 -479 2966 -510Q3045 -540 3151 -540Q3220 -540 3280 -526Q3340 -512 3386 -484Q3433 -456 3458 -414Q3484 -373 3484 -318H3297Q3297 -347 3278 -369Q3258 -391 3225 -402Q3192 -414 3151 -414Q3098 -414 3063 -396Q3028 -379 3010 -348Q2993 -316 2993 -274V-254Q2993 -212 3011 -180Q3029 -149 3066 -131Q3102 -113 3158 -113Q3199 -113 3232 -126Q3265 -139 3284 -162Q3304 -184 3304 -211H3484Q3484 -154 3458 -112Q3432 -70 3386 -42Q3341 -15 3280 -2Q3220 12 3151 12Z M3789 12Q3740 12 3698 5Q3655 -2 3624 -20Q3592 -37 3574 -68Q3557 -98 3557 -145Q3557 -208 3591 -244Q3625 -281 3688 -298Q3751 -314 3836 -318Q3922 -323 4025 -323V-339Q4025 -370 4010 -388Q3994 -406 3964 -414Q3935 -422 3891 -422Q3859 -422 3829 -417Q3799 -412 3780 -402Q3761 -391 3761 -373V-365H3574Q3573 -369 3573 -372Q3573 -375 3573 -380Q3573 -427 3610 -463Q3647 -499 3720 -520Q3793 -540 3900 -540Q4000 -540 4069 -522Q4138 -505 4174 -466Q4209 -428 4209 -363V-152Q4209 -135 4217 -124Q4225 -113 4242 -113H4295V-7Q4281 -1 4250 6Q4219 12 4184 12Q4135 12 4105 2Q4075 -8 4060 -26Q4046 -43 4040 -64H4032Q4004 -41 3966 -24Q3929 -6 3885 3Q3841 12 3789 12Z M3841 -105Q3864 -105 3894 -110Q3925 -116 3955 -127Q3985 -138 4005 -156Q4025 -173 4025 -198V-228Q3926 -228 3863 -220Q3800 -212 3770 -196Q3740 -179 3740 -153Q3740 -133 3754 -122Q3769 -112 3792 -108Q3816 -105 3841 -105Z"/>
+          <path class="accent" d="M2518 -601V-725H2703V-601Z"/>
+        </g>
+      </svg>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a class="nav-extra" href="#how-it-works">How it works</a>
+      <a href="https://github.com/staltz/fabrica/blob/main/manual/getting-started.md">Manual</a>
+      <a href="https://github.com/staltz/fabrica">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 id="hero-title" class="display-xl">Build the <span class="pencil">builder<svg viewBox="0 0 240 24" preserveAspectRatio="none" aria-hidden="true"><path d="M3 14 C 50 10, 104 9, 156 10.5 S 220 12.5, 237 10" stroke-width="3.2"/><path d="M10 17 C 64 13.5, 128 12.5, 184 13.5 S 226 15.5, 234 14" stroke-width="1.6" opacity=".8"/><path d="M20 11.5 C 80 9, 140 8.5, 200 9.5" stroke-width="1" opacity=".55"/></svg></span>.</h1>
+        <div class="hero-sub">
+          <p class="lead"><strong>Fabrica is terraform for software factories.</strong> Write down how your AI agents build software once, in a git repo. Then run that same setup in Claude Code, Cursor, Codex and GitHub&nbsp;Copilot.</p>
+          <div class="actions">
+            <a class="btn btn--primary" href="#get-started">Get started</a>
+            <a class="btn" href="https://github.com/staltz/fabrica">View on GitHub</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="site-mark">
+        <div class="beam" aria-hidden="true"></div>
+        <div class="stem" aria-hidden="true"></div>
+        <figure class="term" data-play>
+          <figcaption class="term-bar">
+            <span>~/.fabrica</span>
+            <span class="term-live" aria-hidden="true"><span class="steam"><i></i><i></i><i></i></span>Live</span>
+          </figcaption>
+          <div class="term-body" role="img" aria-label="fabrica plan finds two changes, adding the fabrica MCP server to Claude Code and Cursor; fabrica apply makes both.">
+            <span class="l cmd"><span class="p">$ </span>fabrica plan</span>
+            <span class="l">Factory my-default (local)</span>
+            <span class="l">  claude-code-local: api mode, skills unpacked on disk</span>
+            <span class="l">  cursor-local: api mode, skills unpacked on disk</span>
+            <span class="l gap">Local tools on this machine</span>
+            <span class="l">  claude-code-local (~/.claude.json, ~/.claude/settings.json)</span>
+            <span class="l add">    + add MCP server fabrica</span>
+            <span class="l">  cursor-local (~/.cursor/mcp.json, ~/.cursor/hooks.json)</span>
+            <span class="l add">    + add MCP server fabrica</span>
+            <span class="l gap">Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.</span>
+            <span class="l cmd gap"><span class="p">$ </span>fabrica apply</span>
+            <span class="l">Local claude-code-local: updated ~/.claude.json, ~/.claude/settings.json</span>
+            <span class="l ok">  ✓ add MCP server fabrica</span>
+            <span class="l">Local cursor-local: updated ~/.cursor/mcp.json, ~/.cursor/hooks.json</span>
+            <span class="l ok">  ✓ add MCP server fabrica</span>
+          </div>
+        </figure>
+        <div class="footing" aria-hidden="true"></div>
+        <div class="notes" aria-hidden="true">
+          <p class="note note--plan" data-after="9"><svg viewBox="0 0 64 28"><path d="M62 15 C 46 6, 26 7, 5 14"/><path d="M13 7.5 L 4.5 14 L 13.5 19.5"/></svg><span>Plan shows what will change, and changes nothing.</span></p>
+          <p class="note note--apply" data-after="14"><svg viewBox="0 0 64 28"><path d="M62 13 C 45 21, 25 20, 5 14"/><path d="M12.5 8 L 4.5 14 L 13 20"/></svg><span>Apply makes it so. It never writes into a product repo.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="problem-title">
+    <div class="wrap split">
+      <div class="split-head">
+        <h2 id="problem-title" class="display-l">Your agent setup is scattered.</h2>
+        <p class="lead">If your team uses AI coding agents, your “how we work” knowledge ends up all over the place.</p>
+      </div>
+      <div>
+        <ul class="ruled">
+          <li><span class="n" aria-hidden="true">1</span><span>The same skills get copied into every repo’s <strong>.claude/skills</strong> folder.</span></li>
+          <li><span class="n" aria-hidden="true">2</span><span><strong>AGENTS.md</strong> mixes how this app works with how you write code in general.</span></li>
+          <li><span class="n" aria-hidden="true">3</span><span>A PR-review bot gets set up by hand in three tools, and the three slowly drift apart.</span></li>
+          <li><span class="n" aria-hidden="true">4</span><span>Nobody knows what the agents actually did last week.</span></li>
+        </ul>
+        <p class="after">So when you improve your process, you update it everywhere by hand. And when you switch tools, you start over.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how-it-works" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="how-title" class="display-l">Your process gets its own repo.</h2>
+        <p class="lead">Your product repo versions your code. A blueprint versions how that code gets built. A home repo says which blueprint runs where.</p>
+      </div>
+
+      <div class="drafting">
+        <div class="factory">
+          <article class="node node--home">
+            <h3 class="title">Home repo</h3>
+            <p>Your factories. Each one says: run this blueprint, on these targets, in these tools.</p>
+          </article>
+          <div class="branch">
+            <div class="wire wire--blueprint"><span class="wire-label">this blueprint</span></div>
+            <article class="node node--blueprint">
+              <h3 class="title">Blueprint repo</h3>
+              <p>Skills, routines, rules and connectors. Your process, and nothing about any one app.</p>
+            </article>
+          </div>
+          <div class="branch">
+            <div class="wire wire--product"><span class="wire-label">these targets</span></div>
+            <article class="node node--product">
+              <h3 class="title">Product repos</h3>
+              <p>Your code. The only Fabrica thing in it is one line at the top of <strong>AGENTS.md</strong>.</p>
+            </article>
+          </div>
+          <div class="branch">
+            <div class="wire wire--tools"><span class="wire-label">these tools</span></div>
+            <article class="node node--tools">
+              <h3 class="title">Your AI coding tools</h3>
+              <ul class="chips" aria-label="Supported runtimes">
+                <li class="chip">Claude Code</li>
+                <li class="chip">Cursor</li>
+                <li class="chip">Codex</li>
+                <li class="chip">GitHub Copilot</li>
+                <li class="chip chip--quiet">Your own provider</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </div>
+
+      <div class="caption">
+        <h3 class="heading">Live, over MCP.</h3>
+        <p>Agents in those tools load your blueprint live, over MCP. Fabrica never copies it into your tools or your repos. A routine gets a tiny stub that says where its instructions live, so when you merge a change, the next run picks it up. No redeploy.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="principles-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="principles-title" class="display-l">Built like infrastructure.</h2>
+        <p class="lead">Plan before you apply. Keep state in git. Fail closed, and say why.</p>
+      </div>
+      <div class="grid3">
+        <article class="principle">
+          <h3 class="title">Change it once</h3>
+          <p>Merge a change to a skill, rule or routine, and the next run in every tool picks it up.</p>
+        </article>
+        <article class="principle">
+          <h3 class="title">Rules agents can’t rewrite</h3>
+          <p>Generic skills and rules live outside your product repos, where an agent can’t quietly change them.</p>
+        </article>
+        <article class="principle">
+          <h3 class="title">One routine, every tool</h3>
+          <p>Write “review every new pull request” once. Each runtime’s provider turns it into a Claude routine, a Cursor automation or a local hook.</p>
+        </article>
+        <article class="principle">
+          <h3 class="title">Composable blueprints</h3>
+          <p>Import other blueprints and skills repos, pinned to exact commits in <strong>fabrica.lock</strong>.</p>
+        </article>
+        <article class="principle">
+          <h3 class="title">Every run on record</h3>
+          <p>Each session lands in a SQLite database: what was asked, which routine ran, and how it went.</p>
+        </article>
+        <article class="principle">
+          <h3 class="title">Strict by default</h3>
+          <p>A mistyped key stops <strong>fabrica check</strong> instead of being ignored. Plan shows every change before apply makes it.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="get-started" aria-labelledby="start-title">
+    <div class="wrap">
+      <div class="section-head section-head--split">
+        <h2 id="start-title" class="display-l">Plan. Apply. Walk away.</h2>
+        <p class="lead">Fabrica is a single static binary. You also need git. Then it’s four steps.</p>
+      </div>
+      <div class="install">
+        <figure class="code code--install">
+          <figcaption class="code-bar">
+            <span>Install</span>
+            <button class="copy" type="button" data-copy="install-cmd" aria-label="Copy the install command">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8"/><path d="M10.5 3V2.5H2.5V10.5H3"/></svg>
+              <span class="idle">Copy</span><span class="done">Copied</span>
+            </button>
+          </figcaption>
+          <pre><code id="install-cmd">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>staltz/<wbr>fabrica/<wbr>main/<wbr>install.sh | bash</code></pre>
+        </figure>
+        <p class="install-note">It puts <strong>fabrica</strong> in <strong>~/.local/bin</strong>. Prefer Go? <a class="link" href="https://github.com/staltz/fabrica#install">Build it from source</a>.</p>
+      </div>
+
+      <ol class="steps">
+        <li class="step">
+          <h3 class="title">Make a blueprint</h3>
+          <p>Start from the starter blueprint that comes built in: five skills, three routines and four rules, ready to change.</p>
+          <figure class="code">
+            <pre><code><span class="p">$ </span>fabrica new ~/code/my-blueprint
+<span class="p">$ </span>fabrica check
+✓ No problems found.</code></pre>
+          </figure>
+        </li>
+        <li class="step">
+          <h3 class="title">Add a factory</h3>
+          <p>One file in your home repo: this blueprint, on every repo, in Claude Code and Cursor.</p>
+          <figure class="code">
+            <figcaption class="code-bar"><span>~/.fabrica/factories/my-default.yaml</span></figcaption>
+            <pre><code>blueprint: { git: github.com/you/my-blueprint, ref: main }
+runtimes: [claude-code-local, cursor-local]
+targets: ["*"]</code></pre>
+          </figure>
+        </li>
+        <li class="step">
+          <h3 class="title">Plan, then apply</h3>
+          <p>Plan never changes anything. Apply adds one MCP server to each tool, and never writes into a product repo.</p>
+          <figure class="code">
+            <pre><code><span class="p">$ </span>fabrica plan
+<span class="p">$ </span>fabrica apply</code></pre>
+          </figure>
+        </li>
+        <li class="step">
+          <h3 class="title">Add the Fabrica line</h3>
+          <p>Make it the first line of a product repo’s <strong>AGENTS.md</strong>. From then on, every agent there works your way.</p>
+          <figure class="code code--wrap">
+            <figcaption class="code-bar"><span>AGENTS.md</span></figcaption>
+            <pre><code>Before starting, load this repo's working rules from the Fabrica MCP server; if you don't have it, ignore this line.</code></pre>
+          </figure>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="slab" aria-labelledby="prompt-title">
+    <div class="wrap prompt-grid">
+      <div class="prompt-head">
+        <h2 id="prompt-title" class="display-l">Or let your agent set it up.</h2>
+        <p class="lead">Paste this into your coding agent, in your project’s repo. It installs Fabrica, moves your generic skills and rules into a blueprint, and deploys a factory back onto your repo.</p>
+        <p><a class="link" href="https://github.com/staltz/fabrica/blob/main/manual/getting-started.md">Prefer doing it by hand? Read the guide.</a></p>
+      </div>
+      <figure class="code code--wrap">
+        <figcaption class="code-bar">
+          <span>Prompt</span>
+          <button class="copy" type="button" data-copy="magic-prompt" aria-label="Copy the prompt">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8"/><path d="M10.5 3V2.5H2.5V10.5H3"/></svg>
+            <span class="idle">Copy</span><span class="done">Copied</span>
+          </button>
+        </figcaption>
+        <pre><code id="magic-prompt">I want you to use https://github.com/staltz/fabrica to set up a software factory for my project.
+
+**Instructions:**
+1. Read how Fabrica works
+2. Install the `fabrica` CLI for me
+3. Ask me if I want a local-only or a cloud-based factory, and with what AI harnesses
+4. Create a new factory blueprint repository in a suitable location
+5. Extract generic skills and rules from this product repository into the blueprint repository
+6. Configure the factory in the home repo `~/.fabrica`
+7. Use `fabrica plan` and `fabrica apply` to deploy the factory onto the product repository
+8. Verify that it works
+9. Report back to me with a simple summary (written in casual and conversational plain English) on: what changed in my product repository, how the factory was deployed, how it works, and follow ups to improve the factory.</code></pre>
+      </figure>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <svg class="logo" viewBox="-40 -776 5209 828" role="img" aria-label="fabrica">
+          <rect class="accent" x="0" y="-736" width="613.74" height="153.44"/>
+          <rect class="ink" x="0" y="-525.03" width="210.97" height="537.03"/>
+          <rect class="ink" x="210.97" y="-371.59" width="268.51" height="153.44"/>
+          <g transform="translate(833.74 0)">
+            <path class="ink" d="M123 0V-402H11V-528H123V-556Q123 -618 148 -658Q172 -698 218 -717Q263 -736 325 -736Q346 -736 372 -734Q397 -732 422 -728Q447 -724 466 -719V-611H400Q347 -611 327 -598Q307 -586 307 -556V-528H466V-402H307V0Z M732 12Q683 12 640 5Q598 -2 566 -20Q535 -37 518 -68Q500 -98 500 -145Q500 -208 534 -244Q568 -281 631 -298Q694 -314 780 -318Q865 -323 968 -323V-339Q968 -370 952 -388Q937 -406 908 -414Q878 -422 834 -422Q802 -422 772 -417Q742 -412 723 -402Q704 -391 704 -373V-365H517Q516 -369 516 -372Q516 -375 516 -380Q516 -427 553 -463Q590 -499 663 -520Q736 -540 843 -540Q943 -540 1012 -522Q1081 -505 1116 -466Q1152 -428 1152 -363V-152Q1152 -135 1160 -124Q1168 -113 1185 -113H1238V-7Q1224 -1 1193 6Q1162 12 1127 12Q1078 12 1048 2Q1018 -8 1004 -26Q989 -43 983 -64H975Q947 -41 910 -24Q872 -6 828 3Q784 12 732 12Z M784 -105Q807 -105 838 -110Q868 -116 898 -127Q928 -138 948 -156Q968 -173 968 -198V-228Q869 -228 806 -220Q743 -212 713 -196Q683 -179 683 -153Q683 -133 698 -122Q712 -112 736 -108Q759 -105 784 -105Z M1673 12Q1613 12 1559 -9Q1505 -30 1466 -82H1457L1443 0H1293V-725H1478V-465H1486Q1508 -491 1540 -508Q1571 -524 1607 -532Q1643 -540 1678 -540Q1756 -540 1818 -510Q1879 -480 1914 -419Q1950 -358 1950 -264Q1950 -170 1914 -108Q1879 -47 1816 -18Q1754 12 1673 12Z M1620 -126Q1667 -126 1699 -142Q1731 -158 1747 -188Q1763 -217 1763 -255V-272Q1763 -311 1747 -340Q1731 -369 1700 -386Q1668 -402 1621 -402Q1585 -402 1558 -392Q1531 -382 1513 -364Q1495 -347 1486 -322Q1477 -297 1477 -267V-260Q1477 -220 1493 -190Q1509 -160 1541 -143Q1573 -126 1620 -126Z M2048 0V-528H2198L2210 -438H2219Q2234 -470 2258 -493Q2283 -516 2314 -528Q2345 -540 2380 -540Q2400 -540 2418 -538Q2437 -535 2453 -528V-383H2365Q2330 -383 2305 -372Q2280 -360 2264 -340Q2248 -321 2240 -296Q2233 -272 2233 -244V0Z M2518 0V-528H2703V0Z M3151 12Q3045 12 2966 -18Q2888 -49 2846 -110Q2803 -171 2803 -264Q2803 -357 2846 -418Q2888 -479 2966 -510Q3045 -540 3151 -540Q3220 -540 3280 -526Q3340 -512 3386 -484Q3433 -456 3458 -414Q3484 -373 3484 -318H3297Q3297 -347 3278 -369Q3258 -391 3225 -402Q3192 -414 3151 -414Q3098 -414 3063 -396Q3028 -379 3010 -348Q2993 -316 2993 -274V-254Q2993 -212 3011 -180Q3029 -149 3066 -131Q3102 -113 3158 -113Q3199 -113 3232 -126Q3265 -139 3284 -162Q3304 -184 3304 -211H3484Q3484 -154 3458 -112Q3432 -70 3386 -42Q3341 -15 3280 -2Q3220 12 3151 12Z M3789 12Q3740 12 3698 5Q3655 -2 3624 -20Q3592 -37 3574 -68Q3557 -98 3557 -145Q3557 -208 3591 -244Q3625 -281 3688 -298Q3751 -314 3836 -318Q3922 -323 4025 -323V-339Q4025 -370 4010 -388Q3994 -406 3964 -414Q3935 -422 3891 -422Q3859 -422 3829 -417Q3799 -412 3780 -402Q3761 -391 3761 -373V-365H3574Q3573 -369 3573 -372Q3573 -375 3573 -380Q3573 -427 3610 -463Q3647 -499 3720 -520Q3793 -540 3900 -540Q4000 -540 4069 -522Q4138 -505 4174 -466Q4209 -428 4209 -363V-152Q4209 -135 4217 -124Q4225 -113 4242 -113H4295V-7Q4281 -1 4250 6Q4219 12 4184 12Q4135 12 4105 2Q4075 -8 4060 -26Q4046 -43 4040 -64H4032Q4004 -41 3966 -24Q3929 -6 3885 3Q3841 12 3789 12Z M3841 -105Q3864 -105 3894 -110Q3925 -116 3955 -127Q3985 -138 4005 -156Q4025 -173 4025 -198V-228Q3926 -228 3863 -220Q3800 -212 3770 -196Q3740 -179 3740 -153Q3740 -133 3754 -122Q3769 -112 3792 -108Q3816 -105 3841 -105Z"/>
+            <path class="accent" d="M2518 -601V-725H2703V-601Z"/>
+          </g>
+        </svg>
+        <p class="footer-tag">Terraform for software factories.</p>
+      </div>
+      <nav aria-labelledby="f-learn">
+        <h2 id="f-learn">Learn</h2>
+        <ul>
+          <li><a href="https://github.com/staltz/fabrica/blob/main/manual/getting-started.md">Getting started</a></li>
+          <li><a href="https://github.com/staltz/fabrica/blob/main/manual/concepts.md">Concepts</a></li>
+          <li><a href="https://github.com/staltz/fabrica/blob/main/manual/blueprints.md">Writing a blueprint</a></li>
+          <li><a href="https://github.com/staltz/fabrica/blob/main/manual/cli.md">CLI reference</a></li>
+        </ul>
+      </nav>
+      <nav aria-labelledby="f-project">
+        <h2 id="f-project">Project</h2>
+        <ul>
+          <li><a href="https://github.com/staltz/fabrica">GitHub</a></li>
+          <li><a href="https://github.com/staltz/fabrica/issues">Issues</a></li>
+          <li><a href="https://github.com/staltz/fabrica/releases">Releases</a></li>
+          <li><a href="https://github.com/staltz/fabrica/blob/main/LICENSE">License</a></li>
+        </ul>
+      </nav>
+      <nav aria-labelledby="f-examples">
+        <h2 id="f-examples">Examples</h2>
+        <ul>
+          <li><a href="https://github.com/staltz/fabrica/tree/main/examples/starter-blueprint">Starter blueprint</a></li>
+          <li><a href="https://github.com/staltz/fabrica/tree/main/examples/home">Home repo</a></li>
+          <li><a href="https://github.com/staltz/fabrica-blueprint-refactor">Refactor blueprint</a></li>
+          <li><a href="https://github.com/staltz/fabrica/tree/main/examples/custom-provider">Custom provider</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="footer-base">
+      <p>MIT licensed. Issues are welcome, pull requests aren’t.</p>
+      <p>© 2026 Andre ‘Staltz’ Medeiros</p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

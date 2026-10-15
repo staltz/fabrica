@@ -346,7 +346,7 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 }
 
 // remoteServerDocs explains how to run a Fabrica server.
-const remoteServerDocs = "https://github.com/staltz/fabrica/blob/main/docs/mcp-server.md#running-the-remote-server"
+const remoteServerDocs = "https://github.com/staltz/fabrica/blob/main/manual/mcp-server.md#running-the-remote-server"
 
 // missingServerHint says, step by step, how to fix a cloud factory
 // without server:.

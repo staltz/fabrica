@@ -162,7 +162,7 @@ func TestIDsSortByTime(t *testing.T) {
 	}
 }
 
-// TestDocQueries runs the queries from docs/run-history.md, so the docs
+// TestDocQueries runs the queries from manual/run-history.md, so the docs
 // can't drift from the schema.
 func TestDocQueries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.db")

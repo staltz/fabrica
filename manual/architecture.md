@@ -74,6 +74,6 @@ Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf
 
 **Letting a runtime start init sessions:** implement `provider.Launcher` (one call, `Launch`, which must never start a second session for a `Session.ID` it already started), register its constructor in `builtinLaunchers` (failing when it can't run, like without credentials or its command line), and add `api` to `launch_modes` in its `provider.yaml`. For a person to start them instead, add a `launch.md` and `handoff` to `launch_modes`. The planner picks the runtime, and apply records the attempt and calls the launcher. `cursor_launch.go` and `claude_launch.go` are the examples.
 
-**Changing the run-history schema:** bump `runs.SchemaVersion`, add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `docs/run-history.md`. The schema is a public interface.
+**Changing the run-history schema:** bump `runs.SchemaVersion`, add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `manual/run-history.md`. The schema is a public interface.
 
 **Changing the Fabrica line:** add the new sentence to the front of `fabline.accepted` and keep every old one. Converted repos must never break on upgrade.

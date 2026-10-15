@@ -16,7 +16,7 @@ import (
 	"github.com/staltz/fabrica/internal/scaffold"
 )
 
-const gettingStartedURL = "https://github.com/staltz/fabrica/blob/main/docs/getting-started.md"
+const gettingStartedURL = "https://github.com/staltz/fabrica/blob/main/manual/getting-started.md"
 
 func newNew() *cobra.Command {
 	var empty, noGit bool

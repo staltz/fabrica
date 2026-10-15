@@ -22,4 +22,4 @@ Run `fabrica check` after every change. It's strict on purpose: it catches typos
 
 Most changes take effect as soon as they're merged: factories that follow a branch pick them up on their next run, with no re-apply. Changing a routine's trigger or connectors is the exception, and needs `fabrica apply` in each home repo that uses it.
 
-To use this blueprint, add a factory for it to a home repo, then run `fabrica plan` and `fabrica apply` there. [Getting started](https://github.com/staltz/fabrica/blob/main/docs/getting-started.md) walks through it, and [Writing a blueprint](https://github.com/staltz/fabrica/blob/main/docs/blueprints.md) has the full format.
+To use this blueprint, add a factory for it to a home repo, then run `fabrica plan` and `fabrica apply` there. [Getting started](https://github.com/staltz/fabrica/blob/main/manual/getting-started.md) walks through it, and [Writing a blueprint](https://github.com/staltz/fabrica/blob/main/manual/blueprints.md) has the full format.

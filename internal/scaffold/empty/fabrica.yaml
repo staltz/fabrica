@@ -1,6 +1,6 @@
 # The manifest of this Fabrica blueprint. Every key is optional, and an empty
 # file is a valid blueprint. The full format is described at
-# https://github.com/staltz/fabrica/blob/main/docs/blueprints.md
+# https://github.com/staltz/fabrica/blob/main/manual/blueprints.md
 
 # What this blueprint is for, in a sentence or two.
 # description: How we build software at Acme.

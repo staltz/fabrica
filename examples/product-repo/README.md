@@ -24,4 +24,4 @@ fabrica check . --blueprint ../starter-blueprint
 
 The `.` matters here. Without a folder, `fabrica check` checks the whole git repo you're in, and this example lives inside the Fabrica repo. In a real product repo, `fabrica check` with no folder is what you want.
 
-See [docs/product-repos.md](../../docs/product-repos.md) for the details.
+See [manual/product-repos.md](../../manual/product-repos.md) for the details.

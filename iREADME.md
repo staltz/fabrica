@@ -66,7 +66,7 @@ Then:
 
 From then on, agents in those tools load your blueprint live over MCP. Even skills will be loaded live over MCP (one day we'll use [Skills Over MCP](https://modelcontextprotocol.io/community/working-groups/skills-over-mcp)). Fabrica never copies blueprint content into your tools or your product repos. For a routine like "review every new PR", it installs a tiny **stub** that basically says "load your instructions from Fabrica". So when you change a routine's instructions, skills or rules and merge that to git, the next run picks it up. No re-deploy needed.
 
-A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to refactor the product repo before feature development. See [Init routines](docs/blueprints.md#init-routines).
+A blueprint can also have an **init routine**, a one-off session that runs when `fabrica apply` creates a factory: say, to refactor the product repo before feature development. See [Init routines](manual/blueprints.md#init-routines).
 
 ## Install
 
@@ -140,7 +140,7 @@ Before starting, load this repo's working rules from the Fabrica MCP server; if 
 
 **5. Open the repo in Claude Code or Cursor.** The agent calls `run_begin`, loads your rules with `rules_get`, and loads skills as it needs them. Every session gets recorded in `~/.fabrica/runs.db`.
 
-The full walkthrough, including a team setup with a cloud PR reviewer, is in [docs/getting-started.md](docs/getting-started.md).
+The full walkthrough, including a team setup with a cloud PR reviewer, is in [manual/getting-started.md](manual/getting-started.md).
 
 ## Commands
 
@@ -159,28 +159,28 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [do
 | `fabrica mcp [--http]` | Serves a blueprint over MCP: locally over stdio, or remotely over HTTP. |
 | `fabrica -u` | Updates Fabrica itself to the latest release. |
 
-Every command has `--help`. The full reference is in [docs/cli.md](docs/cli.md).
+Every command has `--help`. The full reference is in [manual/cli.md](manual/cli.md).
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md): a hands-on tutorial, solo and team.
-- [Concepts](docs/concepts.md): blueprints, home repos, stubs, shapes and runs, explained.
-- [Writing a blueprint](docs/blueprints.md): the blueprint format in full (skills, routines, init routines, rules, connectors, imports, expects).
-- [Home repos](docs/home-repos.md): factories, state, the apply lock, handoffs and CI.
-- [Product repos](docs/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
-- [The MCP server](docs/mcp-server.md): the tools agents use, and how to run the remote server.
-- [Providers](docs/providers.md): what each runtime supports, and how to write your own provider.
-- [Credentials](docs/auth.md): what `apply` needs access to, and how `fabrica auth` sets it up and keeps it safe.
-- [Run history](docs/run-history.md): the SQLite schema and some handy queries.
-- [Safety checks](docs/safety-checks.md): every way Fabrica fails closed, and where it catches each problem.
-- [CLI reference](docs/cli.md): every command and flag.
-- [Architecture](docs/architecture.md): how the code is organized, for contributors.
+- [Getting started](manual/getting-started.md): a hands-on tutorial, solo and team.
+- [Concepts](manual/concepts.md): blueprints, home repos, stubs, shapes and runs, explained.
+- [Writing a blueprint](manual/blueprints.md): the blueprint format in full (skills, routines, init routines, rules, connectors, imports, expects).
+- [Home repos](manual/home-repos.md): factories, state, the apply lock, handoffs and CI.
+- [Product repos](manual/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
+- [The MCP server](manual/mcp-server.md): the tools agents use, and how to run the remote server.
+- [Providers](manual/providers.md): what each runtime supports, and how to write your own provider.
+- [Credentials](manual/auth.md): what `apply` needs access to, and how `fabrica auth` sets it up and keeps it safe.
+- [Run history](manual/run-history.md): the SQLite schema and some handy queries.
+- [Safety checks](manual/safety-checks.md): every way Fabrica fails closed, and where it catches each problem.
+- [CLI reference](manual/cli.md): every command and flag.
+- [Architecture](manual/architecture.md): how the code is organized, for contributors.
 
 Examples live in [examples/](examples/): a [starter blueprint](examples/starter-blueprint/), a [home repo](examples/home/), a [product repo](examples/product-repo/) and a [custom provider](examples/custom-provider/).
 
 ## Limitations
 
-- **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [docs/providers.md](docs/providers.md).
+- **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [manual/providers.md](manual/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
 

@@ -22,11 +22,11 @@ blueprint/
 
 **`handoff.md`** is a template for step-by-step instructions, used when a provider has no API (or as a fallback, since `apply_modes` lists `handoff` after `api`).
 
-The full reference is in [docs/providers.md](../../docs/providers.md).
+The full reference is in [manual/providers.md](../../manual/providers.md).
 
 ## Try it
 
-You'll need `python3` and a product repo you can point at. Push the `blueprint/` folder to a git repo of its own (say `github.com/you/acme-blueprint`). Make sure your product repo has the [Fabrica line](../../docs/product-repos.md#the-fabrica-line) at the top of its `AGENTS.md`. Then, in a home repo:
+You'll need `python3` and a product repo you can point at. Push the `blueprint/` folder to a git repo of its own (say `github.com/you/acme-blueprint`). Make sure your product repo has the [Fabrica line](../../manual/product-repos.md#the-fabrica-line) at the top of its `AGENTS.md`. Then, in a home repo:
 
 ```yaml
 # factories/triage.yaml

@@ -22,4 +22,4 @@ The workflow applies after every merge and plans every night. If you'd rather ap
 
 Handoffs (for runtimes without an API, which is all the built-in cloud ones in v0.1) contain the factory's token, so the workflow keeps them as a short-lived build artifact instead of committing them. Someone downloads them, follows them, and runs `fabrica confirm` from a checkout of this repo.
 
-See [docs/home-repos.md](../../docs/home-repos.md) for everything about factories, state and the apply lock.
+See [manual/home-repos.md](../../manual/home-repos.md) for everything about factories, state and the apply lock.

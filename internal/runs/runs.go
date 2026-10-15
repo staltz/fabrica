@@ -35,7 +35,7 @@ import (
 const SchemaVersion = 2
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
-// see docs/run-history.md.
+// see manual/run-history.md.
 const Schema = schemaV1 + schemaV2
 
 // migrations[i] takes a database from schema version i to i+1.

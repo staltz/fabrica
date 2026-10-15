@@ -10,4 +10,4 @@ Each folder here is a small, working example of one part of Fabrica. They're all
 | [product-repo](product-repo/) | What a product repo needs: the Fabrica line at the top of `AGENTS.md` and `CLAUDE.md`, product knowledge below it, and its own `test` skill. |
 | [custom-provider](custom-provider/) | A blueprint that ships its own provider for a runtime Fabrica doesn't know, with a working `api` program in Python. |
 
-New to Fabrica? Start with [docs/getting-started.md](../docs/getting-started.md), which uses these examples.
+New to Fabrica? Start with [manual/getting-started.md](../manual/getting-started.md), which uses these examples.

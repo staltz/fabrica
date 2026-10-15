@@ -48,7 +48,7 @@
       <div class="hero-copy">
         <h1 id="hero-title" class="display-xl">Build the <span class="pencil">builder<svg viewBox="0 0 240 24" preserveAspectRatio="none" aria-hidden="true"><path d="M3 14 C 50 10, 104 9, 156 10.5 S 220 12.5, 237 10" stroke-width="3.2"/><path d="M10 17 C 64 13.5, 128 12.5, 184 13.5 S 226 15.5, 234 14" stroke-width="1.6" opacity=".8"/><path d="M20 11.5 C 80 9, 140 8.5, 200 9.5" stroke-width="1" opacity=".55"/></svg></span>.</h1>
         <div class="hero-sub">
-          <p class="lead"><strong>Fabrica is a software factory framework. Think of it as terraform for factories.</strong> Write down how your AI agents build software once, in a git repo. Then run that same setup in Claude Code, Cursor, Codex and GitHub&nbsp;Copilot.</p>
+          <p class="lead"><strong>Fabrica is a software factory framework.</strong> Think of it as terraform for factories. Your skills, loops, and rules are infrastructure, but they are scattered and not versioned. Fabrica is here to&nbsp;help.</p>
           <div class="actions">
             <a class="btn btn--primary" href="#get-started">Get started</a>
             <a class="btn" href="https://github.com/staltz/fabrica">View on GitHub</a>
@@ -94,7 +94,7 @@
   <section class="section" aria-labelledby="problem-title">
     <div class="wrap split">
       <div class="split-head">
-        <h2 id="problem-title" class="display-l">Your agent setup is scattered.</h2>
+        <h2 id="problem-title" class="display-l">Your agent setup was scattered</h2>
         <p class="lead">If your team uses AI coding agents, your “how we work” knowledge ends up all over the place.</p>
       </div>
       <div>
@@ -102,7 +102,7 @@
           <li><span class="n" aria-hidden="true">1</span><span>The same skills get copied into every repo’s <strong>.claude/skills</strong> folder.</span></li>
           <li><span class="n" aria-hidden="true">2</span><span><strong>AGENTS.md</strong> mixes how this app works with how you write code in general.</span></li>
           <li><span class="n" aria-hidden="true">3</span><span>A PR-review bot gets set up by hand in three tools, and the three slowly drift apart.</span></li>
-          <li><span class="n" aria-hidden="true">4</span><span>Nobody knows what the agents actually did last week.</span></li>
+          <li><span class="n" aria-hidden="true">4</span><span>There’s no centralized observability for agents and loops.</span></li>
         </ul>
         <p class="after">So when you improve your process, you update it everywhere by hand. And when you switch tools, you start over.</p>
       </div>
@@ -112,84 +112,60 @@
   <section class="section" id="how-it-works" aria-labelledby="how-title">
     <div class="wrap">
       <div class="section-head">
-        <h2 id="how-title" class="display-l">Your process gets its own repo.</h2>
-        <p class="lead">Your product repo versions your code. A blueprint versions how that code gets built. A home repo says which blueprint runs where.</p>
+        <h2 id="how-title" class="display-l">Now it gets configured and provisioned</h2>
+        <p class="lead">Your product repo versions your code. A blueprint versions your software factory setup.</p>
       </div>
 
       <div class="drafting">
         <div class="factory">
+          <div class="group"><span class="group-label">Fabrica</span></div>
           <article class="node node--home">
             <h3 class="title">Home repo</h3>
-            <p>Your factories. Each one says: run this blueprint, on these targets, in these tools.</p>
+            <p>Define your factories: point blueprints to target product repos.</p>
           </article>
+          <div class="wire wire--diag" aria-hidden="true"></div>
           <div class="branch">
-            <div class="wire wire--blueprint"><span class="wire-label">this blueprint</span></div>
+            <div class="wire wire--blueprint" aria-hidden="true"></div>
             <article class="node node--blueprint">
-              <h3 class="title">Blueprint repo</h3>
-              <p>Skills, routines, rules and connectors. Your process, and nothing about any one app.</p>
+              <h3 class="title">Blueprint</h3>
+              <p>Generic skills, rules, routines, and their connectors.</p>
             </article>
           </div>
           <div class="branch">
-            <div class="wire wire--product"><span class="wire-label">these targets</span></div>
-            <article class="node node--product">
-              <h3 class="title">Product repos</h3>
-              <p>Your code. The only Fabrica thing in it is one line at the top of <strong>AGENTS.md</strong>.</p>
+            <div class="wire wire--mcp" aria-hidden="true"></div>
+            <article class="node node--mcp">
+              <h3 class="title">Fabrica MCP</h3>
+              <p>Serves your factory’s rules and skills.</p>
             </article>
-          </div>
-          <div class="branch">
-            <div class="wire wire--tools"><span class="wire-label">these tools</span></div>
-            <article class="node node--tools">
-              <h3 class="title">Your AI coding tools</h3>
-              <ul class="chips" aria-label="Supported runtimes">
-                <li class="chip">Claude Code</li>
-                <li class="chip">Cursor</li>
-                <li class="chip">Codex</li>
-                <li class="chip">GitHub Copilot</li>
-                <li class="chip chip--quiet">Your own provider</li>
-              </ul>
-            </article>
+            <div class="branch">
+              <div class="wire wire--agents" aria-hidden="true"></div>
+              <article class="node node--agents">
+                <h3 class="title">Agents and Loops</h3>
+                <p>Scheduled tasks in Claude Code, Cursor, and others.</p>
+              </article>
+              <div class="branch">
+                <div class="wire wire--act" aria-hidden="true"></div>
+                <article class="node node--product">
+                  <h3 class="title">Product repos</h3>
+                  <p>Your actual software code.</p>
+                </article>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="caption">
-        <h3 class="heading">Live, over MCP.</h3>
-        <p>Agents in those tools load your blueprint live, over MCP. Fabrica never copies it into your tools or your repos. A routine gets a tiny stub that says where its instructions live, so when you merge a change, the next run picks it up. No redeploy.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" aria-labelledby="principles-title">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 id="principles-title" class="display-l">Built like infrastructure.</h2>
-        <p class="lead">Plan before you apply. Keep state in git. Fail closed, and say why.</p>
-      </div>
-      <div class="grid3">
-        <article class="principle">
-          <h3 class="title">Change it once</h3>
-          <p>Merge a change to a skill, rule or routine, and the next run in every tool picks it up.</p>
-        </article>
-        <article class="principle">
-          <h3 class="title">Rules agents can’t rewrite</h3>
-          <p>Generic skills and rules live outside your product repos, where an agent can’t quietly change them.</p>
-        </article>
-        <article class="principle">
-          <h3 class="title">One routine, every tool</h3>
-          <p>Write “review every new pull request” once. Each runtime’s provider turns it into a Claude routine, a Cursor automation or a local hook.</p>
-        </article>
-        <article class="principle">
-          <h3 class="title">Composable blueprints</h3>
-          <p>Import other blueprints and skills repos, pinned to exact commits in <strong>fabrica.lock</strong>.</p>
-        </article>
-        <article class="principle">
-          <h3 class="title">Every run on record</h3>
-          <p>Each session lands in a SQLite database: what was asked, which routine ran, and how it went.</p>
-        </article>
-        <article class="principle">
-          <h3 class="title">Strict by default</h3>
-          <p>A mistyped key stops <strong>fabrica check</strong> instead of being ignored. Plan shows every change before apply makes it.</p>
-        </article>
+      <div class="compose">
+        <div class="nest nest--outer" aria-hidden="true">
+          <span class="nest-name">my-blueprint</span>
+          <div class="nest"><span class="nest-name">refactor</span><span class="nest-from">github.com/staltz/fabrica-blueprint-refactor</span></div>
+          <div class="nest"><span class="nest-name">mattpocock-factory-skills</span><span class="nest-from">github.com/mattpocock/skills</span></div>
+          <div class="nest nest--add">+</div>
+        </div>
+        <div class="compose-text">
+          <h3 class="compose-title">Composable software factories</h3>
+          <p class="compose-copy"><strong>Import blueprints inside larger blueprints.</strong> Build your software factory with reusable software factory fragments.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -197,8 +173,8 @@
   <section class="section" id="get-started" aria-labelledby="start-title">
     <div class="wrap">
       <div class="section-head section-head--split">
-        <h2 id="start-title" class="display-l">Plan. Apply. Walk away.</h2>
-        <p class="lead">Fabrica is a single static binary. You also need git. Then it’s four steps.</p>
+        <h2 id="start-title" class="display-l">Install</h2>
+        <p class="lead">Fabrica is a single static binary</p>
       </div>
       <div class="install">
         <figure class="code code--install">
@@ -285,6 +261,13 @@ targets: ["*"]</code></pre>
     </div>
   </section>
 
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap cta-inner">
+      <h2 id="cta-title" class="cta-title">Learn more</h2>
+      <a class="btn btn--primary btn--lg" href="https://github.com/staltz/fabrica/blob/main/manual/getting-started.md">Read the manual <span class="arrow" aria-hidden="true">→</span></a>
+    </div>
+  </section>
+
 </main>
 
 <footer class="site-footer">
@@ -300,7 +283,7 @@ targets: ["*"]</code></pre>
             <path class="accent" d="M2518 -601V-725H2703V-601Z"/>
           </g>
         </svg>
-        <p class="footer-tag">A software factory framework. Think of it as terraform for factories.</p>
+        <p class="footer-tag">A software factory framework.</p>
       </div>
       <nav aria-labelledby="f-learn">
         <h2 id="f-learn">Learn</h2>
@@ -316,9 +299,7 @@ targets: ["*"]</code></pre>
         <ul>
           <li><a href="https://github.com/staltz/fabrica">GitHub</a></li>
           <li><a href="https://github.com/staltz/fabrica/issues">Issues</a></li>
-          <li><a href="https://github.com/staltz/fabrica/releases">Releases</a></li>
-          <li><a href="https://github.com/staltz/fabrica/blob/main/LICENSE">License</a></li>
-        </ul>
+          <li><a href="https://github.com/staltz/fabrica/releases">Releases</a></li>        </ul>
       </nav>
       <nav aria-labelledby="f-examples">
         <h2 id="f-examples">Examples</h2>
@@ -331,7 +312,7 @@ targets: ["*"]</code></pre>
       </nav>
     </div>
     <div class="footer-base">
-      <p>MIT licensed. Issues are welcome, pull requests aren’t.</p>
+      <p>MIT licensed</p>
       <p>© 2026 Andre ‘Staltz’ Medeiros</p>
     </div>
   </div>

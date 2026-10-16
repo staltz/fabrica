@@ -202,11 +202,141 @@ func routineText(snap *Snapshot, r *blueprint.Routine, run *runs.Run, repo, runt
 	b.WriteString(memoryText(r, eval, mem))
 
 	b.WriteString("\n## Instructions\n\n")
-	b.WriteString(blueprint.RenderParams(r.Prompt, values))
+	// The prompt is the routine author's own Markdown, so its headings have
+	// to move down until they sit under this one. A "# Steps" left as-is
+	// would become a sibling of the routine title, above Instructions.
+	b.WriteString(nestHeadings(blueprint.RenderParams(r.Prompt, values), 2))
 	b.WriteString("\n\n")
 	b.WriteString(strings.Replace(rulesText(f), "# Working rules", "## Working rules", 1))
 	b.WriteString("\nWhen you're done, call run_report with status succeeded or failed.\n")
 	return b.String()
+}
+
+// nestHeadings shifts the ATX headings in text so they sit under a heading
+// of parentLevel. The shallowest heading becomes one level deeper than
+// that, and the others keep their distance from it. Headings inside fenced
+// code blocks stay put. Markdown stops at level 6, so a heading that would
+// pass that stays at 6. Text whose headings are already deeper than
+// parentLevel is returned as it is.
+func nestHeadings(text string, parentLevel int) string {
+	if text == "" || parentLevel < 1 || parentLevel >= 6 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	levels := make([]int, len(lines))
+	minLevel := 0
+	var fence fenceState
+	for i, line := range lines {
+		if fence.consume(line) {
+			continue
+		}
+		level := atxLevel(line)
+		levels[i] = level
+		if level > 0 && (minLevel == 0 || level < minLevel) {
+			minLevel = level
+		}
+	}
+	if minLevel == 0 {
+		return text
+	}
+	shift := parentLevel + 1 - minLevel
+	if shift <= 0 {
+		return text
+	}
+	for i, level := range levels {
+		if level == 0 {
+			continue
+		}
+		lines[i] = shiftATX(lines[i], level, shift)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// fenceState tracks an open Markdown fence (``` or ~~~) so headings inside
+// it are left alone.
+type fenceState struct {
+	char byte
+	n    int
+}
+
+// consume reports whether line is inside a fence, including the line that
+// opens or closes it. A backtick fence whose info string contains a
+// backtick is not a fence, matching CommonMark.
+func (f *fenceState) consume(line string) bool {
+	char, n, rest, ok := fenceMarker(line)
+	if f.n == 0 {
+		if !ok || (char == '`' && strings.ContainsRune(rest, '`')) {
+			return false
+		}
+		f.char, f.n = char, n
+		return true
+	}
+	if ok && char == f.char && n >= f.n && strings.TrimSpace(rest) == "" {
+		f.char, f.n = 0, 0
+	}
+	return true
+}
+
+// fenceMarker parses a fence delimiter: up to three leading spaces, then
+// three or more ` or ~. rest is whatever follows the marker.
+func fenceMarker(line string) (char byte, n int, rest string, ok bool) {
+	i := 0
+	for i < len(line) && i < 3 && line[i] == ' ' {
+		i++
+	}
+	if i >= len(line) {
+		return 0, 0, "", false
+	}
+	char = line[i]
+	if char != '`' && char != '~' {
+		return 0, 0, "", false
+	}
+	j := i
+	for j < len(line) && line[j] == char {
+		j++
+	}
+	if j-i < 3 {
+		return 0, 0, "", false
+	}
+	return char, j - i, line[j:], true
+}
+
+// atxLevel is the heading level of an ATX heading (1–6), or 0 when line
+// is not one. Up to three leading spaces are allowed, and the hashes must
+// be followed by a space or the end of the line.
+func atxLevel(line string) int {
+	i := 0
+	for i < len(line) && i < 3 && line[i] == ' ' {
+		i++
+	}
+	if i >= len(line) || line[i] != '#' {
+		return 0
+	}
+	j := i
+	for j < len(line) && line[j] == '#' {
+		j++
+	}
+	n := j - i
+	if n < 1 || n > 6 {
+		return 0
+	}
+	if j < len(line) && line[j] != ' ' {
+		return 0
+	}
+	return n
+}
+
+// shiftATX adds shift hashes to an ATX heading, stopping at level 6.
+func shiftATX(line string, level, shift int) string {
+	i := 0
+	for i < len(line) && line[i] == ' ' {
+		i++
+	}
+	newLevel := level + shift
+	if newLevel > 6 {
+		newLevel = 6
+	}
+	return line[:i] + strings.Repeat("#", newLevel) + line[i+level:]
 }
 
 // memoryCaution is the same for every memory, wherever it's kept.

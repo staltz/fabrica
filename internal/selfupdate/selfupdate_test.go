@@ -306,3 +306,37 @@ func TestChecksumFor(t *testing.T) {
 		t.Error("found a checksum for a file that isn't listed")
 	}
 }
+
+func TestUpdateLeavesAFabricaInsideAnAppAlone(t *testing.T) {
+	gh := newFakeGitHub(t, "v0.2.0", release("v0.2.0", map[string]string{
+		"fabrica-linux-arm64": "new arm64 binary",
+	}))
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	helpers := filepath.Join(dir, "Fabrica.app", "Contents", "Helpers")
+	if err := os.MkdirAll(helpers, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(helpers, "fabrica")
+	if err := os.WriteFile(exe, []byte("old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The way the app installs the CLI: a symlink in ~/.local/bin.
+	link := filepath.Join(dir, "fabrica")
+	if err := os.Symlink(exe, link); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = updater(gh, link, "0.1.0").Update(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "update the app instead") {
+		t.Fatalf("Update() error = %v, want one that says to update the app", err)
+	}
+	if got := readFile(t, exe); got != "old binary" {
+		t.Errorf("the app's fabrica was replaced: %q", got)
+	}
+	if gh.downloaded("fabrica-linux-arm64") {
+		t.Error("it downloaded the binary anyway")
+	}
+}

@@ -65,6 +65,9 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 		return res, fmt.Errorf("couldn't find the fabrica binary: %w", err)
 	}
 	res.Path = exe
+	if app, ok := insideApp(exe); ok {
+		return res, fmt.Errorf("this fabrica came with %s, which keeps it up to date: update the app instead", app)
+	}
 
 	tag, err := u.latestTag(ctx)
 	if err != nil {
@@ -92,6 +95,17 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 	}
 	res.Updated = true
 	return res, nil
+}
+
+// insideApp reports whether exe is inside a macOS app bundle, like the
+// fabrica that comes with Fabrica.app. Replacing it would break the app's
+// code signature, and the app would put its own back anyway.
+func insideApp(exe string) (string, bool) {
+	i := strings.Index(exe, ".app/Contents/")
+	if i < 0 {
+		return "", false
+	}
+	return exe[:i+len(".app")], true
 }
 
 // latestTag asks GitHub which tag the latest release has. GitHub answers

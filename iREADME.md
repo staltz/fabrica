@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img alt="Fabrica" src="docs/assets/logo.png" width="440">
+  </picture>
+</p>
+
 # Fabrica
 
 > terraform for software factories

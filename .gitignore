@@ -11,3 +11,7 @@ runs.db-*
 .DS_Store
 .idea/
 .vscode/
+
+# Swift build output
+/macos/.build/
+/macos/.swiftpm/

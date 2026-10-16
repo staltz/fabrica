@@ -32,3 +32,18 @@ jobs:
           go build -o fabrica ./cmd/fabrica
           ./fabrica check examples/starter-blueprint
           ./fabrica check examples/custom-provider/blueprint
+
+  # Fabrica.app: its tests, and a full build of the bundle with the CLI inside.
+  app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: swift test --package-path macos
+      - name: Build Fabrica.app
+        run: macos/build.sh

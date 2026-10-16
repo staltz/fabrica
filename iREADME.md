@@ -85,6 +85,15 @@ curl -fsSL https://raw.githubusercontent.com/staltz/fabrica/main/install.sh | ba
 
 That puts `fabrica` in `~/.local/bin` (set `FABRICA_INSTALL_DIR` to change it). You also need `git`, since Fabrica runs it to read blueprints and to commit state. Later, `fabrica -u` updates it to the latest release.
 
+On a Mac, you can use **Fabrica.app** instead: a menu bar app that installs the CLI too, edits your factories with forms, runs plan and apply, starts and stops a local Fabrica server, and shows your run history. Download [Fabrica-macos.zip](https://github.com/staltz/fabrica/releases/latest/download/Fabrica-macos.zip) from the latest release, unzip it, and move Fabrica.app to Applications. See [macos/](macos/README.md).
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/fabrica-app-dark.png">
+    <img src="docs/assets/fabrica-app-light.png" alt="Fabrica.app showing a factory: its blueprint, the tools it runs in, and its repos" width="780">
+  </picture>
+</p>
+
 Prefer building from source? You'll need Go 1.26 or newer:
 
 ```sh
@@ -108,6 +117,7 @@ git add . && git commit -m "My blueprint"
 > Optionally, you can use ready-made blueprints from the community. You can even *compose* them together, smaller blueprints into larger ones!
 >
 > - ⭐️ https://github.com/staltz/fabrica-blueprint-refactor
+> - ⭐️ https://github.com/staltz/fabrica-blueprint-instant-factory
 >
 > You can even import good-old skills repositories into a blueprint!
 > ```

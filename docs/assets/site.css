@@ -46,6 +46,8 @@
   --term-muted: #9d978c;
   --term-rule: #34312d;
   --term-add: #6fd39a;
+  --term-upd: #e6be6a;
+  --term-del: #f08f7f;
   --shadow-slab: 4px 4px 0 #1b1a18;
 
   --font-display: "Archivo Expanded", "Archivo", "Helvetica Neue", Arial, sans-serif;
@@ -269,8 +271,8 @@ a { color: inherit; }
   transition: opacity 360ms linear, transform 360ms var(--ease);
 }
 .note svg { width: 64px; height: 28px; fill: none; stroke: var(--graphite); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
-.note--plan { top: 214px; }
-.note--apply { top: 372px; }
+.note--move { top: 214px; }
+.note--plan { top: 303px; }
 .js .notes.is-waiting .note { opacity: 0; transform: translateX(-6px); }
 .js .notes.is-waiting .note.on { opacity: 1; transform: none; }
 @media (max-width: 1180px) { .notes { display: none; } }
@@ -306,6 +308,8 @@ a { color: inherit; }
 .term-body .gap { margin-top: var(--space-3); }
 .term-body .p { color: var(--term-ink); }
 .term-body .add, .term-body .ok { color: var(--term-add); }
+.term-body .upd { color: var(--term-upd); }
+.term-body .del { color: var(--term-del); }
 .js .term.is-playing .l { visibility: hidden; }
 .js .term.is-playing .l.on { visibility: visible; }
 
@@ -368,8 +372,11 @@ a { color: inherit; }
   --gap-col: 132px;
   --gap-row: 96px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--gap-col) minmax(0, 1fr) var(--gap-col) minmax(0, 1fr);
-  grid-template-rows: auto var(--gap-row) auto;
+  --node-width: 320px;
+  grid-template-columns: minmax(0, var(--node-width)) var(--gap-col) minmax(0, var(--node-width));
+  /* 1.2 times the height the boxes' content needs on each row */
+  grid-template-rows: minmax(162px, auto) var(--gap-row) minmax(133px, auto);
+  justify-content: center;
   align-items: stretch;
 }
 .factory .branch { display: contents; }
@@ -398,12 +405,10 @@ a { color: inherit; }
   border-top: var(--stroke-beam) solid var(--graphite);
   border-radius: 0 0 var(--radius-2) var(--radius-2);
 }
-.node p { font-size: 16px; line-height: 24px; text-wrap: pretty; }
-.node--home { grid-column: 3; grid-row: 1; border-top-color: var(--hivis); box-shadow: var(--shadow-slab); }
-.node--blueprint { grid-column: 1; grid-row: 1; border-top-color: var(--hivis); }
-.node--mcp { grid-column: 5; grid-row: 1; border-top-color: var(--hivis); }
-.node--product { grid-column: 3; grid-row: 3; }
-.node--agents { grid-column: 5; grid-row: 3; }
+.node p { font-size: 16px; line-height: 24px; text-wrap: pretty; }.node--blueprint { grid-column: 1; grid-row: 1; border-top-color: var(--hivis); }
+.node--mcp { grid-column: 3; grid-row: 1; border-top-color: var(--hivis); }
+.node--product { grid-column: 1; grid-row: 3; }
+.node--agents { grid-column: 3; grid-row: 3; }
 
 .wire { position: relative; }
 .wire::before { content: ""; position: absolute; background: var(--graphite); }
@@ -412,67 +417,24 @@ a { color: inherit; }
   border-top: var(--stroke-pencil) solid var(--graphite);
   border-right: var(--stroke-pencil) solid var(--graphite);
 }
-/* Horizontal wires point right, except the one from the agents, which points left into the product repos */
-.wire--blueprint { grid-column: 2; grid-row: 1; }
-.wire--mcp { grid-column: 4; grid-row: 1; }
-.wire--act { grid-column: 4; grid-row: 3; }
-.wire--blueprint::before, .wire--mcp::before, .wire--act::before { left: 6px; right: 6px; top: 50%; height: var(--stroke-pencil); }
-.wire--blueprint::after, .wire--mcp::after { right: 6px; top: calc(50% - 4px); transform: rotate(45deg); }
+/* The wires run clockwise: right into the MCP server, down to the agents, left into the product repos */
+.wire--mcp { grid-column: 2; grid-row: 1; }
+.wire--act { grid-column: 2; grid-row: 3; }
+.wire--mcp::before, .wire--act::before { left: 6px; right: 6px; top: 50%; height: var(--stroke-pencil); }
+.wire--mcp::after { right: 6px; top: calc(50% - 4px); transform: rotate(45deg); }
 .wire--act::after { left: 6px; top: calc(50% - 4px); transform: rotate(-135deg); }
-/* The vertical wire points down */
-.wire--agents { grid-column: 5; grid-row: 2; }
+.wire--agents { grid-column: 3; grid-row: 2; }
 .wire--agents::before { top: 0; bottom: 6px; left: 50%; width: var(--stroke-pencil); }
 .wire--agents::after { bottom: 6px; left: calc(50% - 3.75px); transform: rotate(135deg); }
-/* The diagonal runs corner to corner across the gap, from the home repo down to the agents */
-.wire--diag {
-  --dx: calc(var(--gap-col) - 12px);
-  --dy: calc(var(--gap-row) - 12px);
-  --angle: atan2(var(--dy), var(--dx));
-  grid-column: 4; grid-row: 2;
-}
-.wire--diag::before {
-  left: 6px; top: 6px;
-  width: hypot(var(--dx), var(--dy)); height: var(--stroke-pencil);
-  transform-origin: 0 50%;
-  transform: rotate(var(--angle));
-}
-.wire--diag::after {
-  left: calc(6px + var(--dx) - 6.4px * cos(var(--angle)) - 4.5px);
-  top: calc(6px + var(--dy) - 6.4px * sin(var(--angle)) - 4.5px);
-  transform: rotate(calc(45deg + var(--angle)));
-}
 
-/* Composable blueprints: blueprints nested inside a blueprint */
+/* Composable blueprints: the title on the left, the explanation on the right */
 .compose {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: clamp(var(--space-8), 5vw, 80px);
-  align-items: center;
+  align-items: start;
   margin-top: clamp(var(--space-12), 6vw, 88px);
 }
-.nest {
-  display: grid; gap: 2px;
-  padding: var(--space-3) var(--space-4);
-  background: var(--paper-raised);
-  border: var(--stroke-pencil) solid var(--graphite);
-  border-top: var(--stroke-beam) solid var(--graphite);
-  border-radius: 0 0 var(--radius-2) var(--radius-2);
-}
-.nest-name { font-size: 15px; line-height: 20px; font-weight: 650; overflow-wrap: anywhere; }
-.nest-from { font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-.nest--outer {
-  gap: var(--space-3);
-  padding: var(--space-6);
-}
-.nest--outer > .nest-name { font-size: 20px; line-height: 26px; margin-bottom: var(--space-1); }
-.nest--add {
-  place-items: center;
-  min-height: 44px; padding: 0;
-  background: transparent;
-  border: var(--stroke-pencil) dashed var(--rule-strong);
-  font-size: 20px; line-height: 20px; font-weight: 700;
-}
-.compose-text { display: grid; gap: var(--space-4); }
 .compose-title {
   font-family: var(--font-display);
   font-weight: 800;
@@ -627,7 +589,7 @@ a { color: inherit; }
   .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footer-brand { grid-column: 1 / -1; }
 
-  /* The factory becomes a tree: home, its blueprint and MCP server, the agents the server serves, and the product repos they work on */
+  /* The factory becomes a chain: the blueprint, the MCP server that serves it, the agents it serves, and the product repos they work on */
   .factory { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
   .factory .branch {
     display: grid; gap: var(--space-3);
@@ -649,9 +611,7 @@ a { color: inherit; }
   .factory .wire::after {
     left: calc(-1 * var(--space-2) - 10px); right: auto; top: calc(50% - 4px); bottom: auto; transform: rotate(45deg);
   }
-  /* The blueprint feeds the home repo, so its arrow points back at the trunk */
-  .factory .wire--blueprint::after { left: calc(-1 * var(--space-8)); transform: rotate(-135deg); }
-  .factory .wire--diag, .factory .group { display: none; }
+  .factory .group { display: none; }
 }
 
 @media (max-width: 640px) {
@@ -671,7 +631,6 @@ a { color: inherit; }
   .step::before { font-size: 22px; line-height: 30px; }
   .factory .branch { margin-left: var(--space-4); padding-left: var(--space-6); }
   .factory .wire::before { left: calc(-1 * var(--space-6)); width: calc(var(--space-6) - var(--space-2)); }
-  .factory .wire--blueprint::after { left: calc(-1 * var(--space-6)); }
   .footer-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .actions .btn { flex: 1 1 auto; }
 }

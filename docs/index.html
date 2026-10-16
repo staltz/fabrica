@@ -64,28 +64,25 @@
             <span>~/.fabrica</span>
             <span class="term-live" aria-hidden="true"><span class="steam"><i></i><i></i><i></i></span>Live</span>
           </figcaption>
-          <div class="term-body" role="img" aria-label="fabrica plan finds two changes, adding the fabrica MCP server to Claude Code and Cursor; fabrica apply makes both.">
+          <div class="term-body" role="img" aria-label="fabrica plan finds seven changes across four routines: it updates pr-review, adds qa and vuln-search, and moves refactor from Copilot to Codex.">
             <span class="l cmd"><span class="p">$ </span>fabrica plan</span>
-            <span class="l">Factory my-default (local)</span>
-            <span class="l">  claude-code-local: api mode, skills unpacked on disk</span>
-            <span class="l">  cursor-local: api mode, skills unpacked on disk</span>
-            <span class="l gap">Local tools on this machine</span>
-            <span class="l">  claude-code-local (~/.claude.json, ~/.claude/settings.json)</span>
-            <span class="l add">    + add MCP server fabrica</span>
-            <span class="l">  cursor-local (~/.cursor/mcp.json, ~/.cursor/hooks.json)</span>
-            <span class="l add">    + add MCP server fabrica</span>
-            <span class="l gap">Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.</span>
-            <span class="l cmd gap"><span class="p">$ </span>fabrica apply</span>
-            <span class="l">Local claude-code-local: updated ~/.claude.json, ~/.claude/settings.json</span>
-            <span class="l ok">  ✓ add MCP server fabrica</span>
-            <span class="l">Local cursor-local: updated ~/.cursor/mcp.json, ~/.cursor/hooks.json</span>
-            <span class="l ok">  ✓ add MCP server fabrica</span>
+            <span class="l">Factory acme (cloud)</span>
+            <span class="l">  endpoint https://fabrica.acme.dev/acme</span>
+            <span class="l">  Changes:</span>
+            <span class="l upd">    ~ update pr-review @ github.com/acme/api on claude-code-cloud (handoff)</span>
+            <span class="l upd">    ~ update pr-review @ github.com/acme/api on cursor-cloud (api)</span>
+            <span class="l add">    + create qa @ github.com/acme/web on cursor-cloud (api)</span>
+            <span class="l add">    + create refactor @ github.com/acme/api on codex (handoff)</span>
+            <span class="l del">    - delete refactor @ github.com/acme/api on copilot-cloud (handoff)</span>
+            <span class="l add">    + create vuln-search @ github.com/acme/api on claude-code-cloud (handoff)</span>
+            <span class="l add">    + create vuln-search @ github.com/acme/web on claude-code-cloud (handoff)</span>
+            <span class="l gap">Plan: 7 changes, 0 errors. Run `fabrica apply` to make these changes.</span>
           </div>
         </figure>
         <div class="footing" aria-hidden="true"></div>
         <div class="notes" aria-hidden="true">
-          <p class="note note--plan" data-after="9"><svg viewBox="0 0 64 28"><path d="M62 15 C 46 6, 26 7, 5 14"/><path d="M13 7.5 L 4.5 14 L 13.5 19.5"/></svg><span>Plan shows what will change, and changes nothing.</span></p>
-          <p class="note note--apply" data-after="14"><svg viewBox="0 0 64 28"><path d="M62 13 C 45 21, 25 20, 5 14"/><path d="M12.5 8 L 4.5 14 L 13 20"/></svg><span>Apply makes it so. It never writes into a product repo.</span></p>
+          <p class="note note--move" data-after="8"><svg viewBox="0 0 64 28"><path d="M62 15 C 46 6, 26 7, 5 14"/><path d="M13 7.5 L 4.5 14 L 13.5 19.5"/></svg><span>Moving refactor from Copilot to Codex was a one-line change.</span></p>
+          <p class="note note--plan" data-after="11"><svg viewBox="0 0 64 28"><path d="M62 15 C 46 6, 26 7, 5 14"/><path d="M13 7.5 L 4.5 14 L 13.5 19.5"/></svg><span>Plan shows what will change, and changes nothing.</span></p>
         </div>
       </div>
     </div>
@@ -119,18 +116,10 @@
       <div class="drafting">
         <div class="factory">
           <div class="group"><span class="group-label">Fabrica</span></div>
-          <article class="node node--home">
-            <h3 class="title">Home repo</h3>
-            <p>Define your factories: point blueprints to target product repos.</p>
+          <article class="node node--blueprint">
+            <h3 class="title">Blueprint repo</h3>
+            <p>Generic skills, rules, routines, and their connectors. May import third-party blueprints too.</p>
           </article>
-          <div class="wire wire--diag" aria-hidden="true"></div>
-          <div class="branch">
-            <div class="wire wire--blueprint" aria-hidden="true"></div>
-            <article class="node node--blueprint">
-              <h3 class="title">Blueprint</h3>
-              <p>Generic skills, rules, routines, and their connectors.</p>
-            </article>
-          </div>
           <div class="branch">
             <div class="wire wire--mcp" aria-hidden="true"></div>
             <article class="node node--mcp">
@@ -146,7 +135,7 @@
               <div class="branch">
                 <div class="wire wire--act" aria-hidden="true"></div>
                 <article class="node node--product">
-                  <h3 class="title">Product repos</h3>
+                  <h3 class="title">Product repo</h3>
                   <p>Your actual software code.</p>
                 </article>
               </div>
@@ -156,16 +145,8 @@
       </div>
 
       <div class="compose">
-        <div class="nest nest--outer" aria-hidden="true">
-          <span class="nest-name">my-blueprint</span>
-          <div class="nest"><span class="nest-name">refactor</span><span class="nest-from">github.com/staltz/fabrica-blueprint-refactor</span></div>
-          <div class="nest"><span class="nest-name">mattpocock-factory-skills</span><span class="nest-from">github.com/mattpocock/skills</span></div>
-          <div class="nest nest--add">+</div>
-        </div>
-        <div class="compose-text">
-          <h3 class="compose-title">Composable software factories</h3>
-          <p class="compose-copy"><strong>Import blueprints inside larger blueprints.</strong> Build your software factory with reusable software factory fragments.</p>
-        </div>
+        <h3 class="compose-title">Composable software factories</h3>
+        <p class="compose-copy"><strong>Import blueprints inside larger blueprints.</strong> Build your software factory with reusable software factory fragments.</p>
       </div>
     </div>
   </section>

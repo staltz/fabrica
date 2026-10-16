@@ -521,6 +521,8 @@ a { color: inherit; }
 .copy.is-done .done { display: inline; }
 
 .install-note { font-size: 15px; line-height: 22px; }
+.app-shot { display: block; margin-top: var(--space-6); }
+.app-shot img { display: block; width: 100%; max-width: 780px; height: auto; border-radius: 10px; }
 
 /* The magic prompt: a sand slab */
 .slab { background: var(--sand); padding-block: var(--section); }

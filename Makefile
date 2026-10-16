@@ -5,7 +5,7 @@
 VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X github.com/staltz/fabrica/internal/cli.version=$(VERSION))
 
-.PHONY: build test race lint dist clean
+.PHONY: build test race lint dist app clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o fabrica ./cmd/fabrica
@@ -32,5 +32,9 @@ dist:
 	done
 	@cd dist && (command -v sha256sum >/dev/null && sha256sum fabrica-* || shasum -a 256 fabrica-*) > checksums.txt
 
+# Fabrica.app for macOS, with the CLI inside it, in dist/. Needs Xcode.
+app:
+	VERSION=$(VERSION) macos/build.sh
+
 clean:
-	rm -rf fabrica dist
+	rm -rf fabrica dist macos/.build

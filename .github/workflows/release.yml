@@ -2,7 +2,9 @@ name: Release
 
 # Push a tag like v0.1.0 to build static binaries for every platform and
 # publish them, with checksums, as a GitHub release. install.sh downloads
-# from these releases.
+# from these releases. A second job adds Fabrica.app for macOS, with the
+# CLI inside it, as Fabrica-macos.zip.
+
 on:
   push:
     tags: ["v*"]
@@ -28,3 +30,63 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ github.ref_name }}" dist/* --title "${{ github.ref_name }}" --generate-notes
+
+  # Fabrica.app is signed ad hoc unless the repo has these secrets, which
+  # sign it with a Developer ID and notarize it, so it opens without a
+  # Gatekeeper warning:
+  #
+  #   MACOS_CERTIFICATE           the Developer ID Application certificate, as a base64 .p12
+  #   MACOS_CERTIFICATE_PASSWORD  the .p12's password
+  #   MACOS_SIGNING_IDENTITY      like "Developer ID Application: Jane Doe (TEAMID)"
+  #   APPLE_ID, APPLE_TEAM_ID     the Apple account that notarizes
+  #   APPLE_APP_PASSWORD          an app-specific password for it
+  app:
+    needs: release
+    runs-on: macos-latest
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test the app
+        run: swift test --package-path macos
+      - name: Load the signing certificate
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 16)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/certificate.p12"
+          echo "CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+      - name: Build
+        run: make app VERSION=${{ github.ref_name }}
+      - name: Notarize
+        if: env.MACOS_CERTIFICATE != '' && env.APPLE_ID != ''
+        run: |
+          ditto -c -k --keepParent dist/Fabrica.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          xcrun stapler staple dist/Fabrica.app
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          ditto -c -k --keepParent Fabrica.app Fabrica-macos.zip
+          shasum -a 256 Fabrica-macos.zip > Fabrica-macos.zip.sha256
+          gh release upload "${{ github.ref_name }}" Fabrica-macos.zip Fabrica-macos.zip.sha256

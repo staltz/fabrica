@@ -146,6 +146,30 @@ Without names, it prints every credential the home repo needs that's set up, and
 
 On a machine where you ran `fabrica auth login`, the server can also read its secret itself: `fabrica mcp --http --url https://fabrica.acme.dev` uses the secret saved for that URL when `FABRICA_SERVER_SECRET` isn't set.
 
+## The admin token
+
+Run history is for people, not agents, so a remote server has one more token, which only people use: the **admin token**. It opens the server's [admin API](mcp-server.md#the-admin-api), where run history can be read, and nothing else. It's not a factory token, and no factory token opens the admin API. It works the same way a factory's token does, computed from the server secret:
+
+```
+admin token = "fab_admin_" + base64url(HMAC-SHA256(server secret, "_admin"))
+```
+
+Factory names can't contain an underscore, so no factory can be called `_admin`, and its token can never be the same. Because it's computed, there's nothing new to store or rotate: the server checks it with the secret it already has.
+
+Get it with `fabrica auth admin-token`:
+
+```sh
+fabrica auth admin-token https://fabrica.acme.dev
+```
+
+Fabrica finds the server secret the way `fabrica auth` does: `FABRICA_SERVER_SECRET`, or else the one `fabrica auth login` saved for that server. Then it prints the admin token, and only that, so it's easy to pipe where it goes. Without a URL it uses the only server your home repo's cloud factories use; with several, it asks you to name one.
+
+**Who to give it to.** People who should read run history: you, your teammates, whoever runs your retros. They don't need the server secret. Someone with only the admin token can read run history, but can't make factory tokens, can't change anything on the server, and can't connect to a factory as an agent. They set it in `FABRICA_ADMIN_TOKEN`, which `fabrica runs --server` reads, or send it as `Authorization: Bearer <token>` to the admin API.
+
+**Who never gets it.** Agents. Cloud runtimes only ever get their own factory's token, and the admin token must stay out of stubs, connectors, prompts and anything else a cloud agent can read. That's what keeps a prompt injection from reading what other routines did.
+
+**Rotating it.** The admin token comes from the server secret, so changing the server secret changes it too. Everyone who had the old admin token gets a `401` until you give them the new one.
+
 ## `fabrica auth logout`
 
 `fabrica auth logout` forgets saved credentials. Name a server's URL, an environment variable or a runtime:

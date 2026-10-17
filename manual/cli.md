@@ -19,6 +19,7 @@ Every command has `--help`.
 | `FABRICA_HOME` | Where your personal home repo lives. Default `~/.fabrica`. Every command creates it there if it's missing. |
 | `FABRICA_CACHE` | Fabrica's cache: git clones, unpacked commits and skills, handoff files, hook markers, and the clones and logs of init sessions started on this machine. Default `$XDG_CACHE_HOME/fabrica`, or `~/.cache/fabrica`. |
 | `FABRICA_SERVER_SECRET` | The server secret, for every server. Needed by `fabrica mcp --http`, and by `fabrica apply` for cloud factories (`fabrica destroy` only deletes, so it doesn't need it). `fabrica plan` uses it, when set, to notice rotated tokens. At least 32 characters. Without it, Fabrica uses the secret `fabrica auth login` saved for each factory's server. See [Credentials](auth.md). |
+| `FABRICA_ADMIN_TOKEN` | A server's admin token, for people who can read its run history but don't have its server secret. `fabrica runs --server` sends it to the server's admin API. Without it, Fabrica makes the admin token from the server secret, if it has one. [`fabrica auth admin-token`](#fabrica-auth-admin-token-server-url) prints it. See [Credentials](auth.md#the-admin-token). |
 | `CURSOR_API_KEY` | A Cursor API key. With it, `plan`, `apply` and `destroy` manage Cursor automations (`cursor-cloud`) through Cursor's API; without it, `cursor-cloud` uses handoffs. `CURSOR_TOKEN`, the name Cursor's Terraform provider uses, works too. Without either, Fabrica uses the key `fabrica auth login` saved. See [Cursor automations through Cursor's API](providers.md#cursor-automations-through-cursors-api). |
 | `CURSOR_ENDPOINT` | The address of Cursor's API. Default `https://api2.cursor.sh`. |
 | `FABRICA_KEYCHAIN` | Set to `off` to keep the credentials `fabrica auth login` saves in a file only you can read, `$XDG_CONFIG_HOME/fabrica/credentials.json` (or `~/.config/fabrica/`), even where there's a system keychain. |
@@ -104,6 +105,17 @@ fabrica auth env https://fabrica.acme.dev > fabrica.env
 
 Credentials that aren't set up are left out, and the ones you named are an error. A server secret comes out as `FABRICA_SERVER_SECRET`, so when factories use several servers with different secrets, name one.
 
+### `fabrica auth admin-token [server-url]`
+
+Prints a server's admin token, which lets people read its run history through the server's [admin API](mcp-server.md#the-admin-api) and nothing else. It's computed from the server secret (`FABRICA_SERVER_SECRET`, or the one `fabrica auth login` saved for that server), so rotating the secret rotates it too. Only the token is printed, so it pipes well:
+
+```sh
+fabrica auth admin-token https://fabrica.acme.dev
+fabrica auth admin-token | pbcopy
+```
+
+Without a URL, it uses the only server your home repo's cloud factories use. With several, it lists them and asks you to name one. Give the token to people who should read run history, and never to agents. They can set it as `FABRICA_ADMIN_TOKEN`. See [Credentials](auth.md#the-admin-token).
+
 ## `fabrica plan [factory…]`
 
 Shows what `apply` would do for every factory (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, how each runtime handles each trigger, connector and side effect, each runtime's apply mode, follow versus frozen, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes.
@@ -175,7 +187,7 @@ Serves a blueprint over MCP.
 | `--workspace <folder>` | Serve this folder, instead of asking the tool for its workspace. |
 | `--home <folder>` | Your personal home repo. |
 
-**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server).
+**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server). It also has a read-only [admin API](mcp-server.md#the-admin-api) for people to read run history, which takes the admin token from `fabrica auth admin-token`.
 
 | Flag | Default | What it does |
 |---|---|---|

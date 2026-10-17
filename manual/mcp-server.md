@@ -71,6 +71,7 @@ Each factory has a secret token, computed as `HMAC(server secret, factory name)`
 - A request without the right token gets a `401`. A path that isn't a factory gets a `404`, and so does a factory that was deleted from the home repo.
 - To rotate every token, change the server secret and re-apply. `fabrica auth login <server URL>` makes a new one when you press Enter, and `fabrica plan` notices rotated tokens (when it has the secret) and lists the affected stubs as updates.
 - `fabrica auth` checks that the secret you have is the server's own, by asking the server: a wrong token gets a `401`, and the right one doesn't. See [Credentials](auth.md).
+- Factory tokens only open their own factory's endpoint. Reading run history takes a different token, the admin token, which opens the [admin API](#the-admin-api) and nothing else.
 
 OAuth is planned for later.
 
@@ -118,6 +119,82 @@ The image keeps its database and git cache in `/data`.
 Put it behind HTTPS (a reverse proxy like Caddy or nginx, or your platform's load balancer) at the URL your factories use as `server:`. The server checks a token on every request, so it works fine behind a proxy that connects over localhost.
 
 The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+
+### The admin API
+
+The remote server also has a small read-only JSON API for people, to read run history. It's on the **operator plane**, the part of Fabrica that people use, and agents never reach it: no MCP tool returns run history, and no factory token opens this.
+
+| Route | What it returns |
+|---|---|
+| `GET /_admin/runs` | A page of runs, newest first |
+| `GET /_admin/runs/<run_id>` | One run in full: the same fields, plus its stub and its timeline of loads, checkpoints and friction notes |
+
+The routes are matched by the last `/_admin/` in the path, so they work under any path prefix: with `server: https://acme.dev/fabrica`, it's `https://acme.dev/fabrica/_admin/runs`. Factory names can't contain an underscore, so this can't clash with a factory's endpoint.
+
+The rules:
+
+- **The token goes in `Authorization: Bearer <admin token>`**, and nowhere else. The `/t/<token>` form that factory endpoints accept isn't allowed here, so the admin token never ends up in a proxy's logs. [`fabrica auth admin-token`](auth.md#the-admin-token) prints it.
+- **Anything that isn't the admin token gets a `401`**, with the same message every time. That includes a factory's token, even a valid one.
+- **Only `GET`.** Anything else gets a `405`.
+- **Every response says `Cache-Control: no-store`.**
+- **A bad query value gets a `400`**, with a JSON `{"error": "…"}`. An unknown run gets a `404`.
+
+`GET /_admin/runs` takes these query parameters:
+
+| Parameter | What it does | Default |
+|---|---|---|
+| `factory` | Only this factory. | all |
+| `routine` | Only this routine. `-` means interactive runs, the ones with no routine. | all |
+| `repo` | Only this repo, like `github.com/acme/app`. | all |
+| `runtime` | Only this runtime. | all |
+| `outcome` | Only these outcomes, comma-separated: `succeeded`, `failed`, `in_progress`, `stale`. | all |
+| `since` | Only runs that started since then: `7d`, `48h`, or an RFC 3339 time. | `7d` |
+| `limit` | How many runs, from 1 to 500. | `100` |
+| `before` | A `run_id`: only runs older than it. This is for paging. | none |
+
+```sh
+curl -H "Authorization: Bearer $FABRICA_ADMIN_TOKEN" \
+  "https://fabrica.acme.dev/_admin/runs?routine=pr-review&outcome=failed,stale&since=14d"
+```
+
+```json
+{
+  "schema_version": 3,
+  "runs": [
+    {
+      "run_id": "run_06gmjeps8jf8zfjjrfmydev50g",
+      "started_at": "2026-10-17T09:41:02Z",
+      "last_at": "2026-10-17T09:58:40Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 412 for the billing retry change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f142…",
+      "served_by": "remote",
+      "session": "https://claude.ai/code/session_…",
+      "last_summary": "Posted review with two blocking comments",
+      "checkpoint_count": 3,
+      "friction_count": 1,
+      "pr_links": ["https://github.com/acme/app/pull/412"]
+    }
+  ],
+  "next": "run_06gm…"
+}
+```
+
+`schema_version` is the [run-history schema](run-history.md) these fields come from. `next` is the `before` value for the next page, and it's missing on the last page, so to read every run, keep asking with `before` set to the last `next` until there isn't one. Fields that are empty (a run with no `routine`, or no `session`) are left out, except `pr_links`, which is always a list. Times are UTC, to the second.
+
+`GET /_admin/runs/<run_id>` adds `stub` (the stub fingerprint the run claimed, when it claimed one) and a `timeline`, every load, checkpoint and friction note of the run, sorted by time. A friction note has the time of the checkpoint it came with, and comes right after it:
+
+```json
+"timeline": [
+  {"at": "2026-10-17T09:41:05Z", "type": "load",       "kind": "routine", "name": "pr-review"},
+  {"at": "2026-10-17T09:47:30Z", "type": "checkpoint", "author": "agent", "status": "progress", "summary": "Read the diff and the retry tests", "links": []},
+  {"at": "2026-10-17T09:47:30Z", "type": "friction",   "kind": "navigation", "note": "couldn't find where retry backoff is configured"}
+]
+```
 
 ## Stale stubs
 

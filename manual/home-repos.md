@@ -152,7 +152,7 @@ routines: [review-before-push]   # optional local routines
 
 What happens:
 
-- **`fabrica apply` on your laptop** installs one user-level `fabrica` MCP server in each local tool, plus a hook for each local routine. It never writes into a product repo. If a local routine needs an MCP connector, that gets registered too, as `fabrica-<connector>`.
+- **`fabrica apply` on your laptop** installs one user-level `fabrica` MCP server in each local tool, plus a hook for each local routine. Tools with a session-start hook (not Cursor) also get a session pointer hook, which tells each session where its own transcript is. It never writes into a product repo. If a local routine needs an MCP connector, that gets registered too, as `fabrica-<connector>`.
 - **Choosing a blueprint needs no apply.** Each time a session starts, `fabrica mcp` reads your local factories, matches the workspace's git remote, and serves that blueprint. Change a local factory, and the next session picks it up.
 - **New machine?** Clone your home repo to `~/.fabrica` and run `fabrica apply` once. If you've already run `fabrica` there (the installer does), there's an empty home repo in the way, so remove it first with `rm -rf ~/.fabrica`.
 - **The wildcard** `targets: ["*"]` (quoted, because a bare `*` means something else in YAML) is only allowed for local runtimes, and must be the only entry. A specific repo always beats the wildcard. There can be at most one wildcard factory per runtime.

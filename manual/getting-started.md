@@ -80,10 +80,11 @@ Factory my-default (local)
 Local tools on this machine
   claude-code-local (~/.claude.json, ~/.claude/settings.json)
     + add MCP server fabrica
+    + add session pointer hook on session.start
   cursor-local (~/.cursor/mcp.json, ~/.cursor/hooks.json)
     + add MCP server fabrica
 
-Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
+Plan: 3 changes, 0 errors. Run `fabrica apply` to make these changes.
 ```
 
 `plan` never changes anything. It exits with `2` here because there are changes to make. Now apply them:
@@ -92,7 +93,7 @@ Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
 fabrica apply
 ```
 
-That adds one user-level MCP server called `fabrica` to Claude Code and Cursor. It leaves everything else in those config files alone, and it never writes into a product repo.
+That adds one user-level MCP server called `fabrica` to Claude Code and Cursor, and a small session hook to Claude Code that tells each session where its own transcript is (Cursor has no hook for that). It leaves everything else in those config files alone, and it never writes into a product repo.
 
 You only need to run `apply` again when the *installs* change: a new local tool, or a local routine whose trigger changed. Changing which blueprint a repo uses never needs an apply, because `fabrica mcp` works that out fresh every time a session starts.
 

@@ -49,6 +49,9 @@ type Filter struct {
 	// Factory, Routine, Repo and Runtime each limit the runs to those with
 	// that value. Empty means any. Routine "-" means interactive runs.
 	Factory, Routine, Repo, Runtime string
+	// RoutinesOnly leaves out interactive runs, so only routine firings are
+	// left. It has no effect when Routine is set.
+	RoutinesOnly bool
 	// Outcomes limits the runs to those with one of these outcomes.
 	Outcomes []string
 	// Since limits the runs to those that started at or after it. The zero
@@ -256,6 +259,9 @@ func (f Filter) where() (string, []any) {
 	}
 	switch f.Routine {
 	case "":
+		if f.RoutinesOnly {
+			add("routine IS NOT NULL")
+		}
 	case InteractiveRoutine:
 		add("routine IS NULL")
 	default:

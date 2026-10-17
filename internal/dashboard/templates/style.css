@@ -1,0 +1,191 @@
+/* The dashboard's whole stylesheet. It follows the system's light or dark
+   mode, and the colors come in as variables so each mode sets them once. */
+:root {
+  color-scheme: light dark;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --wash: rgba(11, 11, 11, 0.06);
+  --link: #1c5cab;
+  --accent: #2a78d6;
+  --accent-wash: rgba(42, 120, 214, 0.12);
+  --c-succeeded: #0ca30c;
+  --c-in_progress: #2a78d6;
+  --c-stale: #ec835a;
+  --c-failed: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --wash: rgba(255, 255, 255, 0.07);
+    --link: #6da7ec;
+    --accent: #3987e5;
+    --accent-wash: rgba(57, 135, 229, 0.18);
+    --c-in_progress: #3987e5;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px 48px; }
+a { color: var(--link); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+code { background: var(--wash); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
+h1 { font-size: 24px; line-height: 1.25; margin: 8px 0 4px; font-weight: 650; overflow-wrap: anywhere; }
+h2 { font-size: 16px; line-height: 1.3; margin: 0 0 4px; font-weight: 650; }
+h3 { font-size: 14px; margin: 16px 0 6px; font-weight: 650; }
+p { margin: 4px 0 12px; }
+.sub, .hint { color: var(--ink-2); }
+.hint { font-size: 13px; margin: 4px 0 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* header */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0 6px; }
+.brand { color: var(--ink); font-weight: 650; text-decoration: none; letter-spacing: 0.01em; }
+.brand span { color: var(--ink-2); font-weight: 400; margin-left: 6px; }
+.top form { margin: 0; }
+button.link, .btn {
+  font: inherit; color: var(--link); background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.crumbs { margin: 6px 0 0; font-size: 14px; }
+
+/* filters: one row above everything they scope */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 16px; }
+.filters .group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.filters .label { color: var(--ink-2); font-size: 13px; margin-right: 2px; }
+.chip {
+  display: inline-block; padding: 3px 11px; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--ink); text-decoration: none; font-size: 14px; background: var(--surface);
+}
+.chip:hover { background: var(--wash); }
+.chip[aria-current="true"] { background: var(--accent-wash); border-color: var(--accent); font-weight: 600; }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.tile-label { color: var(--ink-2); font-size: 13px; }
+.tile-value { font-size: 30px; line-height: 1.2; font-weight: 650; margin: 2px 0; }
+.tile-note { color: var(--ink-2); font-size: 12.5px; }
+
+/* cards */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 0 0 16px; }
+.card > p.hint:first-of-type { margin-bottom: 12px; }
+.empty { color: var(--ink-2); margin: 8px 0 0; }
+
+/* tables */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 14px; }
+tbody tr:last-child td { border-bottom: 0; }
+td .sub { display: block; font-size: 12.5px; }
+.wrapcell { min-width: 14em; overflow-wrap: anywhere; }
+
+/* outcomes: a color and a shape, and always the word */
+.chip-o { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.shape { display: inline-block; width: 10px; height: 10px; flex: none; background: var(--c); }
+.o-succeeded { --c: var(--c-succeeded); }
+.o-in_progress { --c: var(--c-in_progress); }
+.o-stale { --c: var(--c-stale); }
+.o-failed { --c: var(--c-failed); }
+.shape.o-succeeded { border-radius: 50%; }
+.shape.o-failed { border-radius: 2px; }
+.shape.o-stale { transform: rotate(45deg) scale(0.85); border-radius: 1px; }
+.shape.o-in_progress { border-radius: 50%; background: none; border: 2px solid var(--c); }
+
+/* charts */
+figure { margin: 0; }
+/* A chart doesn't shrink past a size its text can be read at; on a narrow
+   screen it scrolls inside its card instead, starting from the right, where
+   the latest days are. */
+.chart-scroll { overflow-x: auto; direction: rtl; }
+.chart { display: block; width: 100%; min-width: 540px; height: auto; color: var(--ink); direction: ltr; }
+.chart text { fill: var(--ink-2); font-size: 12.5px; font-family: inherit; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .axis { stroke: var(--axis); stroke-width: 1; }
+.chart .hit { fill: transparent; }
+.chart .col:hover .hit { fill: var(--wash); }
+.chart .seg { fill: var(--c); }
+.chart .tex { display: none; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.chart .mark { stroke: var(--ink-2); stroke-width: 1.25; stroke-opacity: 0.6; }
+.chart .mark-label { fill: var(--ink); font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.chart .end-label { fill: var(--ink); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.chart .bar { fill: var(--accent); }
+.chart .value { fill: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart .row:hover .rowhit { fill: var(--wash); }
+.chart .rowhit { fill: transparent; }
+.chart .tex-line { stroke: currentColor; stroke-width: 1.2; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 4px; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--c); display: inline-block; }
+.legend .keyline { width: 16px; height: 0; border-top: 2px solid var(--accent); display: inline-block; }
+.legend .keymark { width: 0; height: 12px; border-left: 1.5px solid var(--ink-2); display: inline-block; }
+details.twin { margin-top: 8px; }
+details.twin summary { cursor: pointer; color: var(--link); font-size: 13.5px; width: fit-content; }
+details.twin .scroll { max-height: 22em; overflow-y: auto; margin-top: 8px; }
+
+/* lists */
+.notes { list-style: none; padding: 0; margin: 0; }
+.notes li { padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.notes li:last-child { border-bottom: 0; }
+.notes .meta { color: var(--ink-2); font-size: 12.5px; display: block; }
+.kind { display: inline-block; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; margin-right: 6px; color: var(--ink-2); }
+
+/* a run */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 12px 0 0; }
+.facts dt { color: var(--ink-2); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 5.5em 8.5em 1fr; gap: 4px 10px; padding: 7px 0; border-bottom: 1px solid var(--grid); }
+.timeline li:last-child { border-bottom: 0; }
+.timeline time { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.timeline .what { overflow-wrap: anywhere; }
+.timeline .tag { font-size: 13.5px; }
+.who { font-size: 11.5px; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; margin-left: 4px; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.arrow { display: block; font-size: 13.5px; }
+
+/* the login page and plain messages */
+.narrow { max-width: 420px; margin: 56px auto 0; }
+form.stack label { display: block; font-weight: 600; margin: 12px 0 4px; }
+form.stack input[type="password"] {
+  width: 100%; font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px;
+}
+form.stack button {
+  margin-top: 14px; font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer;
+}
+.alert { border: 1px solid var(--c-failed); border-radius: 8px; padding: 8px 12px; margin: 12px 0 0; }
+footer { color: var(--ink-2); font-size: 12.5px; margin-top: 8px; }
+
+@media (max-width: 600px) {
+  .timeline li { grid-template-columns: 1fr; }
+  .tile-value { font-size: 26px; }
+}
+
+/* When color can't carry the outcomes (print, forced colors), hatching does. */
+@media print, (forced-colors: active) {
+  .chart .tex { display: inline; }
+  .chart .seg { stroke: currentColor; stroke-width: 1; }
+}

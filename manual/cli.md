@@ -286,6 +286,33 @@ With neither, it says to run `fabrica auth login <server>`, or set `FABRICA_ADMI
 
 `list` and `export` keep asking for pages until they have `--limit` runs, and `export` then reads each run in full, four at a time at most. `show` finds a run from the start of its ID by asking the server for the runs around it, so a short start works there too.
 
+## `fabrica dashboard`
+
+Shows your run history as a web page: runs per day, how each routine is doing, what Fabrica turned away, what slowed agents down, and the PRs they touched. It reads `runs.db` in your personal home repo, and serves it on `127.0.0.1` only, so nobody else on your network can reach it.
+
+```
+$ fabrica dashboard
+Run history from /Users/you/.fabrica/runs.db
+
+Open this link in your browser (it works once):
+
+  http://127.0.0.1:52817/_dashboard?code=9f2c41d07b6e83a5c0d2e1f47a98b3c6
+
+Press Ctrl-C to stop.
+```
+
+Open the link. The code in it works once: it trades itself for a cookie, and your browser goes on to the plain address `http://127.0.0.1:52817/_dashboard`, which stays open in that browser until you stop the dashboard. Anyone else who visits without the code gets a page that says to run `fabrica dashboard` again, and so does the link when you use it a second time. To look from another browser, stop it and run it again.
+
+| Flag | What it does |
+|---|---|
+| `--port <number>` | The port to listen on. Without it, Fabrica picks a free one. |
+| `--open` | Open the link in your browser, the way `fabrica auth login` opens pages (`$BROWSER`, `open` on macOS, `xdg-open` on Linux). When it can't, it says so and you open the link yourself. |
+| `--home <folder>` | The home repo whose `runs.db` to show. Default: your personal home repo. |
+
+Press Ctrl-C to stop it. If there's no `runs.db` yet, it says so, and doesn't make one: Fabrica starts it the first time an agent calls `run_begin` in a local tool. The dashboard only reads, and changes nothing.
+
+It's the same dashboard that the remote server has at `<server>/_dashboard`, where you log in with the admin token instead. [The MCP server](mcp-server.md#the-dashboard) explains that, and [Run history](run-history.md#the-dashboard) explains what's on each page.
+
 ## `fabrica mcp`
 
 Serves a blueprint over MCP.

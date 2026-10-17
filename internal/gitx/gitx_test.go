@@ -215,3 +215,33 @@ func TestIsCommitish(t *testing.T) {
 		}
 	}
 }
+
+func TestSubjectReadsOnlyWhatTheCacheHas(t *testing.T) {
+	host := testkit.NewHost(t)
+	repo := host.Repo("github.com/acme/blueprint")
+	first := repo.Write(map[string]string{"a.txt": "one"}).Commit("Add the first skill\n\nWith a longer explanation.")
+
+	ctx := context.Background()
+	remote := gitx.NewCache(t.TempDir()).Remote(repo.URL(), gitx.Full)
+
+	// Nothing is cached yet, and Subject doesn't fetch.
+	if _, err := remote.Subject(ctx, first); err == nil {
+		t.Error("Subject found a commit in an empty cache")
+	}
+	if err := remote.Fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := remote.Subject(ctx, first)
+	if err != nil || got != "Add the first skill" {
+		t.Errorf("Subject = %q, %v", got, err)
+	}
+	// Short hashes work, and anything else is turned down.
+	if got, err := remote.Subject(ctx, first[:9]); err != nil || got != "Add the first skill" {
+		t.Errorf("Subject(short) = %q, %v", got, err)
+	}
+	for _, bad := range []string{"", "main", "--output=x", "HEAD", first + "0"} {
+		if got, err := remote.Subject(ctx, bad); err == nil {
+			t.Errorf("Subject(%q) = %q, want an error", bad, got)
+		}
+	}
+}

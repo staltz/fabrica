@@ -1,0 +1,58 @@
+{{define "content"}}
+<p class="crumbs"><a href="{{.BackHref}}">← Overview</a></p>
+<h1>{{.Routine}}</h1>
+<p class="sub">Routine in factory {{.Factory}} · runs that started in the {{.Window}} · days and times are UTC</p>
+{{template "filters" .Filters}}
+{{template "tiles" .Tiles}}
+
+<section class="card" aria-labelledby="h-rate">
+<h2 id="h-rate">Failure rate per day</h2>
+<p class="hint">Failed or stale runs ÷ runs that day. A vertical line marks the day a new blueprint commit was first served to this routine, so you can see whether a change helped.</p>
+{{if .NoRuns}}<p class="empty">{{.EmptyRuns}}</p>{{else}}{{template "linechart" .Line}}
+{{if .Blueprint}}<h3>Blueprint commits first served in this window</h3>
+<div class="scroll"><table>
+<thead><tr><th scope="col">Commit</th><th scope="col">First served</th><th scope="col">Subject</th></tr></thead>
+<tbody>{{range .Blueprint}}<tr><td><code>{{.SHA}}</code></td><td>{{template "time" .At}}</td><td class="wrapcell">{{if .Subject}}{{.Subject}}{{else}}<span class="sub">unknown</span>{{end}}</td></tr>
+{{end}}</tbody>
+</table></div>
+{{else}}<p class="hint">No new blueprint commit was first served to this routine in this window.</p>{{end}}{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-runs">
+<h2 id="h-runs">Runs</h2>
+{{if .Runs}}<div class="scroll"><table>
+<thead><tr><th scope="col">Started</th><th scope="col">Outcome</th><th scope="col">Intent</th><th scope="col">Repo</th><th scope="col">Runtime</th><th scope="col" class="num">Friction</th><th scope="col">Run</th></tr></thead>
+<tbody>{{range .Runs}}<tr>
+<td>{{template "time" .Started}}</td>
+<td>{{template "outcome" .Outcome}}</td>
+<td class="wrapcell"><a href="{{.Href}}">{{.Intent}}</a></td>
+<td>{{.Repo}}</td>
+<td>{{.Runtime}}</td>
+<td class="num">{{.Friction}}</td>
+<td><a class="mono" href="{{.Href}}">{{.ID}}</a></td>
+</tr>
+{{end}}</tbody>
+</table></div>
+{{if .RunsNote}}<p class="hint">{{.RunsNote}}</p>{{end}}{{else}}<p class="empty">{{.EmptyRuns}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-friction">
+<h2 id="h-friction">Friction</h2>
+<p class="hint">What slowed this routine's agents down, grouped by kind.</p>
+{{range .FrictionGroups}}<h3>{{.Kind}} ({{.Count}}) <span class="sub">{{.Gloss}}</span></h3>
+<ul class="notes">{{range .Notes}}<li>{{.Note}}
+<span class="meta">{{template "time" .At}} · <a class="mono" href="{{.RunHref}}">{{.RunID}}</a></span></li>
+{{end}}</ul>
+{{else}}<p class="empty">No friction notes from this routine in the {{.Window}}. Agents leave one in run_report when something slows them down.</p>{{end}}
+{{if .FrictionNote}}<p class="hint">{{.FrictionNote}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-loads">
+<h2 id="h-loads">Skills and rules loaded</h2>
+{{if .Loads}}<div class="scroll"><table>
+<thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col" class="num">Runs that loaded it</th></tr></thead>
+<tbody>{{range .Loads}}<tr><td>{{.Name}}</td><td>{{.Kind}}</td><td class="num">{{.Share}}</td></tr>
+{{end}}</tbody>
+</table></div>{{else}}<p class="empty">No skills or rules were loaded by this routine's runs in the {{.Window}}.</p>{{end}}
+</section>
+{{end}}

@@ -1,0 +1,69 @@
+{{define "content"}}
+<h1>Overview</h1>
+<p class="sub">Runs that started in the {{.Window}}. Days and times are UTC.</p>
+{{template "filters" .Filters}}
+{{template "tiles" .Tiles}}
+
+<section class="card" aria-labelledby="h-runs">
+<h2 id="h-runs">Runs per day</h2>
+{{if .NoRuns}}<p class="empty">{{.EmptyRuns}}</p>{{else}}{{template "barchart" .Chart}}{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-routines">
+<h2 id="h-routines">Routines</h2>
+{{if .Routines}}<div class="scroll"><table>
+<thead><tr><th scope="col">Routine</th><th scope="col" class="num">Runs</th><th scope="col" class="num">Success rate</th><th scope="col" class="num">Failed</th><th scope="col" class="num">Stale</th><th scope="col">Top friction</th><th scope="col">Last run</th></tr></thead>
+<tbody>{{range .Routines}}<tr>
+<td>{{if .Href}}<a href="{{.Href}}">{{.Routine}}</a>{{else}}Interactive sessions{{end}}<span class="sub">{{.Factory}}</span></td>
+<td class="num">{{.Runs}}</td>
+<td class="num" title="{{.Detail}}">{{.Success}}</td>
+<td class="num">{{.Failed}}</td>
+<td class="num">{{.Stale}}</td>
+<td>{{.Friction}}</td>
+<td>{{template "time" .LastRun}}</td>
+</tr>
+{{end}}</tbody>
+</table></div>{{else}}<p class="empty">{{.EmptyRoutines}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-refusals">
+<h2 id="h-refusals">Refusals</h2>
+<p class="hint">Runs that Fabrica turned away, with Fabrica's reason.</p>
+{{if .Refusals}}<div class="scroll"><table>
+<thead><tr><th scope="col">Latest</th><th scope="col">Where</th><th scope="col" class="num">Times</th><th scope="col">Reason</th><th scope="col">Fix</th></tr></thead>
+<tbody>{{range .Refusals}}<tr>
+<td>{{template "time" .Latest}}</td>
+<td>{{.Factory}}{{if .Routine}} / {{.Routine}}{{end}}<span class="sub">{{if .Runtime}}{{.Runtime}}{{else}}no runtime{{end}}</span></td>
+<td class="num">{{.Count}}</td>
+<td class="wrapcell">{{.Reason}}</td>
+<td class="wrapcell">{{if .Apply}}Run <code>fabrica apply</code> for factory {{.Factory}}.{{else}}Open <a href="{{.RunHref}}">the latest run</a> for details.{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table></div>{{else}}<p class="empty">{{.EmptyRefusals}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-friction">
+<h2 id="h-friction">Friction</h2>
+<p class="hint">What slowed agents down, in their words.</p>
+{{if .FrictionTotal}}{{template "hbarchart" .Friction}}
+<h3>Latest notes</h3>
+<ul class="notes">{{range .Notes}}<li><span class="kind">{{.Kind}}</span>{{.Note}}
+<span class="meta">{{if .Routine}}{{.Factory}} / {{.Routine}}{{else}}{{.Factory}}, interactive{{end}} · {{template "time" .At}} · <a class="mono" href="{{.RunHref}}">{{.RunID}}</a></span></li>
+{{end}}</ul>{{else}}<p class="empty">{{.EmptyFriction}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="h-prs">
+<h2 id="h-prs">Recent PRs</h2>
+{{if .PRs}}<div class="scroll"><table>
+<thead><tr><th scope="col">PR</th><th scope="col">Routine</th><th scope="col">Outcome</th><th scope="col">Run</th><th scope="col">When</th></tr></thead>
+<tbody>{{range .PRs}}<tr>
+<td class="wrapcell">{{if .Link}}<a href="{{.URL}}" rel="noopener noreferrer nofollow">{{.Label}}</a>{{else}}{{.URL}}{{end}}</td>
+<td>{{if .Routine}}{{.Routine}}{{else}}interactive{{end}}<span class="sub">{{.Factory}}</span></td>
+<td>{{template "outcome" .Outcome}}</td>
+<td><a class="mono" href="{{.RunHref}}">{{.RunID}}</a></td>
+<td>{{template "time" .At}}</td>
+</tr>
+{{end}}</tbody>
+</table></div>{{else}}<p class="empty">{{.EmptyPRs}}</p>{{end}}
+</section>
+{{end}}

@@ -1,6 +1,7 @@
 // Package hook runs local routines. `fabrica apply` installs one tool hook
 // per local routine, and the tool runs `fabrica hook …` when the hook's
-// event fires.
+// event fires. It also installs a session pointer hook per tool, which
+// tells every session where its own transcript is.
 //
 // A hook doesn't run the routine itself. It checks that the routine still
 // applies to this workspace, and if so tells the agent to run it: call
@@ -37,6 +38,9 @@ type Options struct {
 	Routine     string
 	Fingerprint string
 	Event       string
+	// Session runs the session pointer hook instead of a routine's: only
+	// Runtime is set.
+	Session bool
 	// HomeDir is your personal home repo.
 	HomeDir string
 	// MarkerDir remembers which pushes and commits were already held back
@@ -54,6 +58,7 @@ type input struct {
 	SessionID      string   `json:"session_id"`
 	ConversationID string   `json:"conversation_id"`
 	CopilotSession string   `json:"sessionId"`
+	TranscriptPath string   `json:"transcript_path"`
 	Cwd            string   `json:"cwd"`
 	WorkspaceRoots []string `json:"workspace_roots"`
 	StopHookActive bool     `json:"stop_hook_active"`
@@ -128,11 +133,14 @@ func Run(ctx context.Context, o Options) error {
 		return nil
 	}
 	d, _ := h.MatchLocal(repo, o.Runtime)
-	if d == nil || d.Name != o.Factory || !d.Runs(o.Routine, o.Runtime) {
-		return nil // this routine doesn't apply here (anymore)
+	if d == nil || !o.Session && (d.Name != o.Factory || !d.Runs(o.Routine, o.Runtime)) {
+		return nil // no factory matches, or this routine doesn't apply here (anymore)
 	}
 	if ws, err := product.InspectDir(ctx, top); err != nil || !ws.HasLine() {
 		return nil // the MCP server tells the agent what's missing
+	}
+	if o.Session {
+		return sessionPointer(o, in)
 	}
 	prompt := stub.LocalPrompt(o.Routine, o.Factory, o.Runtime, repo, o.Fingerprint)
 
@@ -193,6 +201,29 @@ func Run(ctx context.Context, o Options) error {
 		}})
 	}
 	return nil
+}
+
+// sessionPointer tells the agent where its own transcript lives, so it can
+// pass that to run_begin. The pointer is the transcript's path when the
+// tool sends one, else the tool's name and session ID. Without either,
+// there's nothing to say.
+func sessionPointer(o Options, in input) error {
+	pointer := in.TranscriptPath
+	if pointer == "" {
+		id := in.SessionID
+		if o.Runtime == "copilot-local" {
+			id = in.CopilotSession
+		}
+		if id == "" {
+			return nil
+		}
+		pointer = o.Runtime + ":" + id
+	}
+	text := `Fabrica: when you call run_begin, pass session: "` + pointer + `".`
+	if o.Runtime == "copilot-local" {
+		return respond(o.Stdout, map[string]any{"additionalContext": text})
+	}
+	return respond(o.Stdout, claudeContext("SessionStart", text))
 }
 
 func claudeContext(event, text string) map[string]any {

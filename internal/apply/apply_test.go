@@ -936,6 +936,133 @@ func TestDestroyLocalFactories(t *testing.T) {
 	}
 }
 
+func TestSessionPointerHook(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.Home.Write(map[string]string{
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local, codex-cli]\ntargets: [\"*\"]\n",
+		"factories/oss-work.yaml":   "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, copilot-local]\ntargets: [github.com/acme/app]\n",
+	})
+	// Someone else's session-start hook is already there.
+	own := filepath.Join(h.env.UserHome, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(own), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(own, []byte(`{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "my-session-hook"}]}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read := func(rel string) string {
+		data, _ := os.ReadFile(filepath.Join(h.env.UserHome, rel))
+		return string(data)
+	}
+	sessionHooks := map[string]string{
+		"claude-code-local": ".claude/settings.json",
+		"codex-cli":         ".codex/hooks.json",
+		"copilot-local":     ".copilot/hooks/fabrica.json",
+	}
+	// count is how many session pointer hooks a runtime's hooks file has.
+	count := func(rt string) int {
+		return strings.Count(read(sessionHooks[rt]), "hook session --runtime "+rt+"\"")
+	}
+
+	// Plan shows one session hook for each runtime that has a session-start
+	// event, though two factories use Claude Code. Cursor has none.
+	out := render(h.plan())
+	if n := strings.Count(out, "+ add session pointer hook on session.start"); n != 3 {
+		t.Errorf("want a session hook for Claude Code, Codex CLI and Copilot CLI, got %d:\n%s", n, out)
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	for rt := range sessionHooks {
+		if n := count(rt); n != 1 {
+			t.Errorf("%s should have one session hook, has %d:\n%s", rt, n, read(sessionHooks[rt]))
+		}
+	}
+	if strings.Contains(read(".cursor/hooks.json"), "session") || !strings.Contains(read(".cursor/mcp.json"), `"fabrica"`) {
+		t.Errorf("Cursor has no session-start event, so it gets the MCP server and no session hook:\n%s\n%s", read(".cursor/hooks.json"), read(".cursor/mcp.json"))
+	}
+	if !strings.Contains(read(".claude/settings.json"), "my-session-hook") {
+		t.Errorf("apply lost someone else's hook:\n%s", read(".claude/settings.json"))
+	}
+	if !strings.Contains(h.out.String(), "Codex skips new or changed hooks until you trust them") {
+		t.Errorf("the session hook is new in Codex, so apply should say to trust it:\n%s", h.out.String())
+	}
+
+	// Applying again changes nothing.
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, local tools should be in sync:\n%s", render(p))
+	}
+	before := userHomeFiles(t, h.env.UserHome)
+	if res := h.apply(); res.ExitCode() != 0 || strings.Contains(h.out.String(), "Local ") {
+		t.Fatalf("a second apply should do nothing:\n%s", h.out.String())
+	}
+	if after := userHomeFiles(t, h.env.UserHome); !slices.Equal(before, after) {
+		t.Errorf("a second apply changed files:\n%v\n%v", before, after)
+	}
+
+	// A runtime no factory uses anymore loses its session hook.
+	h.w.Home.Write(map[string]string{
+		"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [\"*\"]\n",
+	})
+	if out := render(h.plan()); strings.Count(out, "- remove session pointer hook") != 1 {
+		t.Errorf("plan should remove Codex CLI's session hook:\n%s", out)
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	if n := count("codex-cli"); n != 0 || count("claude-code-local") != 1 || count("copilot-local") != 1 {
+		t.Errorf("only Codex CLI's session hook should be gone:\n%s", read(".codex/hooks.json"))
+	}
+
+	// So does destroying the last factory that uses it, while the hook of a
+	// runtime that others still use stays.
+	yes := func(*plan.Plan) error { return nil }
+	h.env.Only = []string{"oss-work"}
+	if out := render(h.destroyPlan()); strings.Count(out, "- remove session pointer hook") != 1 {
+		t.Errorf("destroying oss-work should remove only Copilot CLI's session hook:\n%s", out)
+	}
+	if res, err := h.destroy(yes); err != nil || res.ExitCode() != 0 {
+		t.Fatalf("destroy oss-work: %v\n%s", err, h.out.String())
+	}
+	if count("copilot-local") != 0 || count("claude-code-local") != 1 {
+		t.Errorf("Claude Code is still used by my-default, so it keeps its session hook:\n%s", read(".claude/settings.json"))
+	}
+	h.env.Only = nil
+	if res, err := h.destroy(yes); err != nil || res.ExitCode() != 0 {
+		t.Fatalf("destroy: %v\n%s", err, h.out.String())
+	}
+	if settings := read(".claude/settings.json"); strings.Contains(settings, "fabrica") || !strings.Contains(settings, "my-session-hook") {
+		t.Errorf("destroy should remove Fabrica's hooks and leave the rest:\n%s", settings)
+	}
+}
+
+// userHomeFiles lists every file under dir with its content and
+// modification time, to see whether anything changed.
+func userHomeFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		out = append(out, fmt.Sprintf("%s %s %s", p, info.ModTime(), data))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestLocalRoutineWithUnsupportedTrigger(t *testing.T) {
 	h := newHarness(t)
 	h.w.MakePersonal(t)

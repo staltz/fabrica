@@ -117,26 +117,28 @@ they land.`,
 
 func newHook(g *globals) *cobra.Command {
 	var o hook.Options
+	session := hook.Options{Session: true}
+	fire := func(cmd *cobra.Command, o hook.Options) error {
+		var err error
+		if o.HomeDir = g.home; o.HomeDir == "" {
+			if o.HomeDir, err = paths.PersonalHome(); err != nil {
+				return err
+			}
+		}
+		cache, err := paths.Cache()
+		if err != nil {
+			return err
+		}
+		o.MarkerDir = filepath.Join(cache, "hooks")
+		o.Stdin, o.Stdout = cmd.InOrStdin(), cmd.OutOrStdout()
+		return hook.Run(cmd.Context(), o)
+	}
 	cmd := &cobra.Command{
 		Use:    "hook",
 		Short:  "Run a local routine's hook (local tools call this; you don't need to)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			var err error
-			if o.HomeDir = g.home; o.HomeDir == "" {
-				if o.HomeDir, err = paths.PersonalHome(); err != nil {
-					return err
-				}
-			}
-			cache, err := paths.Cache()
-			if err != nil {
-				return err
-			}
-			o.MarkerDir = filepath.Join(cache, "hooks")
-			o.Stdin, o.Stdout = cmd.InOrStdin(), cmd.OutOrStdout()
-			return hook.Run(cmd.Context(), o)
-		},
+		RunE:   func(cmd *cobra.Command, _ []string) error { return fire(cmd, o) },
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.Runtime, "runtime", "", "the local runtime")
@@ -147,6 +149,17 @@ func newHook(g *globals) *cobra.Command {
 	for _, name := range []string{"runtime", "factory", "routine", "stub", "event"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
+
+	sessionCmd := &cobra.Command{
+		Use:    "session",
+		Short:  "Tell a new session where its transcript is (local tools call this; you don't need to)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE:   func(cmd *cobra.Command, _ []string) error { return fire(cmd, session) },
+	}
+	sessionCmd.Flags().StringVar(&session.Runtime, "runtime", "", "the local runtime")
+	_ = sessionCmd.MarkFlagRequired("runtime")
+	cmd.AddCommand(sessionCmd)
 	return cmd
 }
 

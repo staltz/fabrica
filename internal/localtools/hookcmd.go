@@ -33,7 +33,9 @@ type MCPEntry struct {
 	BearerEnv string
 }
 
-// Hook is a local routine, installed as a tool hook.
+// Hook is a local routine, installed as a tool hook. It can also be the
+// session pointer hook (see SessionHook), which belongs to a runtime
+// rather than to a routine.
 type Hook struct {
 	// Binary is the fabrica binary the hook runs.
 	Binary      string
@@ -42,6 +44,34 @@ type Hook struct {
 	Factory     string
 	Routine     string
 	Fingerprint string
+	// Session marks the session pointer hook. It has no Factory, Routine
+	// or Fingerprint.
+	Session bool
+}
+
+// SessionHook is the session pointer hook for a runtime. When a session
+// starts, it tells the agent where its own transcript lives, so run_begin
+// can record it. There's one per local runtime that has a session-start
+// event, whatever routines its factories run.
+func SessionHook(binary, runtime string) Hook {
+	return Hook{Binary: binary, Runtime: runtime, Event: SessionStart, Session: true}
+}
+
+// HasSessionStart reports whether a local runtime has a session-start hook
+// event, which the session pointer hook needs.
+func HasSessionStart(runtime string) bool {
+	var err error
+	switch runtime {
+	case "claude-code-local", "codex-cli":
+		_, _, err = claudeEvent(SessionStart)
+	case "copilot-local":
+		_, _, err = copilotEvent(SessionStart)
+	case "cursor-local":
+		_, err = cursorEvent(SessionStart)
+	default:
+		return false
+	}
+	return err == nil
 }
 
 // Task is a local routine with a schedule trigger, installed as a Claude
@@ -104,6 +134,9 @@ func IsFabricaEntry(name string) bool {
 // HookCommand is the command line a tool runs for a hook. The command is
 // Fabrica's identifying mark: Fabrica finds its own hooks by parsing it.
 func HookCommand(h Hook) string {
+	if h.Session {
+		return strings.Join([]string{shellQuote(h.Binary), "hook", "session", "--runtime", h.Runtime}, " ")
+	}
 	return strings.Join([]string{
 		shellQuote(h.Binary), "hook",
 		"--runtime", h.Runtime,
@@ -119,6 +152,13 @@ func ParseHookCommand(cmd string) (Hook, bool) {
 	args, ok := shellSplit(cmd)
 	if !ok || len(args) < 2 || !strings.HasPrefix(filepath.Base(args[0]), "fabrica") || args[1] != "hook" {
 		return Hook{}, false
+	}
+	if len(args) > 2 && args[2] == "session" {
+		// fabrica hook session --runtime <runtime>
+		if len(args) != 5 || args[3] != "--runtime" || args[4] == "" {
+			return Hook{}, false
+		}
+		return SessionHook(args[0], args[4]), true
 	}
 	h := Hook{Binary: args[0]}
 	for i := 2; i+1 < len(args); i += 2 {

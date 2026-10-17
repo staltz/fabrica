@@ -18,6 +18,21 @@ struct Run: Identifiable, Equatable, Sendable {
     var repoShort: String { repo.split(separator: "/").suffix(2).joined(separator: "/") }
 }
 
+/// Where run history comes from: your tools on this Mac, or the cloud
+/// runtimes that use the server this Mac runs. The two never mix.
+enum RunSource: Hashable {
+    case local, server
+
+    /// The runs.db this source reads.
+    @MainActor
+    func database(in home: HomeRepo) -> URL {
+        switch self {
+        case .local: home.runsDB
+        case .server: Server.database
+        }
+    }
+}
+
 enum RunHistory {
     /// The latest runs in a runs.db, newest first. Opens it read-only, so
     /// a server writing to it at the same time is fine.

@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
             AppModel.shared.server.stopForQuit()
+            AppModel.shared.dashboard.stopForQuit()
         }
     }
 }

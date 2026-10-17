@@ -1,22 +1,21 @@
 import SwiftUI
 
-/// Fabrica's run history, which the CLI has no command for yet: what your
-/// agents did, newest first.
+/// Fabrica's run history, from this Mac or from its server: what your
+/// agents did, newest first. The Dashboard button opens the same history as
+/// charts and tables in your browser.
 struct RunsView: View {
     @Environment(AppModel.self) private var model
-    @State private var source: Source = .local
+    @State private var source: RunSource = .local
     @State private var runs: [Run] = []
     @State private var selection: Run.ID?
     @State private var loaded = false
-
-    enum Source: Hashable { case local, server }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Picker("Source", selection: $source) {
-                    Text("This Mac").tag(Source.local)
-                    Text("Server").tag(Source.server)
+                    Text("This Mac").tag(RunSource.local)
+                    Text("Server").tag(RunSource.server)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -29,6 +28,17 @@ struct RunsView: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                Button {
+                    Task { await model.dashboard.open(source) }
+                } label: {
+                    Label("Dashboard", systemImage: "chart.bar.xaxis")
+                        .font(.callout)
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.dashboard.opening.contains(source))
+                .help(source == .local
+                    ? "Open the dashboard of this Mac's runs in your browser"
+                    : "Open the dashboard of the server's runs in your browser")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -79,7 +89,7 @@ struct RunsView: View {
         .task(id: source) {
             // Keep it fresh while it's on screen.
             while !Task.isCancelled {
-                let db = source == .local ? model.home.runsDB : Server.database
+                let db = source.database(in: model.home)
                 runs = await RunHistory.latest(in: db)
                 loaded = true
                 try? await Task.sleep(for: .seconds(10))

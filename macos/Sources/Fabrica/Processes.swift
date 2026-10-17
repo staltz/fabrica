@@ -210,6 +210,12 @@ final class LiveProcess {
         }
     }
 
+    /// Sends a signal to the running process, like SIGUSR1.
+    func signal(_ sig: Int32) {
+        guard let p = process, p.isRunning else { return }
+        kill(p.processIdentifier, sig)
+    }
+
     /// Stops the process and waits for it, for when the app quits.
     func stopAndWait() {
         guard let p = process, p.isRunning else { return }

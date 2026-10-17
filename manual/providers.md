@@ -194,11 +194,11 @@ Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, t
 
 The protocol is deliberately boring, so you can write a provider in any language. Fabrica runs `api <op>`, writes one JSON request to its stdin, and reads one JSON response from its stdout. A non-zero exit, or an `"error"` field in the response, means the operation failed, and whatever the program printed on stderr is shown to the user. The environment is passed through, so the program can read its credentials from environment variables, and Fabrica adds the ones it declares under `credentials:` that `fabrica auth login` saved. Each call times out after two minutes.
 
-Every request has `"version": 1` and `"op"`. The operations are:
+Every request has `"version": 2` and `"op"`. The operations are:
 
 | Op | Request | Response |
 |---|---|---|
-| `list` | `factory`, `endpoint` | `{"resources": [{"identity", "remote_id", "fingerprint"?}]}`: every resource whose identity starts with the endpoint minus its scheme, plus `#` (like `fabrica.acme.dev/pr-review#`) |
+| `list` | `factory`, `prefix` | `{"resources": [{"identity", "remote_id", "fingerprint"?}]}`: every resource whose identity starts with `prefix` (like `4ckr#`). Fabrica may list several prefixes for one factory, while it renames stubs from an earlier tag. |
 | `create` | `factory`, `resource` | `{"remote_id": "…"}` |
 | `update` | `factory`, `remote_id`, `resource` | `{}` |
 | `delete` | `factory`, `remote_id` | `{}` |
@@ -208,7 +208,7 @@ A `resource` looks like this:
 
 ```json
 {
-  "identity": "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app",
+  "identity": "4ckr#pr-review@github.com/acme/app",
   "factory": "pr-review",
   "routine": "pr-review",
   "repo": "github.com/acme/app",
@@ -243,6 +243,7 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.Action` | `create`, `update` or `delete`. |
 | `.Runtime`, `.Factory`, `.Routine`, `.Repo` | What it's about. |
 | `.Identity` | The resource's Fabrica identity. Ask for it to be used as the resource's name. |
+| `.FormerIdentity` | The name the resource has now, when it's being renamed from an earlier identity (the factory's tag changed), or empty. Look for the resource under `{{or .FormerIdentity .Identity}}`. |
 | `.RemoteID` | The runtime's own ID, for updates and deletes, when known. |
 | `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. |
 | `.Connectors` | A list, each with `.Name` and `.Setup` (a sentence saying how to set it up). |

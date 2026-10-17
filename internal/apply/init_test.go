@@ -11,6 +11,7 @@ import (
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/provider"
+	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
 	"github.com/staltz/fabrica/internal/token"
 )
@@ -52,7 +53,7 @@ func TestInitStartsOnceWhenTheFactoryIsFirstApplied(t *testing.T) {
 		t.Fatalf("toy runtime has %d sessions, want 1", len(sessions))
 	}
 	s := sessions[0]
-	if s.Identity != "fabrica.acme.dev/pr-review#onboard" || s.Repo != "github.com/acme/app" || strings.Join(s.Repos, " ") != "github.com/acme/app github.com/acme/api" {
+	if s.Identity != stub.InitIdentity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "onboard") || s.Repo != "github.com/acme/app" || strings.Join(s.Repos, " ") != "github.com/acme/app github.com/acme/api" {
 		t.Errorf("the session is about the wrong thing: %+v", s)
 	}
 	if s.FabricaURL != "https://fabrica.acme.dev/pr-review" || s.Token != token.For(testkit.Secret, "pr-review") {

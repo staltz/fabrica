@@ -217,8 +217,12 @@ type HandoffData struct {
 	// Identity is the resource's stable identity. Templates should ask for
 	// it to be used as the resource's name, so Fabrica can recognize it.
 	Identity string
-	Routine  string
-	Repo     string
+	// FormerIdentity is the name the resource has in the runtime now, when
+	// an update or delete finds it under an earlier identity (from before
+	// the factory's tag changed), or empty. An update renames it.
+	FormerIdentity string
+	Routine        string
+	Repo           string
 	// RemoteID is the runtime's own ID for the resource, when Fabrica knows
 	// it (for updates and deletes).
 	RemoteID    string

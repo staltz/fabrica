@@ -149,14 +149,32 @@ func TestEmulatedConnectorUsesFallback(t *testing.T) {
 }
 
 func TestIdentityAndPrompt(t *testing.T) {
-	id := stub.Identity("https://fabrica.acme.dev/pr-review/", "pr-review", "github.com/acme/app")
-	if id != "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app" {
+	id := stub.Identity("k7q2", "pr-review", "github.com/acme/app")
+	if id != "k7q2#pr-review@github.com/acme/app" {
 		t.Errorf("Identity = %q", id)
+	}
+	if prefix, routine, repo := stub.SplitIdentity(id); prefix != "k7q2#" || routine != "pr-review" || repo != "github.com/acme/app" {
+		t.Errorf("SplitIdentity = %q, %q, %q", prefix, routine, repo)
 	}
 	p := stub.Prompt(id, "pr-review", "claude-code-cloud", "github.com/acme/app", "7f3a9c")
 	for _, want := range []string{"`run_begin`", "routine `pr-review`", "runtime `claude-code-cloud`", "repo `github.com/acme/app`", "stub `7f3a9c`", "`routine_get`", id} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt is missing %q:\n%s", want, p)
+		}
+	}
+}
+
+func TestTagHidesTheServerAndTellsFactoriesApart(t *testing.T) {
+	tag := stub.Tag("https://mcp.acme.dev/fabrica", "exis")
+	if len(tag) != stub.TagLen || strings.Trim(tag, "abcdefghijklmnopqrstuvwxyz234567") != "" {
+		t.Errorf("Tag = %q, want %d lowercase base32 characters", tag, stub.TagLen)
+	}
+	if again := stub.Tag("http://mcp.acme.dev/fabrica/", "exis"); again != tag {
+		t.Errorf("the scheme or a trailing slash changed the tag: %q vs %q", again, tag)
+	}
+	for _, other := range [][2]string{{"https://mcp.acme.dev/fabrica", "oss-work"}, {"https://mcp.other.dev/fabrica", "exis"}} {
+		if got := stub.Tag(other[0], other[1]); got == tag {
+			t.Errorf("Tag(%q, %q) = %q, the same as for exis on mcp.acme.dev", other[0], other[1], got)
 		}
 	}
 }

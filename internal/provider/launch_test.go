@@ -100,7 +100,7 @@ func TestFolderProviderLaunch(t *testing.T) {
 	if err := json.Unmarshal(data, &req); err != nil {
 		t.Fatal(err)
 	}
-	if req.Version != 1 || req.Op != "launch" || req.Session.ID != "i_3f2a1c9e04" || req.Session.Fabrica.Token != "fab_tok" || len(req.Session.Repos) != 2 {
+	if req.Version != ProtocolVersion || req.Op != "launch" || req.Session.ID != "i_3f2a1c9e04" || req.Session.Fabrica.Token != "fab_tok" || len(req.Session.Repos) != 2 {
 		t.Errorf("the launch request = %s", data)
 	}
 	text, err := p.RenderLaunch(LaunchData{Routine: "onboard", Repo: "github.com/acme/app", ConfirmCommand: "fabrica confirm i_1"})

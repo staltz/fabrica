@@ -4,7 +4,7 @@
 Fabrica no longer deploys this routine here, so its Codex setup should go.
 
 1. Open Codex on the web (chatgpt.com/codex) and go to your scheduled tasks or code review settings, wherever this one lives.
-2. Find the task named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
+2. Find the task named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
 3. Delete it.
 4. Tell Fabrica you're done:
 
@@ -19,8 +19,8 @@ Until you do, the old task can still fire, but the Fabrica server refuses its ru
 {{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting or model), so the Codex task needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
-1. Open Codex on the web (chatgpt.com/codex){{if eq .Action "update"}} and find the task named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and set up a new task{{end}}.
-2. Name: `{{.Identity}}`
+1. Open Codex on the web (chatgpt.com/codex){{if eq .Action "update"}} and find the task named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and set up a new task{{end}}.
+2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Environment / repository: `{{.Repo}}`
 4. Trigger: {{.Trigger.Description}}
 5. Connectors. Make sure the task can use exactly these:

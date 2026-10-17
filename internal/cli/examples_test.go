@@ -14,6 +14,7 @@ import (
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/product"
+	"github.com/staltz/fabrica/internal/stub"
 )
 
 // These tests keep the examples in examples/ working, so the docs never
@@ -126,7 +127,7 @@ func TestCustomProviderEndToEnd(t *testing.T) {
 		t.Fatalf("the runtime should have one job: %s (%v)", data, err)
 	}
 	for _, j := range jobs {
-		if j.Identity != "fabrica.example.com/triage#triage@github.com/acme/app" {
+		if j.Identity != stub.Identity(stub.Tag("https://fabrica.example.com", "triage"), "triage", "github.com/acme/app") {
 			t.Errorf("identity = %q", j.Identity)
 		}
 	}

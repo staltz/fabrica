@@ -4,7 +4,7 @@
 Fabrica no longer deploys this routine here, so its Cursor automation should go.
 
 1. Open Cursor's automations (cursor.com → Cloud Agents → Automations).
-2. Find the automation named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
+2. Find the automation named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
 3. Delete it.
 4. Tell Fabrica you're done:
 
@@ -19,8 +19,8 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 {{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting or model), so the Cursor automation needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
-1. Open Cursor's automations (cursor.com → Cloud Agents → Automations){{if eq .Action "update"}} and find the automation named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and create a new automation{{end}}.
-2. Name: `{{.Identity}}`
+1. Open Cursor's automations (cursor.com → Cloud Agents → Automations){{if eq .Action "update"}} and find the automation named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and create a new automation{{end}}.
+2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Repository: `{{.Repo}}`
 4. Trigger: {{.Trigger.Description}}
 5. MCP servers and integrations. Make sure the automation has exactly these:

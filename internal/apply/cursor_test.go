@@ -10,6 +10,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/apply"
 	"github.com/staltz/fabrica/internal/plan"
+	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
 	"github.com/staltz/fabrica/internal/token"
 )
@@ -38,7 +39,7 @@ func TestCursorCloudThroughTheAPI(t *testing.T) {
 		t.Fatalf("apply: exit %d, handoffs %v\n%s", res.ExitCode(), res.Handoffs, h.out.String())
 	}
 	autos := cursor.Automations()
-	if len(autos) != 2 || autos[0].Name != "fabrica.acme.dev/pr-review#pr-review@github.com/acme/api" {
+	if len(autos) != 2 || autos[0].Name != stub.Identity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "pr-review", "github.com/acme/api") {
 		t.Fatalf("Cursor has %+v", autos)
 	}
 	wf := toJSON(autos[0].Workflow)
@@ -109,7 +110,7 @@ func TestCursorCloudThroughTheAPI(t *testing.T) {
 	}
 	h.apply()
 	autos = cursor.Automations()
-	if len(autos) != 2 || autos[0].Name != "fabrica.acme.dev/pr-review#pr-review@github.com/acme/api" {
+	if len(autos) != 2 || autos[0].Name != stub.Identity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "pr-review", "github.com/acme/api") {
 		t.Fatalf("Cursor after the repair has %+v", autos)
 	}
 	if p := h.plan(); p.ExitCode() != 0 {

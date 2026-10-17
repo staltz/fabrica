@@ -74,7 +74,7 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 Fabrica never installs a routine's real content into a runtime. It installs a **stub**: the trigger, the connectors, and a short prompt like this one:
 
-> You are routine `pr-review` (`fabrica.acme.dev/pr-review#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude-code-cloud`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
+> You are routine `pr-review` (`4ckr#pr-review@github.com/acme/app`). Call `run_begin` with routine `pr-review`, runtime `claude-code-cloud`, repo `github.com/acme/app` and stub `e128f7aa2995`, and an intent that sums up what triggered you in at most 20 words. Then load the routine with `routine_get` from the Fabrica MCP server and follow it.
 
 Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or (emulated) side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
@@ -93,14 +93,18 @@ Repairing stale stubs is `apply`'s job, so `plan` shows them as changes (an **up
 
 ## Identities
 
-Every remote resource has a stable identity, built from its endpoint, routine and repo:
+Every remote resource has a stable identity, built from its factory's tag, routine and repo:
 
 ```
-fabrica.acme.dev/pr-review#pr-review@github.com/acme/app
-└─── endpoint ──────────┘ └routine┘ └────── repo ──────┘
+4ckr#pr-review@github.com/acme/app
+└tag┘└routine┘ └────── repo ──────┘
 ```
+
+The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#factory-files), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica plan` prints each cloud factory's tag.
 
 Nothing random goes in, so the same resource always gets the same identity. That's how Fabrica finds its own resources, adopts ones that a crashed apply created, and refuses to continue when two resources claim the same identity. The identity goes in the resource's name (or a metadata field) and always in the stub prompt.
+
+When a factory's tag changes (a new `alias:` or `server:`, or stubs that an earlier Fabrica release named after the server's address), apply renames its stubs where they are, rather than deleting and recreating them. Until a rename is done, state keeps the old name as `former_id`, so Fabrica can still find the stub under it.
 
 ## Follow versus frozen
 

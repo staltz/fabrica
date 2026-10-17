@@ -54,6 +54,7 @@ import Yams
         f.notes = "Reviews every PR."
         f.blueprint = .init(git: "github.com/acme/blueprint", ref: "stable", path: "fabrica")
         f.server = "https://fabrica.acme.dev"
+        f.alias = "review"
         f.runtimes = ["claude-code-cloud", "cursor-cloud"]
         f.routines = [.init(name: "*", runtimes: ["claude-code-cloud"]), .init(name: "release-notes", runtimes: [])]
         f.targets = [.init(repo: "github.com/acme/app"),

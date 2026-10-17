@@ -102,6 +102,7 @@ func (d *Factory) Render(w io.Writer) {
 	fmt.Fprintf(w, "Factory %s (%s)\n", d.Name, kind)
 	if d.Spec != nil && d.Spec.Endpoint() != "" {
 		fmt.Fprintf(w, "  endpoint %s\n", d.Spec.Endpoint())
+		fmt.Fprintf(w, "  tag %s (runtimes name its routines like %s)\n", d.Spec.Tag(), stub.Identity(d.Spec.Tag(), "<routine>", "<repo>"))
 	}
 	for _, n := range d.Notes {
 		fmt.Fprintf(w, "  · %s\n", n)

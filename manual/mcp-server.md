@@ -15,8 +15,8 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 | Tool | What it does |
 |---|---|
-| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes the other four values. Refuses routine runs whose stub is outdated or no longer deployed. |
-| `run_report(run_id, summary, status?, links?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. |
+| `run_begin(intent, routine?, runtime?, repo?, stub?, session?)` | Starts a run and returns a `run_id` and a hint for what to do next. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes `routine`, `runtime`, `repo` and `stub`. Refuses routine runs whose stub is outdated or no longer deployed. `session` is optional and says where the session's transcript lives: a file path, a session ID or a session URL (at most 512 bytes, on one line). A bad one is an error, and the run isn't recorded, so the agent can try again. |
+| `run_report(run_id, summary, status?, links?, friction?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. `friction` is optional: up to 5 notes about what slowed the agent down since its last report, each with a kind (`navigation`, `checks`, `standards`, `tools`, `info` or `other`) and a note of at most 20 words. It answers with an acknowledgement and nothing else. Only accepts a run that was begun for this factory (and, on the local server, this repo), from any session; for any other `run_id`, whether it exists or not, it gives the same error. |
 | `rules_get()` | Every always-on rule in full, plus an index of the other rules (name, description, globs). It always starts with the "product knowledge only" rule. |
 | `rule_load(name)` | One rule. |
 | `skills_list()` | Names and descriptions of all skills. Remotely, skills that need their folder on disk are marked unavailable, with the reason. Also lists the skills the blueprint expects the repo to provide. |
@@ -27,7 +27,11 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 Skills over MCP aren't a standard yet, so Fabrica emulates them with these plain tools. The server's MCP instructions, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how relative paths in a skill work. When native skills over MCP arrive, the emulation can go away.
 
-The server rejects an `intent` or `summary` longer than 20 words and asks for a shorter one.
+The server rejects an `intent`, `summary` or friction note longer than 20 words and asks for a shorter one.
+
+After `run_begin`, the server also records every skill, rule and routine the session loads (`skill_load`, `rule_load`, `routine_get`, and each always-on rule `rules_get` hands over) as loads of that run. See [Run history](run-history.md).
+
+**No tool returns run history, on purpose.** Agents write run history; only people read it. `run_begin` gives back a `run_id` and a hint, `run_report` an acknowledgement, and neither says anything about earlier runs or checkpoints, not even the agent's own. The one exception is a routine's [memory](blueprints.md#memory), which `routine_get` shows to the routine that saved it. That's a separate feature, not run history.
 
 ## The local server
 
@@ -113,7 +117,7 @@ The image keeps its database and git cache in `/data`.
 
 Put it behind HTTPS (a reverse proxy like Caddy or nginx, or your platform's load balancer) at the URL your factories use as `server:`. The server checks a token on every request, so it works fine behind a proxy that connects over localhost.
 
-The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its skill loads to its run. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
 
 ## Stale stubs
 

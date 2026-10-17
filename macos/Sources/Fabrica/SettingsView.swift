@@ -6,6 +6,7 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var model = model
+        @Bindable var updater = model.updater
         let cli = model.cli
         Form {
             Section {
@@ -28,6 +29,16 @@ struct SettingsView: View {
                 .padding(.bottom, 10)
                 .textCase(nil)
                 .foregroundStyle(.primary)
+            }
+
+            Section {
+                Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
+                    .disabled(updater.current == nil)
+                UpdateRow()
+            } header: {
+                Text("Updates")
+            } footer: {
+                Footnote { Text("Fabrica looks for a new release on GitHub every few hours. Updating downloads it, checks its checksum and signature, puts it in place of this app, and opens it.") }
             }
 
             Section {

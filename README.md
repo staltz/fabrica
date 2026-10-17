@@ -85,7 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/staltz/fabrica/main/install.sh | ba
 
 That puts `fabrica` in `~/.local/bin` (set `FABRICA_INSTALL_DIR` to change it). You also need `git`, since Fabrica runs it to read blueprints and to commit state. Later, `fabrica -u` updates it to the latest release.
 
-On a Mac, you can use **Fabrica.app** instead: a menu bar app that installs the CLI too, edits your factories with forms, runs plan and apply, starts and stops a local Fabrica server, and shows your run history. Download [Fabrica-macos.zip](https://github.com/staltz/fabrica/releases/latest/download/Fabrica-macos.zip) from the latest release, unzip it, and move Fabrica.app to Applications. See [macos/](macos/README.md).
+On a Mac, you can use **Fabrica.app** instead: a menu bar app that installs the CLI too, edits your factories with forms, runs plan and apply, starts and stops a local Fabrica server, shows your run history, and keeps itself up to date. Download [Fabrica-macos.zip](https://github.com/staltz/fabrica/releases/latest/download/Fabrica-macos.zip) from the latest release, unzip it, and move Fabrica.app to Applications. See [macos/](macos/README.md).
 
 <p align="center">
   <picture>

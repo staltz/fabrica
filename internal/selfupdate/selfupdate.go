@@ -66,7 +66,7 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 	}
 	res.Path = exe
 	if app, ok := insideApp(exe); ok {
-		return res, fmt.Errorf("this fabrica came with %s, which keeps it up to date: update the app instead", app)
+		return res, fmt.Errorf("this fabrica came with %s, which keeps it up to date: update the app instead, with Check for Updates… in its menu", app)
 	}
 
 	tag, err := u.latestTag(ctx)

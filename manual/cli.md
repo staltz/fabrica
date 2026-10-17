@@ -201,7 +201,7 @@ Builds between releases say `dev` instead of a version number.
 
 Updates Fabrica itself to the latest release on GitHub. It downloads the same files [install.sh](../install.sh) does: the static binary for your OS and CPU, which it checks against the release's `checksums.txt` before putting it in place of the running `fabrica`. When `fabrica` is a symlink, the file it points at gets replaced and the symlink stays.
 
-If you're already on the latest release, it says so and downloads nothing. If the download or the checksum check fails, your current binary is left as it was. When `fabrica` lives in a folder you can't write to, like `/usr/local/bin`, run the update as a user who can (`sudo fabrica -u`). A `fabrica` that came with Fabrica.app (one inside a `.app` bundle, even through a symlink) refuses to update itself: update the app, which brings its own.
+If you're already on the latest release, it says so and downloads nothing. If the download or the checksum check fails, your current binary is left as it was. When `fabrica` lives in a folder you can't write to, like `/usr/local/bin`, run the update as a user who can (`sudo fabrica -u`). A `fabrica` that came with Fabrica.app (one inside a `.app` bundle, even through a symlink) refuses to update itself: update the app (Check for Updates… in its menu), which brings its own.
 
 Not to be confused with [`fabrica upgrade`](#fabrica-upgrade-import-alias), which moves a blueprint's imports.
 

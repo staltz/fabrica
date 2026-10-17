@@ -562,7 +562,7 @@ func TestEveryResponseIsPrivateAndLockedDown(t *testing.T) {
 	w := newWorld(t)
 	remote := w.remote()
 	cookies := admin(t, remote, "")
-	local := New(w.db, Options{Code: "the-code"})
+	local := New(w.db, Options{Codes: codesOf(t, "the-code")})
 	for name, rec := range map[string]*httptest.ResponseRecorder{
 		"overview":        do(remote, "GET", "/_dashboard", cookies, nil),
 		"routine":         do(remote, "GET", "/_dashboard/routines/acme/pr-review", cookies, nil),
@@ -601,7 +601,7 @@ func TestPagesLoadNothing(t *testing.T) {
 	w := newWorld(t)
 	h := w.remote()
 	cookies := admin(t, h, "")
-	local := New(w.db, Options{Code: "c"})
+	local := New(w.db, Options{Codes: codesOf(t, "c")})
 	pages := map[string]string{}
 	for _, target := range []string{
 		"/_dashboard", "/_dashboard?days=7&kind=routines", "/_dashboard/routines/acme/pr-review", "/_dashboard/routines/acme/autofix",

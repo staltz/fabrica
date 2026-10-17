@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/staltz/fabrica/internal/runs"
@@ -66,12 +65,13 @@ func route(urlPath string) (prefix, rest string, ok bool) {
 type Options struct {
 	// Secret is the server secret of a remote server. Visitors log in with
 	// the admin token computed from it, and nothing else gets them in.
-	// Exactly one of Secret and Code should be set; if neither is, nobody
+	// Exactly one of Secret and Codes should be set; if neither is, nobody
 	// gets in.
 	Secret string
-	// Code is the one-time code of a local dashboard: visiting
-	// …/_dashboard?code=<code> trades it for a cookie, once.
-	Code string
+	// Codes are the one-time codes of a local dashboard: visiting
+	// …/_dashboard?code=<code> trades a code it issued for a cookie, once.
+	// The owner can issue more while the dashboard runs.
+	Codes *Codes
 	// Subject finds the subject line of a blueprint commit, for the tooltips
 	// on a routine's chart. It returns "" when it can't, and the page goes on
 	// without. It's optional.
@@ -96,11 +96,8 @@ type handler struct {
 
 	pages map[string]*template.Template
 
-	// Local dashboards only: the cookie that the code is traded for.
-	cookieName string
-	session    string
-	mu         sync.Mutex
-	codeUsed   bool
+	// Local dashboards only: the codes, and the cookie they're traded for.
+	codes *Codes
 }
 
 //go:embed templates/*.html templates/style.css
@@ -115,8 +112,8 @@ func New(db *runs.DB, opts Options) http.Handler {
 	if h.log == nil {
 		h.log = slog.New(slog.DiscardHandler)
 	}
-	if opts.Secret == "" && opts.Code != "" {
-		h.cookieName, h.session = localCookie(opts.Code)
+	if opts.Secret == "" {
+		h.codes = opts.Codes
 	}
 	css, err := files.ReadFile("templates/style.css")
 	if err != nil {

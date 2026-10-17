@@ -4,7 +4,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -180,9 +184,21 @@ func TestRemoteLogout(t *testing.T) {
 	}
 }
 
+// codesOf makes the codes of a local dashboard with these codes issued, so a
+// test knows what to visit.
+func codesOf(t testing.TB, codes ...string) *Codes {
+	t.Helper()
+	c, err := NewCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.unused = slices.Clone(codes)
+	return c
+}
+
 func TestLocalCodeTradesForACookie(t *testing.T) {
 	w := newWorld(t)
-	h := New(w.db, Options{Code: "the-one-time-code", Now: func() time.Time { return w.now }})
+	h := New(w.db, Options{Codes: codesOf(t, "the-one-time-code"), Now: func() time.Time { return w.now }})
 
 	// No code and no cookie: the page that says to run the command again.
 	for _, target := range []string{"/_dashboard", "/_dashboard/runs/" + w.ids["fifth"], "/_dashboard/routines/acme/pr-review"} {
@@ -243,7 +259,7 @@ func TestLocalCodeTradesForACookie(t *testing.T) {
 
 func TestLocalCodeKeepsTheRestOfTheAddress(t *testing.T) {
 	w := newWorld(t)
-	h := New(w.db, Options{Code: "c0de"})
+	h := New(w.db, Options{Codes: codesOf(t, "c0de")})
 	rec := do(h, "GET", "/fabrica/_dashboard/routines/acme/pr-review?code=c0de&days=7&factory=acme", nil, nil)
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("%d", rec.Code)
@@ -269,7 +285,7 @@ func TestLocalCodeNeverRedirectsToAnotherSite(t *testing.T) {
 		"/fabrica/_dashboard/../../evil.com/_dashboard?code=c0de": "/evil.com/_dashboard",
 		`/\evil.com/_dashboard?code=c0de`:                         "",
 	} {
-		h := New(w.db, Options{Code: "c0de"})
+		h := New(w.db, Options{Codes: codesOf(t, "c0de")})
 		rec := do(h, "GET", target, nil, nil)
 		loc := rec.Header().Get("Location")
 		if rec.Code != http.StatusSeeOther {
@@ -295,7 +311,7 @@ func TestLocalCodeNeverRedirectsToAnotherSite(t *testing.T) {
 // a cookie of its own.
 func TestLocalDashboardsDontLogEachOtherOut(t *testing.T) {
 	w := newWorld(t)
-	a, b := New(w.db, Options{Code: "code-a"}), New(w.db, Options{Code: "code-b"})
+	a, b := New(w.db, Options{Codes: codesOf(t, "code-a")}), New(w.db, Options{Codes: codesOf(t, "code-b")})
 	ca := do(a, "GET", "/_dashboard?code=code-a", nil, nil).Result().Cookies()
 	cb := do(b, "GET", "/_dashboard?code=code-b", nil, nil).Result().Cookies()
 	if ca[0].Name == cb[0].Name {
@@ -326,8 +342,176 @@ func TestNoWayInMeansNoOneIn(t *testing.T) {
 func TestOnlyTheRightKindOfServerLogsIn(t *testing.T) {
 	w := newWorld(t)
 	// A server with a secret doesn't take a code.
-	h := New(w.db, Options{Secret: secret, Code: "both"})
+	h := New(w.db, Options{Secret: secret, Codes: codesOf(t, "both")})
 	if rec := do(h, "GET", "/_dashboard?code=both", nil, nil); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "Runs per day") || len(rec.Result().Cookies()) != 0 {
 		t.Errorf("a remote dashboard took a code: %d", rec.Code)
+	}
+}
+
+// Every code that was issued works once, and they all open the same
+// dashboard: the cookie belongs to the dashboard, not to the code, so a
+// browser that used the first code stays in when another tab used the next.
+func TestEveryIssuedCodeWorksOnceAndSharesOneCookie(t *testing.T) {
+	w := newWorld(t)
+	codes, err := NewCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(w.db, Options{Codes: codes})
+
+	var issued []string
+	for range 3 {
+		code, err := codes.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(code) || slices.Contains(issued, code) {
+			t.Fatalf("code %q is not a new 128-bit hex code", code)
+		}
+		issued = append(issued, code)
+	}
+
+	var cookies []*http.Cookie
+	for _, code := range issued {
+		rec := do(h, "GET", "/_dashboard?code="+code, nil, nil)
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/_dashboard" || len(rec.Result().Cookies()) != 1 {
+			t.Fatalf("code %s: %d, Location %q", code, rec.Code, rec.Header().Get("Location"))
+		}
+		cookies = append(cookies, rec.Result().Cookies()[0])
+	}
+	for _, c := range cookies[1:] {
+		if c.Name != cookies[0].Name || c.Value != cookies[0].Value {
+			t.Errorf("another code got another cookie: %s=%s and %s=%s", cookies[0].Name, cookies[0].Value, c.Name, c.Value)
+		}
+	}
+	// Each cookie opens the dashboard, and no code works twice.
+	for i, code := range issued {
+		if status, body := get(t, h, cookies[i:i+1], "/_dashboard"); status != 200 || !strings.Contains(body, "Runs per day") {
+			t.Errorf("the cookie of code %d: %d", i, status)
+		}
+		if rec := do(h, "GET", "/_dashboard?code="+code, nil, nil); rec.Code != http.StatusForbidden || len(rec.Result().Cookies()) != 0 {
+			t.Errorf("code %d a second time: %d", i, rec.Code)
+		}
+	}
+	// A code issued after the others were used still works, once.
+	late, err := codes.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(h, "GET", "/_dashboard?code="+late, nil, nil); rec.Code != http.StatusSeeOther {
+		t.Errorf("a later code: %d", rec.Code)
+	}
+	if rec := do(h, "GET", "/_dashboard?code="+late, nil, nil); rec.Code != http.StatusForbidden {
+		t.Errorf("a later code twice: %d", rec.Code)
+	}
+}
+
+// The codes of one dashboard mean nothing to another, and neither does its cookie.
+func TestCodesBelongToTheirDashboard(t *testing.T) {
+	w := newWorld(t)
+	a, b := codesOf(t), codesOf(t)
+	ha, hb := New(w.db, Options{Codes: a}), New(w.db, Options{Codes: b})
+	code, err := a.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(hb, "GET", "/_dashboard?code="+code, nil, nil); rec.Code != http.StatusForbidden {
+		t.Errorf("a's code opened b: %d", rec.Code)
+	}
+	rec := do(ha, "GET", "/_dashboard?code="+code, nil, nil)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("a's code: %d", rec.Code)
+	}
+	if status, _ := get(t, hb, rec.Result().Cookies(), "/_dashboard"); status != http.StatusForbidden {
+		t.Errorf("a's cookie opened b: %d", status)
+	}
+}
+
+// Past the cap, asking for a code drops the oldest unused one, and the rest
+// keep working.
+func TestTheOldestUnusedCodeIsDroppedPastTheCap(t *testing.T) {
+	codes := codesOf(t)
+	issue := func() string {
+		t.Helper()
+		code, err := codes.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return code
+	}
+	var issued []string
+	for range maxCodes + 1 {
+		issued = append(issued, issue())
+	}
+	if len(codes.unused) != maxCodes {
+		t.Fatalf("%d codes are outstanding, want %d", len(codes.unused), maxCodes)
+	}
+	if codes.use(issued[0]) {
+		t.Error("the oldest code still worked after the cap was passed")
+	}
+	for i, code := range issued[1:] {
+		if !codes.use(code) {
+			t.Errorf("code %d stopped working when the oldest was dropped", i+1)
+		}
+	}
+
+	// A code that's been used doesn't count toward the cap, so it makes
+	// room, and asking for another drops nobody.
+	issued = issued[:0]
+	for range maxCodes {
+		issued = append(issued, issue())
+	}
+	if !codes.use(issued[5]) {
+		t.Fatal("a code that was issued didn't work")
+	}
+	issued = append(issued[:5], issued[6:]...)
+	issued = append(issued, issue())
+	for i, code := range issued {
+		if !codes.use(code) {
+			t.Errorf("code %d didn't work: one was dropped while there was room", i)
+		}
+	}
+}
+
+func TestCodesRefuseWhatWasNeverIssued(t *testing.T) {
+	codes := codesOf(t, "issued")
+	for _, code := range []string{"", "issue", "issued ", "ISSUED", "issuedd"} {
+		if codes.use(code) {
+			t.Errorf("code %q worked", code)
+		}
+	}
+	var none *Codes
+	if none.use("issued") || none.inside("") {
+		t.Error("no codes at all let someone in")
+	}
+	if !codes.use("issued") {
+		t.Error("the issued code didn't work after the wrong ones")
+	}
+}
+
+// Many browsers using the same code at once: one gets in.
+func TestACodeWorksOnceEvenWhenUsedAtOnce(t *testing.T) {
+	codes := codesOf(t)
+	code, err := codes.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var worked atomic.Int32
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if codes.use(code) {
+				worked.Add(1)
+			}
+			if _, err := codes.New(); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if worked.Load() != 1 {
+		t.Errorf("the code worked %d times", worked.Load())
 	}
 }

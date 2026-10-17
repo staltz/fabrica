@@ -1,10 +1,6 @@
 package dashboard
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,28 +12,15 @@ import (
 // remoteCookie is the cookie a remote dashboard keeps the admin token in.
 const remoteCookie = "fabrica_admin"
 
-// localCookie makes the cookie a local dashboard trades its code for: a
-// name that's specific to this dashboard (cookies ignore ports, so two
-// dashboards on 127.0.0.1 would otherwise log each other out) and a random
-// value that isn't the code.
-func localCookie(code string) (name, value string) {
-	sum := sha256.Sum256([]byte(code))
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic(err) // crypto/rand doesn't fail on supported systems
-	}
-	return "fabrica_dashboard_" + hex.EncodeToString(sum[:4]), hex.EncodeToString(b)
-}
-
 // authed says whether the request carries the cookie of someone who's in.
 func (h *handler) authed(r *http.Request) bool {
 	switch {
 	case h.remote():
 		c, err := r.Cookie(remoteCookie)
 		return err == nil && token.ValidAdmin(h.opts.Secret, c.Value)
-	case h.session != "":
-		c, err := r.Cookie(h.cookieName)
-		return err == nil && subtle.ConstantTimeCompare([]byte(c.Value), []byte(h.session)) == 1
+	case h.codes != nil:
+		c, err := r.Cookie(h.codes.cookieName)
+		return err == nil && h.codes.inside(c.Value)
 	}
 	return false // no way in was set up
 }
@@ -48,7 +31,7 @@ func (h *handler) authed(r *http.Request) bool {
 func (h *handler) cookie(r *http.Request, base, value string) *http.Cookie {
 	name := remoteCookie
 	if !h.remote() {
-		name = h.cookieName
+		name = h.codes.cookieName
 	}
 	return &http.Cookie{
 		Name: name, Value: value, Path: base,
@@ -141,7 +124,7 @@ func (h *handler) loginOrLogout(w http.ResponseWriter, r *http.Request, base, re
 }
 
 // exchangeCode trades a local dashboard's one-time code for its cookie, and
-// sends the visitor to the same page without the code in the address. The
+// sends the visitor to the same page without the code in the address. Each
 // code works once. Someone who's already in just gets the clean address.
 func (h *handler) exchangeCode(w http.ResponseWriter, r *http.Request, base string) {
 	q := r.URL.Query()
@@ -155,16 +138,10 @@ func (h *handler) exchangeCode(w http.ResponseWriter, r *http.Request, base stri
 		http.Redirect(w, r, clean, http.StatusSeeOther)
 		return
 	}
-	h.mu.Lock()
-	ok := h.opts.Code != "" && !h.codeUsed && subtle.ConstantTimeCompare([]byte(code), []byte(h.opts.Code)) == 1
-	if ok {
-		h.codeUsed = true
-	}
-	h.mu.Unlock()
-	if !ok {
+	if !h.codes.use(code) {
 		h.deny(w, r, base)
 		return
 	}
-	http.SetCookie(w, h.cookie(r, base, h.session))
+	http.SetCookie(w, h.cookie(r, base, h.codes.session))
 	http.Redirect(w, r, clean, http.StatusSeeOther)
 }

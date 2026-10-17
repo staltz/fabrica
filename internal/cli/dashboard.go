@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -31,6 +29,7 @@ func newDashboard(g *globals) *cobra.Command {
 	var (
 		port   int
 		openIt bool
+		dbFlag string
 	)
 	cmd := &cobra.Command{
 		Use:   "dashboard",
@@ -44,6 +43,10 @@ routine, or to one run.
 It prints a link with a code in it. Open the link in your browser: the code
 works once, and trades itself for a cookie that keeps that browser in until
 you stop the dashboard. Press Ctrl-C to stop it.
+
+Programs that run the dashboard, like Fabrica.app, can send it SIGUSR1 to
+make it print a fresh one-time link, for another browser tab or window. The
+cookie is the same for every link, so the tabs you already have stay in.
 
 The remote server has the same dashboard at <server>/_dashboard. You log in
 there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
@@ -61,8 +64,12 @@ there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
 				}
 			}
 			dbPath := filepath.Join(homeDir, "runs.db")
+			whoMakesIt := "Fabrica starts it the first time an agent calls run_begin in a local tool (`fabrica apply` sets those up)"
+			if dbFlag != "" {
+				dbPath, whoMakesIt = dbFlag, "`fabrica mcp --http` makes it the first time it starts"
+			}
 			if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("there's no run history at %s yet; Fabrica starts it the first time an agent calls run_begin in a local tool (`fabrica apply` sets those up)", dbPath)
+				return fmt.Errorf("there's no run history at %s yet; %s", dbPath, whoMakesIt)
 			}
 			db, err := runs.Open(dbPath)
 			if err != nil {
@@ -74,10 +81,14 @@ there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
 				return err
 			}
 
-			code, err := newCode()
+			codes, err := dashboard.NewCodes()
 			if err != nil {
 				return err
 			}
+			// Ask for SIGUSR1 before anything else is shown, so a program that
+			// sees the first link can ask for another straight away.
+			fresh, stopFresh := freshLinkRequests()
+			defer stopFresh()
 			// Only this machine can connect.
 			ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 			if err != nil {
@@ -86,9 +97,21 @@ there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
 				}
 				return err
 			}
-			link := fmt.Sprintf("http://%s/_dashboard?code=%s", ln.Addr().String(), code)
+			// newLink is a link with a code of its own, which works once.
+			newLink := func() (string, error) {
+				code, err := codes.New()
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("http://%s/_dashboard?code=%s", ln.Addr().String(), code), nil
+			}
+			link, err := newLink()
+			if err != nil {
+				_ = ln.Close()
+				return err
+			}
 
-			dash := dashboard.New(db, dashboard.Options{Code: code, Subject: localSubject(homeDir, t.git)})
+			dash := dashboard.New(db, dashboard.Options{Codes: codes, Subject: localSubject(homeDir, t.git)})
 			srv := &http.Server{Handler: rootRedirect(dash), ReadHeaderTimeout: 10 * time.Second}
 			serveErr := make(chan error, 1)
 			go func() { serveErr <- srv.Serve(ln) }()
@@ -99,10 +122,21 @@ there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
 				fmt.Fprintln(cmd.ErrOrStderr(), "Couldn't open a browser here; open the link yourself.")
 			}
 
-			select {
-			case err := <-serveErr:
-				return err
-			case <-ctx.Done():
+			for ctx.Err() == nil {
+				select {
+				case err := <-serveErr:
+					return err
+				case <-ctx.Done():
+				case <-fresh:
+					// On a line of its own, like the first, so a program reading
+					// our output finds it the same way.
+					next, err := newLink()
+					if err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Couldn't make a fresh link: %v\n", err)
+						continue
+					}
+					fmt.Fprintf(out, "\nA fresh link (it works once):\n\n  %s\n", next)
+				}
 			}
 			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -115,17 +149,8 @@ there with the admin token that ` + "`fabrica auth admin-token`" + ` prints.`,
 	f := cmd.Flags()
 	f.IntVar(&port, "port", 0, "the port to listen on (default: any free one)")
 	f.BoolVar(&openIt, "open", false, "open the link in your browser")
+	f.StringVar(&dbFlag, "db", "", "the runs.db to show (default: runs.db in your home repo)")
 	return cmd
-}
-
-// newCode makes the one-time code that opens a local dashboard: 128 bits of
-// randomness.
-func newCode() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // rootRedirect sends someone who opened the bare address to the dashboard,

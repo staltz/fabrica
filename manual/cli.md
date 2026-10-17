@@ -301,13 +301,14 @@ Open this link in your browser (it works once):
 Press Ctrl-C to stop.
 ```
 
-Open the link. The code in it works once: it trades itself for a cookie, and your browser goes on to the plain address `http://127.0.0.1:52817/_dashboard`, which stays open in that browser until you stop the dashboard. Anyone else who visits without the code gets a page that says to run `fabrica dashboard` again, and so does the link when you use it a second time. To look from another browser, stop it and run it again.
+Open the link. The code in it works once: it trades itself for a cookie, and your browser goes on to the plain address `http://127.0.0.1:52817/_dashboard`, which stays open in that browser until you stop the dashboard. Anyone else who visits without the code gets a page that says to run `fabrica dashboard` again, and so does the link when you use it a second time. To look from another browser, stop it and run it again, or send the running one `SIGUSR1` (on macOS and Linux) and it prints a fresh link; that's how apps that run it, like Fabrica.app, open it for you.
 
 | Flag | What it does |
 |---|---|
 | `--port <number>` | The port to listen on. Without it, Fabrica picks a free one. |
 | `--open` | Open the link in your browser, the way `fabrica auth login` opens pages (`$BROWSER`, `open` on macOS, `xdg-open` on Linux). When it can't, it says so and you open the link yourself. |
 | `--home <folder>` | The home repo whose `runs.db` to show. Default: your personal home repo. |
+| `--db <file>` | Show this `runs.db` instead of the one in the home repo, like the database of a [`fabrica mcp --http`](#fabrica-mcp) server. It has to exist already. Routine charts still look up commit subjects in the home repo. |
 
 Press Ctrl-C to stop it. If there's no `runs.db` yet, it says so, and doesn't make one: Fabrica starts it the first time an agent calls `run_begin` in a local tool. The dashboard only reads, and changes nothing.
 

@@ -8,7 +8,7 @@
 //
 // The remote server hands it every path with a /_admin/ segment, wherever
 // that sits, so it works under any path prefix (for example when `server:`
-// is https://acme.dev/fabrica). See specs/v2-run-history.md.
+// is https://acme.dev/fabrica). See manual/mcp-server.md.
 package admin
 
 import (

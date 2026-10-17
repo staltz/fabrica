@@ -21,7 +21,7 @@ import (
 )
 
 // These tests guard the rule that agents write run history and only people
-// read it (see "The big rule" in specs/v2-run-history.md). The factory plane,
+// read it (see "Who can read it" in manual/run-history.md). The factory plane,
 // which is everything in this package, must never hand run history to an
 // agent: not another factory's, not another repo's, not even the agent's own.
 
@@ -280,7 +280,7 @@ func TestMCPServerNeverCallsTheReadFunctions(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, call := range readCalls(fset, file) {
-			t.Errorf("%s: the MCP server must not read run history, because agents would be able to read it too (specs/v2-run-history.md)", call)
+			t.Errorf("%s: the MCP server must not read run history, because agents would be able to read it too (manual/run-history.md)", call)
 		}
 	}
 }

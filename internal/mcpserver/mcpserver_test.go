@@ -611,7 +611,7 @@ func toolNames(t *testing.T, c *client) []string {
 }
 
 // TestOnlyTheseTools is a guard for the rule that agents write run history
-// and only people read it (specs/v2-run-history.md). None of these tools
+// and only people read it (manual/run-history.md). None of these tools
 // returns run history. Adding a tool means changing this list, and saying in
 // review why the new tool can't leak runs to agents.
 func TestOnlyTheseTools(t *testing.T) {

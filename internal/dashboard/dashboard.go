@@ -7,7 +7,7 @@
 //
 // One handler serves two places: `fabrica dashboard` on your machine, and
 // the remote server. They differ only in who gets in. See
-// specs/v2-run-history.md.
+// manual/run-history.md.
 //
 // Agents write run history and only people read it, so this package is
 // operator-plane code: the MCP server only routes to it (see

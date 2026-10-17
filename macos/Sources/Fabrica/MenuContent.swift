@@ -41,6 +41,9 @@ struct MenuContent: View {
             }
         }
         Button("Runs…", systemImage: "clock") { open(.runs) }
+        Button("Dashboard…", systemImage: "chart.bar.xaxis") {
+            Task { await model.dashboard.open(.local) }
+        }
 
         Divider()
 

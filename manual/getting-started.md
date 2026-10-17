@@ -80,10 +80,11 @@ Factory my-default (local)
 Local tools on this machine
   claude-code-local (~/.claude.json, ~/.claude/settings.json)
     + add MCP server fabrica
+    + add session pointer hook on session.start
   cursor-local (~/.cursor/mcp.json, ~/.cursor/hooks.json)
     + add MCP server fabrica
 
-Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
+Plan: 3 changes, 0 errors. Run `fabrica apply` to make these changes.
 ```
 
 `plan` never changes anything. It exits with `2` here because there are changes to make. Now apply them:
@@ -92,7 +93,7 @@ Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
 fabrica apply
 ```
 
-That adds one user-level MCP server called `fabrica` to Claude Code and Cursor. It leaves everything else in those config files alone, and it never writes into a product repo.
+That adds one user-level MCP server called `fabrica` to Claude Code and Cursor, and a small session hook to Claude Code that tells each session where its own transcript is (Cursor has no hook for that). It leaves everything else in those config files alone, and it never writes into a product repo.
 
 You only need to run `apply` again when the *installs* change: a new local tool, or a local routine whose trigger changed. Changing which blueprint a repo uses never needs an apply, because `fabrica mcp` works that out fresh every time a session starts.
 
@@ -130,8 +131,12 @@ Open the repo in Claude Code or Cursor and ask for something. Behind the scenes,
 Every session is recorded in `~/.fabrica/runs.db`. Have a look:
 
 ```sh
-sqlite3 ~/.fabrica/runs.db "SELECT started_at, repo, intent, last_status FROM run_overview ORDER BY started_at DESC LIMIT 10"
+fabrica runs                  # your latest runs, newest first
+fabrica runs show <run>       # one run in full: what it loaded, reported and found slow
+fabrica dashboard             # charts and tables, in your browser
 ```
+
+Agents write run history and only people read it, so this is for you. See [Run history](run-history.md).
 
 ### 6. Add a local routine (optional)
 
@@ -329,8 +334,20 @@ There's a ready-made GitHub Actions workflow in [examples/home/.github/workflows
 fabrica auth env | gh secret set --env-file - --repo acme/home
 ```
 
+### 8. See what the agents did
+
+Once a few PRs have been reviewed, the server has run history. To read it, you need the server's **admin token**, which opens its run history and nothing else:
+
+```sh
+fabrica runs --server https://fabrica.acme.dev    # uses the server secret you saved in step 2
+fabrica auth admin-token https://fabrica.acme.dev # prints the token, for teammates who read runs
+```
+
+The server also has a dashboard at `https://fabrica.acme.dev/_dashboard`, where you log in with that token. Give the token to people who read run history, never to agents. See [Credentials](auth.md#the-admin-token).
+
 ## Where to next
 
 - [Writing a blueprint](blueprints.md) covers the blueprint format in detail, including imports.
 - [Home repos](home-repos.md) covers factories, state and the apply lock.
 - [Safety checks](safety-checks.md) lists every way Fabrica fails closed.
+- [Run history](run-history.md) covers who can read it, `fabrica runs`, the dashboard and the schema.

@@ -18,6 +18,7 @@ final class AppModel {
     let cli = CLI()
     let home: HomeRepo
     let server: Server
+    let dashboard: Dashboard
     /// The plan or apply shown in the command sheet.
     let command = LiveProcess()
     var commandTitle = ""
@@ -44,6 +45,7 @@ final class AppModel {
     init() {
         home = HomeRepo(cli: cli)
         server = Server(cli: cli, home: home)
+        dashboard = Dashboard(cli: cli, home: home)
         let d = UserDefaults.standard
         showInMenuBar = d.object(forKey: "ui.menubar") as? Bool ?? true
         showInDock = d.object(forKey: "ui.dock") as? Bool ?? false

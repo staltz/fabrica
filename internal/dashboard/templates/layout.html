@@ -1,0 +1,24 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>{{.Title}}</title>
+<link rel="icon" href="data:,">
+<style>{{css}}</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+<a class="brand" href="{{.Base}}">Fabrica<span>run history</span></a>
+{{if .LogOut}}<form method="post" action="{{.Base}}/logout"><button class="link" type="submit">Log out</button></form>{{end}}
+</header>
+<main>
+{{template "content" .}}
+</main>
+</div>
+</body>
+</html>
+{{end}}

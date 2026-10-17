@@ -128,7 +128,8 @@ need the secret of each factory's server, to compute its token: run
 ` + "`fabrica auth login`" + ` once to set that up, or set FABRICA_SERVER_SECRET.
 
 For local factories in your personal home repo, it installs the
-user-level fabrica MCP server and local routine hooks in each local tool.
+user-level fabrica MCP server and local routine hooks in each local tool,
+plus a session pointer hook in the tools that have a session-start hook.
 It never writes into a product repo.
 
 Apply works from the latest home repo on its remote, so commit and push

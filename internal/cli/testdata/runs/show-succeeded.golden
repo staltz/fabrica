@@ -1,0 +1,19 @@
+Run run_01m54cx6ng0000000000000001: succeeded
+  Intent     Review PR 412 for the billing retry change
+  Factory    acme (served remotely), blueprint ee8f142
+  Routine    pr-review on claude-code-cloud, repo github.com/acme/app
+  Session    https://claude.ai/code/session_01Abc
+  Started    Oct 17 09:41:02, last heard from 09:58:40 (17m later)
+
+09:41:05  loaded routine pr-review
+09:41:06  loaded rules product-knowledge-only, commit-messages
+09:41:09  loaded skill pr-review
+09:47:30  progress   Read the diff and the retry tests
+09:52:11  progress   Found the retry backoff settings
+09:52:11  friction   navigation: couldn't find where retry backoff is configured
+09:58:40  succeeded  Posted review with two blocking comments
+          → https://github.com/acme/app/pull/412
+
+See the instructions this run was served:
+  git -C <your blueprint clone> show ee8f142:routines/pr-review.md
+  (If the blueprint lives in a subfolder of its repo, put that folder in front of the path.)

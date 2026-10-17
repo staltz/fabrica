@@ -2,7 +2,7 @@
 
 A **provider** maps Fabrica's ideas onto one runtime. Blueprints describe *what* should happen, and providers translate that for each specific tool.
 
-- **Built-in providers** are compiled into the `fabrica` binary. v0.1 has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
+- **Built-in providers** are compiled into the `fabrica` binary. Fabrica has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
 - **Folder providers** ship inside any blueprint, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
 
 ## Capability matrices
@@ -88,6 +88,7 @@ Copilot reads MCP servers from the repository's settings (**Settings → Copilot
 | MCP server config | `~/.claude.json` | `~/.cursor/mcp.json` | `~/.codex/config.toml` | `~/.copilot/mcp-config.json` |
 | Hooks config | `~/.claude/settings.json` | `~/.cursor/hooks.json` | `~/.codex/hooks.json` | `~/.copilot/hooks/fabrica.json` |
 | `session.start` | native (SessionStart) | — | native (SessionStart) | native (sessionStart) |
+| Session pointer hook | installed (SessionStart) | — | installed (SessionStart) | installed (sessionStart) |
 | `prompt.submit` | native (UserPromptSubmit) | — | native (UserPromptSubmit) | — |
 | `session.stop` | native (Stop) | native (stop) | native (Stop) | native (agentStop) |
 | `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) | native (preToolUse on bash) |
@@ -105,6 +106,8 @@ A few things worth knowing about local hooks:
 - Codex skips new or changed hooks until you trust them in its `/hooks` screen. After an apply that changes a hook, open Codex and approve it.
 - Copilot CLI drops the output of `userPromptSubmitted` hooks that come from config files, so `prompt.submit` isn't supported there. Its hooks get a file of their own, `~/.copilot/hooks/fabrica.json`, rather than the `hooks` field of `~/.copilot/settings.json`, which can have comments that Fabrica would lose. VS Code also runs the hooks in that folder, so Fabrica's Copilot hooks stay quiet when VS Code calls them, since its MCP server isn't registered there. `COPILOT_HOME`, if set, moves all of `~/.copilot`, and Fabrica follows it.
 - `git.pre_push` and `git.pre_commit` hold the git command back once per session (and per commit), tell the agent to run the routine, and let the command through when it's tried again.
+- **The session pointer hook.** Besides the hooks for routines, `fabrica apply` installs one `fabrica hook session` hook per tool with a `session.start` event, as long as one of your local factories uses that tool: Claude Code, Codex CLI and Copilot CLI. When a session starts, it tells the agent where its own transcript lives, in one line: `Fabrica: when you call run_begin, pass session: "…"`. The agent hands that to `run_begin`, and the run records it, so whoever reads the run later can find the transcript. The pointer is the transcript's path when the tool sends one (Claude Code and Codex CLI do), and otherwise the runtime and the tool's session ID, like `copilot-local:<session id>`. It stays quiet in the same cases as the routine hooks (not a git repo, no local factory covering it on that runtime, no Fabrica line, and inside Cursor or VS Code), and `plan`, `apply` and `destroy` handle it like any other hook. See [`fabrica hook`](cli.md#fabrica-hook-plumbing).
+- **Cursor and the cloud runtimes only get a pointer if the agent has one.** Cursor has no `session.start` hook, so it gets no session pointer hook, and cloud runtimes don't get hooks at all. Some agents know their own session URL anyway (Claude Code on the web puts it in the system prompt), and `run_begin` invites them to pass it. So `session` is best effort, like `intent` and `summary`: it's often there, and sometimes it isn't.
 
 A `schedule` routine on Claude Code isn't a hook. It becomes a [desktop app scheduled task](https://code.claude.com/docs/en/desktop-scheduled-tasks), one per repo, so its factory has to list its targets (`targets: ["*"]` is an error). Fabrica writes the task's prompt to `~/.claude/scheduled-tasks/fabrica-<routine>-<hash>/SKILL.md`, but the app keeps the schedule and the folder somewhere else, and it ignores task files it didn't create. So when an apply adds a task, it tells you to register it once: it prints a prompt, between `-----BEGIN PROMPT-----` and `-----END PROMPT-----` lines, to send Claude in a desktop session on that repo, asking it to create a scheduled task from that file, keeping its ID, description and prompt. When an apply changes a task's cron, it tells you to update the schedule in the app (Code tab → Routines). The app keeps a task's *Auto-fix pull requests* toggle (under **Advanced settings**, on the **Behavior** tab) outside the file too, so the registration prompt asks for it to be turned on for routines that list `github.pr_autofix` and off for the rest, and when that changes, the apply tells you to flip it in the app. Fabrica records the setting at the end of the task's description, so it knows what it last asked for. Fabrica converts the cron to local time for you, because the app reads cron in local time. Prompt changes need nothing more, because the app picks them up on the next run. Removing a task deletes its folder, and you delete it from the app's list yourself. These tasks only run while the app is open and the computer is awake.
 
@@ -145,7 +148,7 @@ providers/<name>/
   launch.md        # optional template for starting an init session by hand
 ```
 
-In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
+For now, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
 
 Folder providers can run code (`api`) with your runtime credentials during `apply`. Imports are pinned by commit and `fabrica upgrade` shows diffs (calling out provider changes in particular), so new provider code never arrives unseen.
 
@@ -154,7 +157,7 @@ There's a complete, runnable example in [examples/custom-provider](../examples/c
 ### `provider.yaml`
 
 ```yaml
-kind: cloud                          # cloud (local is reserved for built-ins in v0.1)
+kind: cloud                          # cloud (local is reserved for built-ins for now)
 description: Acme's in-house agent runner
 apply_modes: [api, handoff]          # tried in order
 launch_modes: [api, handoff]         # optional: how Fabrica can start init sessions

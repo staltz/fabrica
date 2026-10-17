@@ -1,0 +1,11 @@
+STARTED      OUTCOME     FACTORY  ROUTINE   REPO     INTENT      RUN
+Jan 1 09:00  in_progress acme     —         acme/web Draft the … run_03pfb96c
+Oct 17 09:41 succeeded   acme     pr-review acme/app Review PR … run_01m54cx6ng1
+Oct 17 09:41 succeeded   acme     pr-review acme/app Review PR … run_01m54cx6ng0
+Oct 16 22:15 failed      acme     autofix   acme/api Fix lint f… run_01m535n1
+Oct 16 20:00 failed      acme     pr-review acme/api Review PR … run_01m52xxv
+Oct 12 08:02 stale       acme     —         acme/app Fix flaky … run_01m4qb8k
+Oct 3 09:00  succeeded   personal —         me/notes Tidy up my… run_01m40900
+Oct 1 12:00  succeeded   acme     pr-review acme/app Review PR … run_01m3veg5
+
+8 runs. Show one with: fabrica runs show <run>

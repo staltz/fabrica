@@ -1,0 +1,26 @@
+# Run run_01m535n1d00000000000000003: failed
+
+- **Intent:** Fix lint failure on main
+- **Factory:** acme (served remotely), blueprint b4c5d6e
+- **Routine:** autofix on cursor-cloud, repo github.com/acme/api
+- **Started:** 2026-10-16 22:15:00, last heard from 22:20:30 (5m later)
+
+Times are local to the machine that made this bundle (UTC+02:00 when it was made).
+
+## Timeline
+
+- 22:15:04 loaded routine autofix
+- 22:15:05 loaded skill lint-fix
+- 22:16:00 **progress**: Found the failing eslint rule
+- 22:20:30 **failed**: Lint still fails after two attempts
+  - https://github.com/acme/api/pull/77
+- 22:20:30 **friction**: checks: no way to run lint locally before pushing
+- 22:20:30 **friction**: standards: the lint config and the style rule disagree
+
+## Instructions this run was served
+
+```sh
+git -C <your blueprint clone> show b4c5d6e:routines/autofix.md
+```
+
+If the blueprint lives in a subfolder of its repo, put that folder in front of the path.

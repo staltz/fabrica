@@ -1,0 +1,31 @@
+{{define "content"}}
+<p class="crumbs"><a href="{{.BackHref}}">← Overview</a>{{if .RoutineHref}} · <a href="{{.RoutineHref}}">{{.Routine}}</a>{{end}}</p>
+<h1>Run <span class="mono">{{.ID}}</span></h1>
+<p>{{template "outcome" .Outcome}}</p>
+
+<section class="card" aria-labelledby="h-about">
+<h2 id="h-about">About this run</h2>
+<dl class="facts">
+<dt>Intent</dt><dd>{{.Intent}}</dd>
+<dt>Factory</dt><dd>{{if .Factory}}{{.Factory}} ({{.Served}}){{if .SHA}}, blueprint <code title="{{.FullSHA}}">{{.SHA}}</code>{{end}}{{else}}none{{end}}</dd>
+<dt>Routine</dt><dd>{{if .Routine}}{{if .RoutineHref}}<a href="{{.RoutineHref}}">{{.Routine}}</a>{{else}}{{.Routine}}{{end}}{{if .Runtime}} on {{.Runtime}}{{end}}{{if .Repo}}, repo {{.Repo}}{{end}}{{else}}Interactive session{{if .Runtime}} on {{.Runtime}}{{end}}{{if .Repo}}, repo {{.Repo}}{{end}}{{end}}</dd>
+{{if .Session}}<dt>Session</dt><dd>{{if .SessionLink}}<a href="{{.Session}}" rel="noopener noreferrer nofollow">{{.Session}}</a>{{else}}{{.Session}}{{end}}</dd>{{end}}
+{{if .Stub}}<dt>Stub</dt><dd><code>{{.Stub}}</code></dd>{{end}}
+<dt>Started</dt><dd>{{template "time" .Started}} UTC, {{.LastHeard}}</dd>
+</dl>
+</section>
+
+<section class="card" aria-labelledby="h-timeline">
+<h2 id="h-timeline">Timeline</h2>
+<p class="hint">Times are UTC. The agent wrote its own summaries and notes, on a best-effort basis; Fabrica wrote the loads, the times and the lines marked fabrica.</p>
+{{if .Timeline}}<ol class="timeline">{{range .Timeline}}<li>
+<time datetime="{{.ISO}}" title="{{.ISO}}">{{.Clock}}</time>
+<span class="tag">{{if eq .Class "load"}}{{.Label}}{{else if eq .Class "friction"}}{{.Label}}{{else}}{{template "outcomeTag" .}}{{end}}{{if .Who}}<span class="who">{{.Who}}</span>{{end}}</span>
+<span class="what">{{if eq .Class "load"}}{{.Prefix}} {{range $i, $n := .Items}}{{if $i}}, {{end}}<code>{{$n}}</code>{{end}}{{else}}{{.Text}}{{range .Links}}<span class="arrow">→ {{if .Link}}<a href="{{.URL}}" rel="noopener noreferrer nofollow">{{.URL}}</a>{{else}}{{.URL}}{{end}}</span>{{end}}{{end}}</span>
+</li>
+{{end}}</ol>{{else}}<p class="empty">Nothing has happened in this run yet. It shows loads, checkpoints and friction notes as the agent reports them.</p>{{end}}
+{{if .ServedHint}}<p class="hint">See the instructions this run was served: <code>{{.ServedHint}}</code></p>{{end}}
+</section>
+{{end}}
+
+{{define "outcomeTag"}}{{if eq .Class "progress"}}progress{{else}}{{template "outcome" .Class}}{{end}}{{end}}

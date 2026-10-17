@@ -1,0 +1,6 @@
+STARTED       OUTCOME    ROUTINE    REPO      INTENT             RUN
+Oct 17 09:41  succeeded  pr-review  acme/app  Review PR 413 fo…  run_01m54cx6ng1
+Oct 17 09:41  succeeded  pr-review  acme/app  Review PR 412 fo…  run_01m54cx6ng0
+Oct 16 20:00  failed     pr-review  acme/api  Review PR 99 for…  run_01m52xxv
+
+3 runs from factory acme. Show one with: fabrica runs show <run>

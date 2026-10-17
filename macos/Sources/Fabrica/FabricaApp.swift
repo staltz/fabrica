@@ -15,6 +15,9 @@ struct FabricaApp: App {
         .defaultSize(width: 1000, height: 680)
         .defaultLaunchBehavior(model.showInDock || model.isFirstLaunch ? .presented : .suppressed)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                AboutButtons(updater: model.updater)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Factory") { model.selection = .newFactory }
                     .keyboardShortcut("n")
@@ -42,6 +45,32 @@ struct FabricaApp: App {
             SettingsView()
                 .environment(model)
         }
+
+        Window("About Fabrica", id: "about") {
+            AboutView()
+                .environment(model)
+                .windowMinimizeBehavior(.disabled)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+    }
+}
+
+/// About Fabrica and Check for Updates…, in the app menu. Both open the
+/// About window, which shows the version and how updates are going.
+private struct AboutButtons: View {
+    var updater: Updater
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("About Fabrica") { bringForward(openWindow, id: "about") }
+        Button("Check for Updates…") {
+            bringForward(openWindow, id: "about")
+            Task { await updater.check() }
+        }
+        .disabled(updater.current == nil)
     }
 }
 
@@ -71,10 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Opens the main window and brings the app forward, which an app without
-/// a Dock icon has to do by hand.
+/// Opens a window, the main one unless you say, and brings the app
+/// forward, which an app without a Dock icon has to do by hand.
 @MainActor
-func bringForward(_ openWindow: OpenWindowAction) {
-    openWindow(id: "main")
+func bringForward(_ openWindow: OpenWindowAction, id: String = "main") {
+    openWindow(id: id)
     NSApp.activate()
 }

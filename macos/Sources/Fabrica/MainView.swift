@@ -188,6 +188,7 @@ private struct SidebarFooter: View {
     var body: some View {
         let home = model.home
         VStack(alignment: .leading, spacing: 0) {
+            UpdateNotice()
             CLINotice()
             if let error = home.gitError {
                 Text(error)
@@ -252,8 +253,21 @@ private struct SidebarFooter: View {
     }
 }
 
-/// The CLI's install state, when it needs your attention: small, at the
-/// bottom of the sidebar, never in the way.
+/// A newer Fabrica, when there is one.
+private struct UpdateNotice: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        if let release = model.updater.available {
+            SidebarNotice(text: "Fabrica \(release.version) is available", symbol: "arrow.down.circle", action: "Update…") {
+                bringForward(openWindow, id: "about")
+            }
+        }
+    }
+}
+
+/// The CLI's install state, when it needs your attention.
 private struct CLINotice: View {
     @Environment(AppModel.self) private var model
 
@@ -261,22 +275,31 @@ private struct CLINotice: View {
         let cli = model.cli
         switch cli.install {
         case .separate:
-            notice("Another fabrica CLI is in ~/.local/bin", action: "Use the App's") {
+            SidebarNotice(text: "Another fabrica CLI is in ~/.local/bin", symbol: "terminal", action: "Use the App's") {
                 Task { await cli.replaceSeparate() }
             }
             .help("The app runs its own fabrica, which may be a different version. This moves the other one to the Trash, and links ~/.local/bin/fabrica to the app's.")
         case .linked where !cli.onPath:
-            notice("~/.local/bin isn't on your PATH", action: "Add") {
+            SidebarNotice(text: "~/.local/bin isn't on your PATH", symbol: "terminal", action: "Add") {
                 Task { await cli.addToPath() }
             }
         default:
             EmptyView()
         }
     }
+}
 
-    private func notice(_ text: String, action: String, perform: @escaping () -> Void) -> some View {
+/// Something worth knowing, with one thing to do about it: small, at the
+/// bottom of the sidebar, never in the way.
+private struct SidebarNotice: View {
+    var text: String
+    var symbol: String
+    var action: String
+    var perform: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(text, systemImage: "terminal")
+            Label(text, systemImage: symbol)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button(action, action: perform)

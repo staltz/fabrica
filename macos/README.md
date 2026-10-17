@@ -22,11 +22,19 @@ A release built without a Developer ID is signed ad hoc, and macOS won't open it
 xattr -dr com.apple.quarantine /Applications/Fabrica.app
 ```
 
+## Updating
+
+**About Fabrica**, in the menu bar menu (and in the Fabrica menu when the app is in the Dock), shows the app's version and the version of the CLI inside it. The app looks for a new release a few seconds after it opens and every few hours after that, and when there is one, the menu bar menu and the sidebar say so. **Check for Updates…** looks right away. Settings has the switch for the automatic checks.
+
+**Update and Relaunch** downloads `Fabrica-macos.zip` from the latest release and checks it against the release's `.sha256`. Then it checks that the zip has Fabrica.app in it, at that release's version, with a valid code signature, and signed by the same team when the app you have is signed with a Developer ID. Only then does it put the new app in place of the old one, and open it. The CLI comes along, since `~/.local/bin/fabrica` links into the app, and a server that was running starts again. If anything fails along the way, the app you have stays as it was.
+
+It finds the latest release the way `fabrica -u` does, so it doesn't use GitHub's API or count against its rate limit. A release only counts once its app is up, a few minutes after the CLI binaries. When the app can't write to the folder it's in, or macOS runs it from a read-only copy because it was never moved out of Downloads, it offers the download instead.
+
 ## The CLI comes with it
 
 On first launch the app links `~/.local/bin/fabrica` (where `install.sh` puts it) to the `fabrica` inside the app, so updating the app updates the CLI. If a separate `fabrica` is there already, the app leaves it alone and offers to swap it for its own (the old one goes to the Trash). If `~/.local/bin` isn't on your PATH, it offers to add it to `~/.zprofile`.
 
-A `fabrica` that came with the app refuses `fabrica -u` and says to update the app instead, since replacing a file inside the app would break its signature.
+A `fabrica` that came with the app refuses `fabrica -u` and says to update the app instead, since replacing a file inside the app would break its signature. The app updates both.
 
 The app runs `fabrica` and `git` with your login shell's PATH, so they find `git`, `claude`, `gh` and the rest the same way they do in Terminal.
 
@@ -49,6 +57,7 @@ Then move `dist/Fabrica.app` to `/Applications`. For working on the app itself, 
 | `Sources/Fabrica/Dashboard.swift` | `fabrica dashboard` as a child process for each source of runs, and the links it prints. |
 | `Sources/Fabrica/CLI.swift` | The bundled CLI and its link in `~/.local/bin`. |
 | `Sources/Fabrica/Runs.swift` | Reads run history straight from SQLite, read-only. |
+| `Sources/Fabrica/Updater.swift`, `Release.swift` | Finds the latest release, and swaps its app in for this one after checking it. |
 | `build.sh`, `scripts/make-icon.swift` | Builds the bundle, and draws the icon from the favicon's mark. |
 
 ## Releases

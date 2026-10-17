@@ -18,6 +18,7 @@ final class AppModel {
     let cli = CLI()
     let home: HomeRepo
     let server: Server
+    let updater = Updater()
     let dashboard: Dashboard
     /// The plan or apply shown in the command sheet.
     let command = LiveProcess()
@@ -57,12 +58,16 @@ final class AppModel {
         guard !started else { return }
         started = true
         applyActivationPolicy()
+        updater.schedule()
         await ShellEnvironment.prepare()
         home.locate()
         await cli.setUp()
         await home.ensureExists()
         await home.refreshGit()
-        if server.startsWithApp { server.start() }
+        // An update relaunches the app with the server running again if it was.
+        let resume = UserDefaults.standard.bool(forKey: "server.resume")
+        UserDefaults.standard.removeObject(forKey: "server.resume")
+        if server.startsWithApp || resume { server.start() }
         await home.plan()
     }
 
@@ -96,6 +101,18 @@ final class AppModel {
         command.onExit = { _ in then?() }
         command.start(cli.executable, args, cwd: home.url, env: cli.environment)
         showingCommand = true
+    }
+
+    // MARK: Updates
+
+    /// Installs the available update and relaunches into it.
+    func installUpdate() {
+        Task {
+            let serving = server.isRunning
+            guard await updater.install() else { return }
+            UserDefaults.standard.set(serving, forKey: "server.resume")
+            updater.relaunch()
+        }
     }
 
     // MARK: Login item

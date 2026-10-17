@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The menu bar menu: the server switch, your factories, and the usual
-/// way out. Status is shown by symbol shape, since menus draw symbols in
-/// one color.
+/// The menu bar menu: a newer Fabrica if there is one, the server switch,
+/// your factories, and the usual way out. Status is shown by symbol shape,
+/// since menus draw symbols in one color.
 struct MenuContent: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
@@ -10,6 +10,13 @@ struct MenuContent: View {
     var body: some View {
         let server = model.server
         let home = model.home
+
+        if let release = model.updater.available {
+            Button("Update to Fabrica \(release.version)…", systemImage: "arrow.down.circle") {
+                bringForward(openWindow, id: "about")
+            }
+            Divider()
+        }
 
         Section(serverLine) {
             if server.isRunning {
@@ -48,6 +55,12 @@ struct MenuContent: View {
         Divider()
 
         Button("Open Fabrica", systemImage: "macwindow") { bringForward(openWindow) }
+        Button("About Fabrica", systemImage: "info.circle") { bringForward(openWindow, id: "about") }
+        Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
+            bringForward(openWindow, id: "about")
+            Task { await model.updater.check() }
+        }
+        .disabled(model.updater.current == nil)
         SettingsLink { Label("Settings…", systemImage: "gearshape") }
             .keyboardShortcut(",")
         Button("Quit Fabrica", systemImage: "power") { NSApp.terminate(nil) }

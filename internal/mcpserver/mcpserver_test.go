@@ -2,13 +2,17 @@ package mcpserver
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -148,6 +152,9 @@ func TestLocalSession(t *testing.T) {
 	if !strings.Contains(instructions, "Call run_begin first") || !strings.Contains(instructions, "github.com/acme/app") {
 		t.Errorf("instructions = %s", instructions)
 	}
+	if !strings.Contains(instructions, "say so in run_report's friction") {
+		t.Errorf("instructions should ask for friction notes: %s", instructions)
+	}
 	tools, err := c.cs.ListTools(context.Background(), nil)
 	if err != nil || len(tools.Tools) != 9 {
 		t.Fatalf("want the 9 Fabrica tools, got %d (%v)", len(tools.Tools), err)
@@ -276,6 +283,7 @@ type remoteWorld struct {
 	srv    *Remote
 	ts     *httptest.Server
 	db     *runs.DB
+	dbPath string
 	loader *blueprint.Loader
 	cache  *gitx.Cache
 }
@@ -285,7 +293,8 @@ func newRemoteWorld(t *testing.T) *remoteWorld {
 	w := testkit.NewWorld(t)
 	w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add pr-review")
 	cache := gitx.NewCache(t.TempDir())
-	db, err := runs.Open(filepath.Join(t.TempDir(), "runs.db"))
+	dbPath := filepath.Join(t.TempDir(), "runs.db")
+	db, err := runs.Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +309,7 @@ func newRemoteWorld(t *testing.T) *remoteWorld {
 	}
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	return &remoteWorld{w: w, srv: srv, ts: ts, db: db, loader: loader, cache: cache}
+	return &remoteWorld{w: w, srv: srv, ts: ts, db: db, dbPath: dbPath, loader: loader, cache: cache}
 }
 
 func (rw *remoteWorld) connect(t *testing.T, path string) *client {
@@ -404,6 +413,9 @@ func TestRemoteRoutineRun(t *testing.T) {
 	if skills, _ := rw.db.SkillsLoaded(context.Background(), runID); strings.Join(skills, ",") != "pr-review" {
 		t.Errorf("skills loaded = %v", skills)
 	}
+	if got := loadsOf(t, rw.dbPath, runID); got != "routine:pr-review,skill:pr-review" {
+		t.Errorf("loads = %s", got)
+	}
 
 	// The blueprint changes the routine's trigger. Once the server has
 	// fetched it, the old stub is refused, even in this old session.
@@ -460,6 +472,7 @@ func TestRemoteRoutineMemory(t *testing.T) {
 
 	// The next run on the same repo sees it; another repo doesn't.
 	next := rw.connect(t, path)
+	next.fails("memory_save", map[string]any{"run_id": runID, "content": "overwritten"}, "isn't a routine run begun in this session")
 	next.ok("run_begin", args)
 	if r := next.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(r, "-----BEGIN MEMORY-----\n- The app's tests live in `spec/`.\n-----END MEMORY-----") || !strings.Contains(r, "saved on") {
 		t.Errorf("the next run should get the memory:\n%s", r)
@@ -536,4 +549,279 @@ func TestRemoteInitRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review")).fails("run_begin", args, "factory pr-review says init: false")
+}
+
+// rawQuery runs a query on the run-history file, as any SQLite tool would,
+// and returns each row with its columns joined by colons.
+func rawQuery(t *testing.T, dbPath, query string, args ...any) []string {
+	t.Helper()
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	rows, err := raw.Query(query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	var out []string
+	for rows.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			t.Fatal(err)
+		}
+		parts := make([]string, len(vals))
+		for i, v := range vals {
+			parts[i] = v.String
+		}
+		out = append(out, strings.Join(parts, ":"))
+	}
+	return out
+}
+
+// loadsOf lists a run's loads in order, like kind:name,kind:name.
+func loadsOf(t *testing.T, dbPath, runID string) string {
+	t.Helper()
+	return strings.Join(rawQuery(t, dbPath, `SELECT kind, name FROM loads WHERE run_id = ? ORDER BY id`, runID), ",")
+}
+
+func countRows(t *testing.T, dbPath, table string) string {
+	t.Helper()
+	return rawQuery(t, dbPath, "SELECT COUNT(*) FROM "+table)[0]
+}
+
+func toolNames(t *testing.T, c *client) []string {
+	t.Helper()
+	tools, err := c.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// TestOnlyTheseTools is a guard for the rule that agents write run history
+// and only people read it (specs/v2-run-history.md). None of these tools
+// returns run history. Adding a tool means changing this list, and saying in
+// review why the new tool can't leak runs to agents.
+func TestOnlyTheseTools(t *testing.T) {
+	want := []string{"memory_save", "routine_get", "rule_load", "rules_get", "run_begin", "run_report", "skill_file", "skill_load", "skills_list"}
+	lw := newLocalWorld(t)
+	local, _ := lw.connect(t)
+	if got := toolNames(t, local); !slices.Equal(got, want) {
+		t.Errorf("the local server has tools %v, want exactly %v", got, want)
+	}
+	rw := newRemoteWorld(t)
+	remote := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+	if got := toolNames(t, remote); !slices.Equal(got, want) {
+		t.Errorf("the remote server has tools %v, want exactly %v", got, want)
+	}
+}
+
+func TestLoadsAreRecorded(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	// Before run_begin there's no run to link to.
+	c.ok("rules_get", nil)
+	c.ok("skill_load", map[string]any{"name": "pdf"})
+	if n := countRows(t, lw.dbPath, "loads"); n != "0" {
+		t.Fatalf("loads before run_begin = %s", n)
+	}
+
+	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "add a dark mode toggle"}))
+	c.ok("rules_get", nil)
+	c.ok("rule_load", map[string]any{"name": "typescript"})
+	c.ok("skill_load", map[string]any{"name": "pdf"})
+	// Loads that fail aren't recorded.
+	c.fails("rule_load", map[string]any{"name": "nope"}, "no rule called")
+	c.fails("skill_load", map[string]any{"name": "nope"}, "no skill called")
+	c.fails("routine_get", map[string]any{"name": "nope"}, "no routine called")
+	// rules_get counts every always-on rule it hands over, and not the others.
+	if got, want := loadsOf(t, lw.dbPath, runID), "rule:product-knowledge-only,rule:tests-first,rule:typescript,skill:pdf"; got != want {
+		t.Errorf("loads = %s, want %s", got, want)
+	}
+
+	// A routine run: routine_get is a routine load.
+	routineRun := c.runID(c.ok("run_begin", map[string]any{"intent": "review my diff", "routine": "review-before-push", "stub": localStub(t, lw.opts, "review-before-push")}))
+	c.ok("routine_get", map[string]any{"name": "review-before-push"})
+	if got := loadsOf(t, lw.dbPath, routineRun); got != "routine:review-before-push" {
+		t.Errorf("loads = %s", got)
+	}
+	// A refused routine isn't served, so it isn't loaded.
+	c.fails("run_begin", map[string]any{"intent": "review again", "routine": "review-before-push", "stub": "000000000000"}, "this stub is outdated")
+	c.fails("routine_get", map[string]any{"name": "review-before-push"}, "refused")
+	if got := countRows(t, lw.dbPath, "loads"); got != "5" {
+		t.Errorf("%s loads in all, want 5", got)
+	}
+}
+
+func TestRunBeginSession(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	ctx := context.Background()
+
+	// The pointer is stored, and the return value is the same as ever.
+	text := c.ok("run_begin", map[string]any{"intent": "fix a bug", "session": "  /home/me/.claude/projects/app/3f2a.jsonl \n"})
+	var out map[string]any
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out) != 2 || out["run_id"] == nil || out["next"] == nil {
+		t.Errorf("run_begin returns run_id and next, and nothing else: %s", text)
+	}
+	if run, _ := lw.db.Get(ctx, c.runID(text)); run.Session != "/home/me/.claude/projects/app/3f2a.jsonl" {
+		t.Errorf("session = %q", run.Session)
+	}
+	// It's optional.
+	if run, _ := lw.db.Get(ctx, c.runID(c.ok("run_begin", map[string]any{"intent": "fix another bug"}))); run.Session != "" {
+		t.Errorf("session = %q", run.Session)
+	}
+
+	// A bad one is an error, and the run isn't recorded, so the agent tries again.
+	before := countRows(t, lw.dbPath, "runs")
+	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": "line one\nline two"}, "one line")
+	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": "tab\there"}, "control characters")
+	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": strings.Repeat("x", runs.MaxSessionBytes+1)}, "limit is 512")
+	if after := countRows(t, lw.dbPath, "runs"); after != before {
+		t.Errorf("runs went from %s to %s; a bad session shouldn't record a run", before, after)
+	}
+
+	// A refused run keeps its pointer, so a retro can find its transcript.
+	refused := c.callText("run_begin", map[string]any{"intent": "review again", "routine": "review-before-push", "stub": "000000000000", "session": "copilot-local:3f2a"})
+	id := regexp.MustCompile(`failed run (run_\w+);`).FindStringSubmatch(refused)
+	if id == nil {
+		t.Fatalf("no failed run in %s", refused)
+	}
+	if run, _ := lw.db.Get(ctx, id[1]); run.Session != "copilot-local:3f2a" {
+		t.Errorf("a refused run's session = %q", run.Session)
+	}
+}
+
+// callText is the text of a tool's answer, error or not.
+func (c *client) callText(name string, args map[string]any) string {
+	c.t.Helper()
+	text, _ := c.call(name, args)
+	return text
+}
+
+func TestRunReportFriction(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	ctx := context.Background()
+	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "fix a bug"}))
+
+	report := func(friction any) map[string]any {
+		return map[string]any{"run_id": runID, "summary": "kept going", "friction": friction}
+	}
+	note := func(kind, text string) map[string]any { return map[string]any{"kind": kind, "note": text} }
+
+	text := c.ok("run_report", report([]any{note("navigation", "couldn't find   the retry config"), note("checks", "no lint for imports")}))
+	var out map[string]any
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out) != 3 || out["recorded"] != true || out["run_id"] != runID || out["status"] != "progress" {
+		t.Errorf("run_report returns recorded, run_id and status, and nothing else: %s", text)
+	}
+	if got := strings.Join(rawQuery(t, lw.dbPath, `SELECT kind, note FROM friction WHERE run_id = ? ORDER BY id`, runID), "|"); got != "navigation:couldn't find the retry config|checks:no lint for imports" {
+		t.Errorf("friction = %s", got)
+	}
+	c.ok("run_report", map[string]any{"run_id": runID, "summary": "no friction this time"})
+
+	// Anything wrong with the friction is an error, and nothing is recorded.
+	six := []any{}
+	for range 6 {
+		six = append(six, note("other", "slow"))
+	}
+	for _, bad := range []struct {
+		friction any
+		want     string
+	}{
+		{[]any{note("speed", "it was slow")}, `"speed" isn't one of navigation, checks, standards, tools, info or other`},
+		{[]any{note("tools", "")}, "is empty"},
+		{[]any{note("tools", strings.Repeat("slow ", 21))}, "has 21 words"},
+		{six, "at most 5"},
+	} {
+		c.fails("run_report", report(bad.friction), bad.want)
+	}
+	cps, _ := lw.db.Checkpoints(ctx, runID)
+	if len(cps) != 2 {
+		t.Errorf("%d checkpoints, want the 2 good ones", len(cps))
+	}
+	if n := countRows(t, lw.dbPath, "friction"); n != "2" {
+		t.Errorf("%s friction notes, want 2", n)
+	}
+}
+
+func TestRunReportOnlyForRunsOfThisFactoryAndRepo(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	seed := func(db *runs.DB, factory, repo string) string {
+		id := runs.NewID(now)
+		if err := db.Begin(ctx, runs.Run{ID: id, StartedAt: now, Intent: "someone else's run", Factory: factory, Repo: repo, ServedBy: runs.ServedLocal}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	report := func(id string) map[string]any {
+		return map[string]any{"run_id": id, "summary": "sneaking a checkpoint in", "status": "succeeded"}
+	}
+	// Whatever is wrong, the agent hears the same thing, so it can't tell a run
+	// that doesn't exist from one in another factory or repo.
+	refused := func(id string) string {
+		return "run " + id + " wasn't begun for this factory and repo; use the run_id run_begin gave you"
+	}
+
+	t.Run("local", func(t *testing.T) {
+		lw := newLocalWorld(t)
+		c, _ := lw.connect(t)
+		ids := []string{
+			seed(lw.db, "other-factory", "github.com/acme/app"),
+			seed(lw.db, "my-default", "github.com/acme/api"),
+			seed(lw.db, "", ""),
+			"run_missing",
+		}
+		for _, id := range ids {
+			if got := c.callText("run_report", report(id)); got != refused(id) {
+				t.Errorf("run_report(%s) = %q, want %q", id, got, refused(id))
+			}
+			if cps, _ := lw.db.Checkpoints(ctx, id); len(cps) != 0 {
+				t.Errorf("run %s got a checkpoint", id)
+			}
+		}
+
+		// Connections drop and come back: another session of the same
+		// factory and repo can keep reporting on the run.
+		runID := c.runID(c.ok("run_begin", map[string]any{"intent": "fix a bug"}))
+		again, _ := lw.connect(t)
+		again.ok("run_report", report(runID))
+		if cps, _ := lw.db.Checkpoints(ctx, runID); len(cps) != 1 {
+			t.Errorf("%d checkpoints, want 1", len(cps))
+		}
+		// ...but it can't take over the run's memory.
+		again.fails("memory_save", map[string]any{"run_id": runID, "content": "x"}, "isn't a routine run begun in this session")
+	})
+
+	t.Run("remote", func(t *testing.T) {
+		rw := newRemoteWorld(t)
+		c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+		for _, id := range []string{seed(rw.db, "other-factory", "github.com/acme/app"), seed(rw.db, "", ""), "run_missing"} {
+			if got := c.callText("run_report", report(id)); got != refused(id) {
+				t.Errorf("run_report(%s) = %q, want %q", id, got, refused(id))
+			}
+			if cps, _ := rw.db.Checkpoints(ctx, id); len(cps) != 0 {
+				t.Errorf("run %s got a checkpoint", id)
+			}
+		}
+		// Remotely the repo comes from each run's stub, so it's the factory
+		// that counts.
+		sameFactory := seed(rw.db, "pr-review", "github.com/acme/api")
+		c.ok("run_report", report(sameFactory))
+		other := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+		other.ok("run_report", report(c.runID(c.ok("run_begin", map[string]any{"intent": "look around"}))))
+	})
 }

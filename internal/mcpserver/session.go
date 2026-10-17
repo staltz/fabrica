@@ -110,8 +110,8 @@ type session struct {
 	snap *Snapshot
 
 	mu sync.Mutex
-	// run is the session's current run, set by run_begin. Skill loads are
-	// linked to it.
+	// run is the session's current run, set by run_begin. Loads of skills,
+	// rules and routines are linked to it.
 	run *runs.Run
 	// began are routines whose run_begin passed in this session.
 	began map[string]*runs.Run
@@ -187,12 +187,12 @@ func (s *session) register(srv *mcp.Server) {
 	}, s.memorySave)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_begin",
-		Description: "Start a run and get its run_id. Call it first, in every session. For a routine run, pass routine, runtime, repo and stub exactly as your stub says.",
+		Description: "Start a run and get its run_id. Call it first, in every session. For a routine run, pass routine, runtime, repo and stub exactly as your stub says. If you know where this session's transcript lives, pass it as session.",
 		Annotations: writes(),
 	}, s.runBegin)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_report",
-		Description: "Record a checkpoint for a run: what you did (at most 20 words), its status (progress, succeeded or failed) and any links (PRs, issues, commits).",
+		Description: "Record a checkpoint for a run: what you did (at most 20 words), its status (progress, succeeded or failed) and any links (PRs, issues, commits). Add friction for anything that slowed you down.",
 		Annotations: writes(),
 	}, s.runReport)
 }

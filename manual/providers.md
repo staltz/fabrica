@@ -2,7 +2,7 @@
 
 A **provider** maps Fabrica's ideas onto one runtime. Blueprints describe *what* should happen, and providers translate that for each specific tool.
 
-- **Built-in providers** are compiled into the `fabrica` binary. v0.1 has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
+- **Built-in providers** are compiled into the `fabrica` binary. Fabrica has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
 - **Folder providers** ship inside any blueprint, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
 
 ## Capability matrices
@@ -148,7 +148,7 @@ providers/<name>/
   launch.md        # optional template for starting an init session by hand
 ```
 
-In v0.1, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
+For now, folder providers describe cloud runtimes only, and can't replace a built-in provider (a folder provider called `claude-code-cloud` is an error). Factories use them by name, like any runtime: `runtimes: [acme-runner]`.
 
 Folder providers can run code (`api`) with your runtime credentials during `apply`. Imports are pinned by commit and `fabrica upgrade` shows diffs (calling out provider changes in particular), so new provider code never arrives unseen.
 
@@ -157,7 +157,7 @@ There's a complete, runnable example in [examples/custom-provider](../examples/c
 ### `provider.yaml`
 
 ```yaml
-kind: cloud                          # cloud (local is reserved for built-ins in v0.1)
+kind: cloud                          # cloud (local is reserved for built-ins for now)
 description: Acme's in-house agent runner
 apply_modes: [api, handoff]          # tried in order
 launch_modes: [api, handoff]         # optional: how Fabrica can start init sessions

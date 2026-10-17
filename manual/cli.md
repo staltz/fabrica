@@ -269,7 +269,7 @@ When no run matches, it says so and writes nothing. When more runs match than `-
 
 ### Reading a remote server
 
-`--server` takes the server's URL, or the name of a cloud factory in your home repo, in which case it's that factory's `server:`. A plain `http://` address only works for `localhost`, as in `server:`, because the admin token goes with every request.
+`--server` takes the server's URL, or the name of a cloud factory in your home repo, in which case it's that factory's `server:`. A plain `http://` address only works for `localhost` and `127.0.0.1`, because the admin token goes with every request.
 
 ```sh
 fabrica runs --server https://fabrica.acme.dev --outcome failed
@@ -325,7 +325,7 @@ Serves a blueprint over MCP.
 | `--workspace <folder>` | Serve this folder, instead of asking the tool for its workspace. |
 | `--home <folder>` | Your personal home repo. |
 
-**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server). It also has a read-only [admin API](mcp-server.md#the-admin-api) for people to read run history, which takes the admin token from `fabrica auth admin-token`.
+**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server). It also has a read-only [admin API](mcp-server.md#the-admin-api) and a [dashboard](mcp-server.md#the-dashboard) for people to read run history, which take the admin token from `fabrica auth admin-token`.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -342,7 +342,7 @@ Prints the version, and the commit it was built from when known. `fabrica --vers
 
 ```
 $ fabrica version
-fabrica 0.1.0 (b79bb17 2026-10-10)
+fabrica 2.0.0 (b79bb17 2026-10-17)
 ```
 
 Builds between releases say `dev` instead of a version number.

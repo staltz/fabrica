@@ -12,7 +12,7 @@ state/<name>.yaml                 # what's installed, one per cloud factory (onl
 - Your **personal** home repo is the folder `FABRICA_HOME` points to, or `~/.fabrica` by default. It can hold both local and cloud factories. Your local run history (`runs.db`) lives in it too, so `runs.db*` belongs in its `.gitignore`.
 
   You never need to make it yourself. Every `fabrica` command, before doing anything else, creates it if it isn't there yet: it runs `git init`, adds an empty `factories/` folder and a `.gitignore` with `runs.db*`, and says so. It never commits. If the folder is a git repo already, say because you cloned your home repo there, Fabrica leaves it exactly as it is, so add `runs.db*` to its `.gitignore` yourself.
-- A **team** home repo is any other home repo, owned by a team. In v0.1 it only holds cloud factories: a local factory in one is an error.
+- A **team** home repo is any other home repo, owned by a team. For now it only holds cloud factories: a local factory in one is an error.
 
 Most commands work on one home repo. They pick it like this: the `--home` flag if you give one, otherwise the current folder if it looks like a home repo (it has `factories/` or `state/`), otherwise your personal home repo.
 
@@ -239,7 +239,7 @@ The next apply's refresh adopts whatever the crashed one created. On a runtime t
 
 ### Handoffs
 
-Some runtimes have no API Fabrica can use (as of v0.1: Claude routines, Codex, Copilot automations, and Cursor automations without a Cursor API key). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
+Some runtimes have no API Fabrica can use (as of October 2026: Claude routines, Codex, Copilot automations, and Cursor automations without a Cursor API key). For those, apply writes a **handoff**: step-by-step instructions that a person, or an AI with computer use, can follow. Fabrica never does computer use itself.
 
 - Handoffs are written to `~/.cache/fabrica/handoffs/<factory>/<id>.md` (or `--handoff-dir`), readable only by you, because they contain the factory's token. Don't commit them.
 - Each one ends with the `fabrica confirm` command to run when it's done. Until then, the change is **pending** in state, and a second apply never issues the same handoff twice. If what's wanted changes again before you confirm, apply replaces the pending handoff with a new one.

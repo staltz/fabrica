@@ -148,7 +148,7 @@ On a machine where you ran `fabrica auth login`, the server can also read its se
 
 ## The admin token
 
-Run history is for people, not agents, so a remote server has one more token, which only people use: the **admin token**. It opens the server's [admin API](mcp-server.md#the-admin-api), where run history can be read, and nothing else. It's not a factory token, and no factory token opens the admin API. It works the same way a factory's token does, computed from the server secret:
+Run history is for people, not agents, so a remote server has one more token, which only people use: the **admin token**. It opens the server's [admin API](mcp-server.md#the-admin-api) and [dashboard](mcp-server.md#the-dashboard), where run history can be read, and nothing else. It's not a factory token, and no factory token opens those. It works the same way a factory's token does, computed from the server secret:
 
 ```
 admin token = "fab_admin_" + base64url(HMAC-SHA256(server secret, "_admin"))
@@ -164,7 +164,7 @@ fabrica auth admin-token https://fabrica.acme.dev
 
 Fabrica finds the server secret the way `fabrica auth` does: `FABRICA_SERVER_SECRET`, or else the one `fabrica auth login` saved for that server. Then it prints the admin token, and only that, so it's easy to pipe where it goes. Without a URL it uses the only server your home repo's cloud factories use; with several, it asks you to name one.
 
-**Who to give it to.** People who should read run history: you, your teammates, whoever runs your retros. They don't need the server secret. Someone with only the admin token can read run history, but can't make factory tokens, can't change anything on the server, and can't connect to a factory as an agent. They set it in `FABRICA_ADMIN_TOKEN`, which `fabrica runs --server` reads, or send it as `Authorization: Bearer <token>` to the admin API.
+**Who to give it to.** People who should read run history: you, your teammates, whoever runs your retros. They don't need the server secret. Someone with only the admin token can read run history, but can't make factory tokens, can't change anything on the server, and can't connect to a factory as an agent. They set it in `FABRICA_ADMIN_TOKEN`, which `fabrica runs --server` reads, or send it as `Authorization: Bearer <token>` to the admin API, or paste it into the dashboard's login page.
 
 **Who never gets it.** Agents. Cloud runtimes only ever get their own factory's token, and the admin token must stay out of stubs, connectors, prompts and anything else a cloud agent can read. That's what keeps a prompt injection from reading what other routines did.
 

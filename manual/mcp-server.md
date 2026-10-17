@@ -61,7 +61,7 @@ You host it yourself: a container or a small VM. There's no official hosted serv
 - **One endpoint per factory**, at the path of the factory's `server:` URL plus its name: `https://fabrica.acme.dev/pr-review`.
 - **It re-fetches regularly** (every minute by default), so merges to followed branches and new factories show up shortly after they land. If a fetch fails, it keeps serving what it had.
 - **Routines only run from stubs.** A `run_begin` that names a routine but leaves out its runtime, repo or stub fingerprint is refused, and so is `routine_get` before a routine run has begun.
-- **Cloud runtimes only get text-only skills** in v0.1, since the server can't put files on their disk.
+- **Cloud runtimes only get text-only skills** for now, since the server can't put files on their disk.
 
 ### Auth
 
@@ -219,4 +219,4 @@ An [init session](blueprints.md#init-routines) carries the same four values in t
 
 If either check fails, the server refuses: `run_begin` returns an error saying which check failed and that the factory needs `fabrica apply`, the run is recorded as `failed`, and `routine_get` won't serve that routine in that session.
 
-Both checks compare the latest home repo with the values inside the stub, never with state. So there's no gap while an apply is running, after one crashes, or while a handoff is pending. v0.1 refuses outdated stubs instead of serving the last compatible version: that's the stricter choice, and switching to holding back later wouldn't break anyone.
+Both checks compare the latest home repo with the values inside the stub, never with state. So there's no gap while an apply is running, after one crashes, or while a handoff is pending. Fabrica refuses outdated stubs instead of serving the last compatible version: that's the stricter choice, and switching to holding back later wouldn't break anyone.

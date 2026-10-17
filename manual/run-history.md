@@ -1,17 +1,43 @@
 # Run history
 
-Every run, whether it's a routine firing in the cloud or you working in your editor, gets recorded. History can't be filled in after the fact, so Fabrica records from day one, even though tools for browsing it come later.
+Every run, whether it's a routine firing in the cloud or you working in your editor, gets recorded. History can't be filled in after the fact, so Fabrica records from day one.
+
+Agents write run history, and only people read it. You read it with `fabrica runs`, in the [dashboard](#the-dashboard), or with any SQLite tool.
 
 ## Where it's stored
 
 - **Remote:** a SQLite database on the server's persistent volume (`fabrica mcp --http --db …`).
 - **Local:** `runs.db` in your personal home repo (`~/.fabrica/runs.db` by default), with the same schema. It never leaves your machine. A home repo that Fabrica created already has `runs.db*` in its `.gitignore`; if you cloned yours, add it.
 
-v0.1 has **no built-in way to read run history**. Open the file with any SQLite tool, like the `sqlite3` command line. That makes the schema below a public interface: later versions will migrate it carefully, and keep the `run_overview` view working.
+It's a plain SQLite file, which makes [the schema](#the-schema) a public interface. Fabrica migrates it carefully when it changes, and keeps the `run_overview` view working.
+
+## Who can read it
+
+**Agents write run history. Only people read it.**
+
+Fabrica has two sides:
+
+- The **factory plane** is everything agents touch: the MCP tools, stubs, hooks, rules, skills and factory tokens.
+- The **operator plane** is everything people touch: the `fabrica` command, the dashboard, the admin API, Fabrica.app and the admin token.
+
+Run history lives on the operator plane. Agents often work on text they don't fully trust, like a PR from a stranger, an issue or a web page. If they could read history, a prompt injection could make them read what other routines did on other repos, dig out private PR links and summaries, or change how they behave based on past runs in ways nobody reviewed. So:
+
+- **No MCP tool returns run history,** on the local server or the remote one. Not even an agent's own run: `run_report` answers with an acknowledgement and nothing else, and `run_begin` gives back a `run_id` and a hint, with no counts and no "this routine failed last time".
+- **`run_report` only takes runs begun for the agent's own factory** (and, locally, its repo). For any other `run_id`, whether it exists or not, the error is the same, so an agent can't use it to look for other runs.
+- **Routine memory is the one exception,** and it isn't run history. A routine with `memory: true` reads the notes *it* saved, through `routine_get`. See [Memory](blueprints.md#memory).
+- **Only the admin token opens the remote server's [admin API](mcp-server.md#the-admin-api) and [dashboard](mcp-server.md#the-dashboard).** A factory's token doesn't, whether it's in a header or in the URL. The admin token comes from the server secret, and it stays out of stubs, connectors and prompts. See [The admin token](auth.md#the-admin-token).
+
+### The one catch: your own disk
+
+On your own machine, `runs.db` is a file on disk. A local agent that can run shell commands can read it, open it with `sqlite3`, or even run `fabrica runs` itself. Fabrica can't stop that without breaking the agent's shell. So the promise is:
+
+> None of **Fabrica's own surfaces** (MCP tools, stubs, hooks, rules, skills and the remote server) give run history to agents.
+
+Cloud agents never have the file or the admin token, so for them the rule holds completely. [Safety checks](safety-checks.md#things-that-are-deliberately-left-to-people) lists this with the other risks Fabrica leaves to people.
 
 ## How a run gets recorded
 
-1. **At the start**, the agent calls `run_begin`. For routines, the stub tells it to. In interactive sessions, the MCP instructions and the Fabrica line tell it to. If the agent knows where its transcript lives, it can pass that as `session`.
+1. **At the start**, the agent calls `run_begin`. For routines, the stub tells it to. In interactive sessions, the MCP instructions and the Fabrica line tell it to. If the agent knows where its transcript lives, it can pass that as `session`. Local Claude Code, Codex CLI and Copilot CLI get a small [hook](cli.md#fabrica-hook-plumbing) that tells the agent, so they usually have one. Cursor and the cloud runtimes only have one if the agent already knows it.
 2. **As it works**, the agent calls `run_report` whenever it has progress to record. These are **checkpoints**. There's no "end", because nobody can reliably know when a run is over. If something slowed the agent down, it can add **friction** notes to the same call.
 3. **The server links** every skill, rule and routine the agent loads in the same MCP session (after `run_begin`) to the run. Those are **loads**.
 
@@ -21,28 +47,40 @@ Fields written by the server (times, blueprint commit, factory, loads) are relia
 
 ## Reading it
 
-Run history is for people to read, not agents. From your terminal, `fabrica runs` does it:
+Run history is for you to read. There are a few ways in, and they all read the same data:
+
+- **`fabrica runs`**, in your terminal.
+- **[The dashboard](#the-dashboard)**, in your browser, with charts and tables.
+- **The [admin API](mcp-server.md#the-admin-api)**, a read-only JSON API on the remote server, for scripts.
+- **Fabrica.app**, which has a Recent Runs list.
+- **SQLite.** Any SQLite tool works. See [the schema](#the-schema) and [handy queries](#handy-queries).
+
+`fabrica runs` does three things:
 
 - `fabrica runs` lists the latest runs, newest first.
 - `fabrica runs show <run>` shows one run in full: what it loaded, what it reported and what slowed it down.
 - `fabrica runs export` writes a [retro bundle](#the-retro-bundle), a folder of Markdown and JSON for you or your own retro skill.
 
-```
-$ fabrica runs --since 3d
-STARTED       OUTCOME    ROUTINE    REPO      INTENT                RUN
-Oct 17 09:41  succeeded  pr-review  acme/app  Review PR 412 for t…  run_06gmjeps
-Oct 17 08:02  stale      —          acme/app  Fix flaky checkout …  run_06gmj9xq
-Oct 16 22:15  failed     autofix    acme/api  Fix lint failure on…  run_06gmh2aa
-
-3 runs from factory acme. Show one with: fabrica runs show <run>
-```
-
-It reads the `runs.db` of your local sessions. To read a remote server's history, add `--server` with the server's URL or the name of one of its factories, and have its admin token ready (`FABRICA_ADMIN_TOKEN`, or the server secret that `fabrica auth login` saved). Local and remote history are never merged: you read one or the other. Filters, flags and the rest are in the [CLI reference](cli.md#fabrica-runs).
+It reads the `runs.db` of your local sessions. To read a remote server's history, add `--server` with the server's URL or the name of one of its factories, and have its admin token ready (`FABRICA_ADMIN_TOKEN`, or the server secret that `fabrica auth login` saved). Local and remote history are never merged: you read one or the other. Filters, flags and sample output are in the [CLI reference](cli.md#fabrica-runs).
 
 Two things to keep in mind while reading:
 
 - **Outcomes are worked out, not reported.** A run's outcome follows its latest checkpoint, and a run that went quiet for 6 hours is `stale`. See [How `outcome` works](#how-outcome-works).
-- **Agents wrote most of what you read.** Intents, summaries, statuses, friction notes and session pointers are best effort. Times, blueprint commits, factories and loads are Fabrica's own, so those you can trust.
+- **Agents wrote most of what you read.** Only Fabrica's own fields are reliable; see [How a run gets recorded](#how-a-run-gets-recorded).
+
+## The dashboard
+
+The dashboard is a web page that shows run history as charts and tables, so you don't need SQL to see how your routines are doing. `fabrica dashboard` opens one for your local `runs.db`, and a remote server has one at `/_dashboard`: see [`fabrica dashboard`](cli.md#fabrica-dashboard) and [the MCP server](mcp-server.md#the-dashboard) for how to open it. Like the admin API, it only reads, and it's on the operator plane: agents can't reach it.
+
+It has three kinds of page, and every view is a link you can bookmark, because the filters are in the address:
+
+- **The overview.** Tiles for the runs, the success rate, how many failed or went stale, the PRs touched and the refusals. Then a chart of runs per day, stacked by outcome, and a table with one row for each routine: its runs, success rate, failed and stale counts, its most common friction and when it last ran. Below that are the refusals, with the fix when a stub is out of date ("run `fabrica apply` for factory acme"), the friction notes agents left, and the latest PRs. Filter by factory, by window (7, 30 or 90 days, 30 by default), and by routine runs, interactive runs or both.
+- **A routine's page**, from the routines table. Its main chart is the failure rate per day, which is failed and stale runs divided by the runs that day. A vertical line marks the day each new blueprint commit was first served to the routine, labeled with the short commit, with the commit's subject when you hover it, if the git cache on that machine has the commit. So after you change a skill or a rule, you can see whether things got better. Below it are the routine's runs, its friction notes grouped by kind, and how often its runs loaded each skill and rule.
+- **A run's page**, from any run link. It's what the [admin API](mcp-server.md#the-admin-api) returns for one run, as a web page: the header, then the timeline of loads, checkpoints and friction notes. PR links are clickable. The session pointer is only a link when it's an `https://` address, because it can also be a file path or an ID.
+
+The success rate is succeeded runs divided by finished ones, where finished means succeeded or failed. Runs still going, and stale ones, haven't finished, so they're not in it. Every day on a chart is a UTC day, and every time on the dashboard is UTC.
+
+Every chart has its numbers in a table underneath ("Show the numbers as a table"), and hovering a bar or a point shows them too, so nothing depends on color or on a mouse. And since agents write the intents, summaries, friction and session pointers, the dashboard shows them as plain text, and never as anything that runs.
 
 ## The retro bundle
 
@@ -112,25 +150,16 @@ A retro skill (or you) can start with `README.md`: the failed and stale runs com
 - Use the `git show` commands to read what the runs were actually served. A rule that every run loads but that never matters in any transcript might be a no-op.
 - Fix what you find in the blueprint (a skill, rule or routine change) or in the product repo (AGENTS.md, a lint rule, a test).
 
-## The dashboard
-
-The dashboard is a web page that shows run history as charts and tables, so you don't need SQL to see how your routines are doing. `fabrica dashboard` opens one for your local `runs.db`, and a remote server has one at `/_dashboard`: see [`fabrica dashboard`](cli.md#fabrica-dashboard) and [the MCP server](mcp-server.md#the-dashboard) for how to open it. It only reads, and only people see it: agents can't reach it.
-
-It has three kinds of page, and every view is a link you can bookmark, because the filters are in the address:
-
-- **The overview.** Tiles for the runs, the success rate, how many failed or went stale, the PRs touched and the refusals. Then a chart of runs per day, stacked by outcome, and a table with one row for each routine: its runs, success rate, failed and stale counts, its most common friction and when it last ran. Below that are the refusals, with the fix when a stub is out of date ("run `fabrica apply` for factory acme"), the friction notes agents left, and the latest PRs. Filter by factory, by window (7, 30 or 90 days, 30 by default), and by routine runs, interactive runs or both.
-- **A routine's page**, from the routines table. Its main chart is the failure rate per day, which is failed and stale runs divided by the runs that day. A vertical line marks the day each new blueprint commit was first served to the routine, labeled with the short commit, with the commit's subject when you hover it, if the git cache on that machine has the commit. So after you change a skill or a rule, you can see whether things got better. Below it are the routine's runs, its friction notes grouped by kind, and how often its runs loaded each skill and rule.
-- **A run's page**, from any run link. It's what the [admin API](mcp-server.md#the-admin-api) returns for one run, as a web page: the header, then the timeline of loads, checkpoints and friction notes. PR links are clickable. The session pointer is only a link when it's an `https://` address, because it can also be a file path or an ID.
-
-The success rate is succeeded runs divided by finished ones, where finished means succeeded or failed. Runs still going, and stale ones, haven't finished, so they're not in it. Every day on a chart is a UTC day, and every time on the dashboard is UTC.
-
-Every chart has its numbers in a table underneath ("Show the numbers as a table"), and hovering a bar or a point shows them too, so nothing depends on color or on a mouse. And since agents write the intents, summaries, friction and session pointers, the dashboard shows them as plain text, and never as anything that runs.
-
 ## The schema
 
-The database's `PRAGMA user_version` is the schema version, `3` for this one. Version 3 added `runs.session`, `loads` (so rules and routines are recorded, not just skills), `friction` and the new `run_overview` columns. Version 2 added `memories`. Fabrica migrates older databases when it opens them, and a database made by a newer Fabrica than yours is refused.
+The database's `PRAGMA user_version` is the schema version. Fabrica v2 writes version `3`. That number is separate from Fabrica's own version, and only changes when the schema does.
 
-This schema number has nothing to do with Fabrica's own version.
+- **Version 3** added `runs.session`, `loads` (so rules and routines are recorded, not just skills), `friction` and the new `run_overview` columns.
+- **Version 2** added `memories`.
+
+Fabrica migrates older databases when it opens them, and refuses a database made by a newer Fabrica than yours.
+
+Times are RFC 3339 text in UTC, with fractional seconds. Comparing them as text works, as the queries below do.
 
 ### `runs`
 
@@ -248,6 +277,8 @@ Because the view looks at the clock, a run's outcome can change without anything
 
 ## Handy queries
 
+These work in any SQLite tool, like `sqlite3 -readonly ~/.fabrica/runs.db`, or on a copy of a server's database. Open it read-only; Fabrica is the one that writes to it.
+
 The last ten runs:
 
 ```sql
@@ -289,7 +320,7 @@ WHERE c.status = 'failed'
 ORDER BY c.at DESC;
 ```
 
-Runs Fabrica refused (usually stale stubs that need `fabrica apply`):
+Runs Fabrica refused (a stale stub that needs `fabrica apply`, a repo without the Fabrica line, a skill clash):
 
 ```sql
 SELECT r.started_at, r.factory, r.routine, r.runtime, r.repo, c.summary

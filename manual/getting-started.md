@@ -131,8 +131,12 @@ Open the repo in Claude Code or Cursor and ask for something. Behind the scenes,
 Every session is recorded in `~/.fabrica/runs.db`. Have a look:
 
 ```sh
-sqlite3 ~/.fabrica/runs.db "SELECT started_at, repo, intent, last_status FROM run_overview ORDER BY started_at DESC LIMIT 10"
+fabrica runs                  # your latest runs, newest first
+fabrica runs show <run>       # one run in full: what it loaded, reported and found slow
+fabrica dashboard             # charts and tables, in your browser
 ```
+
+Agents write run history and only people read it, so this is for you. See [Run history](run-history.md).
 
 ### 6. Add a local routine (optional)
 
@@ -330,8 +334,20 @@ There's a ready-made GitHub Actions workflow in [examples/home/.github/workflows
 fabrica auth env | gh secret set --env-file - --repo acme/home
 ```
 
+### 8. See what the agents did
+
+Once a few PRs have been reviewed, the server has run history. To read it, you need the server's **admin token**, which opens its run history and nothing else:
+
+```sh
+fabrica runs --server https://fabrica.acme.dev    # uses the server secret you saved in step 2
+fabrica auth admin-token https://fabrica.acme.dev # prints the token, for teammates who read runs
+```
+
+The server also has a dashboard at `https://fabrica.acme.dev/_dashboard`, where you log in with that token. Give the token to people who read run history, never to agents. See [Credentials](auth.md#the-admin-token).
+
 ## Where to next
 
 - [Writing a blueprint](blueprints.md) covers the blueprint format in detail, including imports.
 - [Home repos](home-repos.md) covers factories, state and the apply lock.
 - [Safety checks](safety-checks.md) lists every way Fabrica fails closed.
+- [Run history](run-history.md) covers who can read it, `fabrica runs`, the dashboard and the schema.

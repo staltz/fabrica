@@ -33,7 +33,10 @@ Fabrica sits beside git. It never wraps it. Blueprints and home repos are plain 
 | **Factory** | A deployment of a blueprint: a file in the home repo that says "run *this* blueprint's routines on *these* targets in *these* runtimes". |
 | **Target** | A product repo that a factory runs its blueprint on. A factory lists them under `targets:`. |
 | **Stub** | The tiny placeholder Fabrica installs in a runtime instead of the real routine. It just says "load your instructions from Fabrica". |
-| **Run** | One unit of agent work: a routine firing, or an interactive session in your editor. Recorded in run history. |
+| **Run** | One unit of agent work: a routine firing, or an interactive session in your editor. Recorded in [run history](run-history.md). |
+| **Factory plane** | Everything agents touch: the MCP tools, stubs, hooks, rules, skills and factory tokens. Agents write run history here, and never read it. |
+| **Operator plane** | Everything people touch: the `fabrica` command, the dashboard, the admin API, Fabrica.app and the admin token. People read run history here. |
+| **Admin token** | A secret that opens a remote server's admin API and dashboard, and nothing else. Computed from the server secret, like a factory's token. See [Credentials](auth.md#the-admin-token). |
 | **Expects** | Skills a blueprint hopes the *product repo* will provide, like "how this repo runs its tests". |
 
 ## The three kinds of repo
@@ -46,7 +49,7 @@ Fabrica sits beside git. It never wraps it. Blueprints and home repos are plain 
 
 The home repo is the only place where blueprints get connected to product repos. That's what lets any number of people or teams point different blueprints at the same product repo, without the product repo knowing or caring.
 
-You'll typically have a **personal** home repo at `~/.fabrica` (or wherever `FABRICA_HOME` points), and maybe one or more **team** home repos. Team home repos only hold cloud factories in v0.1.
+You'll typically have a **personal** home repo at `~/.fabrica` (or wherever `FABRICA_HOME` points), and maybe one or more **team** home repos. Team home repos only hold cloud factories, for now.
 
 ## Process versus product knowledge
 
@@ -69,6 +72,8 @@ Everything an agent gets from Fabrica comes over MCP. There's no copying files i
 4. **The agent reports checkpoints** with `run_report`: a short summary, a status (`progress`, `succeeded` or `failed`) and optional links, like the PR it commented on. There's no "end of run" event, because nobody can reliably know when a run is over.
 
 Each MCP session is served from **one blueprint commit**, fixed when the session starts. A merge that lands halfway through a run never changes what that run sees, and the run history records the exact commit.
+
+Run history is for you, not for agents. You read it with `fabrica runs` and the dashboard, and no MCP tool hands it back to an agent, not even for their own run. See [Run history](run-history.md#who-can-read-it).
 
 ## Stubs and shapes
 
@@ -100,7 +105,7 @@ Every remote resource has a stable identity, built from its factory's tag, routi
 └tag┘└routine┘ └────── repo ──────┘
 ```
 
-The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#factory-files), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica plan` prints each cloud factory's tag.
+The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#cloud-factories), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica plan` prints each cloud factory's tag.
 
 Nothing random goes in, so the same resource always gets the same identity. That's how Fabrica finds its own resources, adopts ones that a crashed apply created, and refuses to continue when two resources claim the same identity. The identity goes in the resource's name (or a metadata field) and always in the stub prompt.
 
@@ -124,4 +129,4 @@ When something is wrong or ambiguous, Fabrica stops and says so as loudly as it 
 - Two local factories both claim a repo: no session gets either.
 - A trigger a runtime doesn't support: `plan` reports an error. Triggers can't be faked.
 
-And when in doubt, v0.1 starts strict. Loosening a rule later never breaks anyone, but tightening one does. [Safety checks](safety-checks.md) lists every check and where it's caught.
+And when in doubt, Fabrica starts strict. Loosening a rule later never breaks anyone, but tightening one does. [Safety checks](safety-checks.md) lists every check and where it's caught.

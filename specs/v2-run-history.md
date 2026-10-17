@@ -1,6 +1,6 @@
 # Spec: reading run history (Fabrica v2)
 
-**Status:** draft, ready for review.
+**Status:** implemented on the `claude/inspiring-noether-91vxyl` branch (all six parts), ready for review.
 **Ships in:** Fabrica v2. The run-history database goes from schema version 2 to **schema version 3**. That schema number is separate from Fabrica's own version.
 **Who this is for:** anyone building it. You don't need to know Fabrica well already; this spec explains the parts you touch.
 

@@ -20,16 +20,19 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
 | `home` | Home repos: factories, local matching, state files, and creating your personal home repo when it's missing. |
-| `token` | Factory tokens: `HMAC(secret, factory name)`, and making new server secrets. |
+| `token` | Factory tokens: `HMAC(secret, factory name)`, the admin token (the same, for the name `_admin`), and making new server secrets. |
 | `credentials` | Finding credentials (the environment first, then where `fabrica auth login` saved them) and saving them: the macOS Keychain through `security`, the Secret Service through `secret-tool`, or a file only you can read. |
 | `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries. |
 | `plan` | Compares what's wanted with what's installed, and sorts it into changes and errors. |
 | `auth` | Works out the credentials and git access a home repo needs for `fabrica auth`, and checks each with its service: a server by the tokens it accepts, a runtime by its provider's verifier, git with `ls-remote`. |
 | `scaffold` | Writes new blueprints for `fabrica new`: the starter blueprint (from `examples`) or an empty one, never overwriting a file. |
 | `apply` | Carries out plans, for `apply` and `destroy`: the git lock, API calls, handoffs, `confirm` and `unlock`. |
-| `runs` | The run-history database. |
-| `mcpserver` | The MCP server: the eight tools, the local (stdio) and remote (HTTP) modes, stale-stub checks and skill unpacking. |
-| `hook` | What `fabrica hook` does when a local tool fires a hook. |
+| `runs` | The run-history database: the write path that the MCP server uses, and the read side (`List`, `Detail`, `Stats`) that only people's tools use. |
+| `runview` | Shows run history to people: the table of `fabrica runs`, one run's timeline, and the retro bundle. It formats what `runs` reads, and cleans agent-written text on the way out. |
+| `admin` | The admin API: a read-only JSON view of run history, behind the admin token. |
+| `dashboard` | The run-history dashboard: server-rendered pages with inline SVG charts, behind the admin token (remote) or a one-time code (local). |
+| `mcpserver` | The MCP server: the nine tools, the local (stdio) and remote (HTTP) modes, stale-stub checks and skill unpacking. The remote server also routes `/_admin` and `/_dashboard` to `admin` and `dashboard`, and only routes to them. |
+| `hook` | What `fabrica hook` does when a local tool fires a hook: running a local routine, or the session pointer hook that tells a session where its transcript is. |
 | `selfupdate` | What `fabrica -u` does: installs the latest GitHub release over the running binary, checked against the release's checksums. |
 | `cli` | The cobra commands. Thin: they parse flags, call the packages above and print. |
 | `testkit` | Test helpers: a fake git host, home repos with a shared remote, the toy runtime, and a ready-made world. |
@@ -61,7 +64,7 @@ The arrows only point down: `blueprint` never imports `plan`, `plan` never impor
 - **`testkit.NewHost`** isolates git (a temp `GIT_CONFIG_GLOBAL`) and rewrites `https://` to a temp `hosts/` folder. `host.Repo("github.com/acme/app")` makes a repo Fabrica can fetch as `https://github.com/acme/app.git`. `host.Home(…)` makes a home repo with a bare remote and a tracking clone, for testing the apply lock.
 - **The toy runtime** is a pretend cloud runtime whose "API" is a folder of JSON files. Its folder provider's `api` script runs the test binary itself: each test package's `TestMain` calls `testkit.MaybeRunToyProvider()`, which turns the binary into the provider when it's started that way.
 - **`testkit.NewWorld`** builds a complete setup: a blueprint (with the toy provider), two product repos with the Fabrica line, a home repo and the toy runtime.
-- **The CLI's end-to-end tests** run `cli.Main` in-process, and for stdio MCP they run the test binary as `fabrica` (`FABRICA_TEST_AS_CLI=1`). `TestSuccessTest` replays the v0.1 success test from the design doc, from `plan` all the way to run history.
+- **The CLI's end-to-end tests** run `cli.Main` in-process, and for stdio MCP they run the test binary as `fabrica` (`FABRICA_TEST_AS_CLI=1`). `TestSuccessTest` replays the original success test from the design doc, from `plan` all the way to run history.
 - **Credentials stay out of your keychain.** Test binaries call `testkit.IsolateCredentials` in `TestMain`, which turns the system keychain off and points the credentials file at a temporary folder, and `testkit.FreshCredentials` gives one test its own. Keychain backends are tested against small fake `security` and `secret-tool` scripts.
 
 Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf`). CI runs all three.
@@ -74,6 +77,8 @@ Also run `go vet ./...` and `staticcheck ./...` (configured in `staticcheck.conf
 
 **Letting a runtime start init sessions:** implement `provider.Launcher` (one call, `Launch`, which must never start a second session for a `Session.ID` it already started), register its constructor in `builtinLaunchers` (failing when it can't run, like without credentials or its command line), and add `api` to `launch_modes` in its `provider.yaml`. For a person to start them instead, add a `launch.md` and `handoff` to `launch_modes`. The planner picks the runtime, and apply records the attempt and calls the launcher. `cursor_launch.go` and `claude_launch.go` are the examples.
 
-**Changing the run-history schema:** bump `runs.SchemaVersion`, add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `manual/run-history.md`. The schema is a public interface.
+**Changing the run-history schema:** bump `runs.SchemaVersion` (it's separate from Fabrica's own version), add a migration from the previous version in `runs.migrate`, keep `run_overview` compatible, and update `manual/run-history.md`. The schema is a public interface.
+
+**Adding a way to read run history:** put it on the operator plane, next to `admin`, `dashboard` or `runview`. Agents write run history and never read it, so `mcpserver` must not call `runs.List`, `Detail` or `Stats`, and its tool list is pinned by a test. Adding a tool means changing that test and saying why in review.
 
 **Changing the Fabrica line:** add the new sentence to the front of `fabline.accepted` and keep every old one. Converted repos must never break on upgrade.

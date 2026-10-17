@@ -552,6 +552,37 @@ func TestRefreshAdoptsAndRefusesDuplicates(t *testing.T) {
 	}
 }
 
+func TestRefreshAdoptsAndRenamesAnOrphanFromBeforeTags(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
+	old := "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app"
+	id := stub.Identity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "pr-review", "github.com/acme/app")
+
+	// An apply from before tags created this, then crashed before
+	// recording it.
+	h.w.Toy.Put(testkit.ToyResource{RemoteID: "orphan", Identity: old})
+	p := h.plan()
+	var actions []string
+	for _, c := range p.Factory("pr-review").Changes {
+		if c.Key.Runtime == "toy" && c.Key.ID == id {
+			actions = append(actions, string(c.Action))
+		}
+	}
+	if strings.Join(actions, ",") != "adopt,update" || !strings.Contains(render(p), "it's still named "+old+" in the runtime") {
+		t.Fatalf("want the orphan adopted and renamed, got %v\n%s", actions, render(p))
+	}
+	h.apply()
+	toy := h.w.Toy.Resources()
+	if len(toy) != 2 {
+		t.Fatalf("adopting must not create a duplicate, got %+v", toy)
+	}
+	for _, r := range toy {
+		if r.RemoteID == "orphan" && r.Identity != id {
+			t.Errorf("the orphan should be renamed to %s, got %+v", id, r)
+		}
+	}
+}
+
 func TestRotatedSecretUpdatesStubs(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")

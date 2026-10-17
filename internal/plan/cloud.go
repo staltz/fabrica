@@ -299,11 +299,21 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 			renamed[r.FormerID] = r.ID
 		}
 	}
+	// One that state doesn't know, under an earlier prefix, is adopted
+	// under the current one, and renamed.
+	prefix := ""
+	if dp.Spec != nil && !dp.Destroy {
+		prefix = stub.IdentityPrefix(dp.Spec.Tag())
+	}
+	formerOf := map[string]string{}
 	byID := map[string][]provider.RemoteResource{}
 	for _, r := range found {
 		id := r.Identity
 		if to, ok := renamed[id]; ok {
 			id = to
+		} else if _, inState := current[home.Key{Runtime: rt, ID: id}]; !inState && prefix != "" && !strings.HasPrefix(id, prefix) {
+			id = retagged(id, prefix)
+			formerOf[id] = r.Identity
 		}
 		byID[id] = append(byID[id], r)
 	}
@@ -321,10 +331,10 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 		key := home.Key{Runtime: rt, ID: id}
 		r, inState := current[key]
 		if !inState {
-			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API)}
+			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API), FormerID: formerOf[id]}
 			_, r.Routine, r.Repo = stub.SplitIdentity(id)
 			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
-				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
+				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), FormerID: formerOf[id], Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
 				Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
 		}
 		r.RemoteID = list[0].RemoteID
@@ -399,6 +409,9 @@ func prefixesToList(dp *Factory) []string {
 	}
 	if dp.Spec != nil {
 		add(stub.IdentityPrefix(dp.Spec.Tag()))
+		// Where a release before tags may have created one that state
+		// never recorded.
+		add(stub.LegacyPrefix(dp.Spec.Endpoint()))
 	}
 	if dp.State != nil {
 		for _, r := range dp.State.Resources {

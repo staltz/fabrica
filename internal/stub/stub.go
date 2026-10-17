@@ -456,6 +456,11 @@ func Tag(server, factory string) string {
 	return strings.ToLower(base32.StdEncoding.EncodeToString(sum[:]))[:TagLen]
 }
 
+// LegacyPrefix is the identity prefix that releases before tags gave a
+// factory's resources: its endpoint without the scheme, like
+// "fabrica.acme.dev/pr-review#".
+func LegacyPrefix(endpoint string) string { return serverID(endpoint) + "#" }
+
 // serverID is a server URL without its scheme or trailing slash, so
 // http://, https:// and a trailing slash don't change a tag.
 func serverID(server string) string {

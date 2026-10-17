@@ -112,7 +112,7 @@ Start here. It's Markdown, and it always has these parts, in this order:
 4. **Where to look next.** Pointers to what's outside the bundle:
    - **Instructions the runs were served.** Every blueprint commit in the bundle, with the `git show <commit>:<path>` command for each routine it served. Run it in a clone of your blueprint repo to read the exact routine an agent got.
    - **Pull requests.** Every PR (or merge request) the runs linked, with the runs that touched it. The review comments on them are often the best sign of what went wrong.
-   - **Transcripts.** The session pointers that are files on this machine, so a tool can read them. Pointers that are URLs or session IDs aren't listed here; they're in each run's file.
+   - **Transcripts.** The session pointers that are transcript files on this machine, so a tool can read them. Agents write the pointer and can name any file, so Fabrica only counts it as a transcript when it's a regular `.jsonl` file (not a link) under your home folder. A pointer that is a file path but doesn't pass that check is listed apart, as an unverified pointer the agent reported, and a tool shouldn't read it as a transcript. Pointers that are URLs or session IDs aren't listed here; they're in each run's file.
 5. **Fields you can't fully trust.** Intents, summaries, statuses, friction notes, links and session pointers are written by agents on a best-effort basis. Times, blueprint commits, factories and loads are written by Fabrica.
 
 ### `runs.json`
@@ -136,7 +136,7 @@ One file per run, with the same content as `fabrica runs show`, as Markdown: the
 
 ### What isn't in it
 
-**Transcripts.** They can be huge and hold anything, so the bundle only points at them. If a run's session pointer is a file on your machine, the README lists it.
+**Transcripts.** They can be huge and hold anything, so the bundle only points at them. If a run's session pointer is a `.jsonl` file under your home folder, the README lists it as a transcript on your machine. Any other path is listed as unverified, because the agent chose it and Fabrica doesn't take its word that the file is a transcript.
 
 Text from agents is cleaned when it's written to the Markdown files: line breaks and control characters become spaces, so a summary can't add headings or lists to the file, or send commands to your terminal. `runs.json` keeps the text as the agent wrote it.
 
@@ -145,7 +145,7 @@ Text from agents is cleaned when it's written to the Markdown files: line breaks
 A retro skill (or you) can start with `README.md`: the failed and stale runs come first, then the friction totals. From there:
 
 - Read the friction notes in the runs' files. Their kinds (`navigation`, `checks`, `standards`, `tools`, `info`, `other`) are the usual retro categories.
-- For failed and stale runs, read the transcript when the README lists one.
+- For failed and stale runs, read the transcript when the README lists one as a file on this machine. Don't read the unverified paths as transcripts.
 - Read the review comments on the linked PRs.
 - Use the `git show` commands to read what the runs were actually served. A rule that every run loads but that never matters in any transcript might be a no-op.
 - Fix what you find in the blueprint (a skill, rule or routine change) or in the product repo (AGENTS.md, a lint rule, a test).

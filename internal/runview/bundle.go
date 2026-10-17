@@ -70,6 +70,13 @@ func (v View) WriteBundle(dir string, b Bundle) error {
 	if err := CheckDir(dir); err != nil {
 		return err
 	}
+	// Each run's file is named after its ID, and the runs may come from a
+	// server, so look at every ID before anything is written.
+	for _, d := range b.Runs {
+		if !runs.ValidID(d.RunID) {
+			return fmt.Errorf("can't export a run whose ID is %q: that isn't a run ID (it starts with run_ and has lowercase letters and digits after it), so it can't name a file; if the runs came from --server, check that it's the right address", d.RunID)
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(dir, "runs"), 0o755); err != nil {
 		return err
 	}
@@ -381,42 +388,84 @@ func (v View) whereToLook(w *strings.Builder, list []*runs.Detail) {
 
 	line("### Transcripts")
 	line("")
-	var found []string
+	var found, unverified []string
 	for _, d := range ordered {
+		entry := func(path string) string {
+			return fmt.Sprintf("- %s (%s, %s)", path, d.RunID, strings.ReplaceAll(d.Outcome, "_", " "))
+		}
 		if file, ok := localFile(d.Session); ok {
-			found = append(found, fmt.Sprintf("- %s (%s, %s)", file, d.RunID, strings.ReplaceAll(d.Outcome, "_", " ")))
+			found = append(found, entry(file))
+		} else if pointer := clean(d.Session); isPath(pointer) {
+			unverified = append(unverified, entry(pointer))
 		}
 	}
 	if len(found) == 0 {
-		line("No run points at a file on this machine. Some may point at a session URL or ID instead; that's the `session` of each run.")
+		line("No run points at a transcript file on this machine. Some may point at a session URL or ID instead; that's the `session` of each run.")
 	} else {
-		line("These runs point at a transcript that is a file on this machine:")
+		line("These runs point at a transcript that is a file on this machine (Fabrica checked that each is a regular `.jsonl` file under your home folder):")
 		line("")
 		for _, f := range found {
+			line("%s", f)
+		}
+	}
+	if len(unverified) > 0 {
+		line("")
+		line("These runs report a file path as their session pointer, but it isn't a regular `.jsonl` file under your home folder, or it isn't there. The agent wrote it and Fabrica couldn't verify it, so it's an unverified pointer, not a transcript. Look at what it is before you open it:")
+		line("")
+		for _, f := range unverified {
 			line("%s", f)
 		}
 	}
 	line("")
 }
 
-// localFile reports whether a session pointer is a file that exists on this
-// machine, and if so, where. Only a path is a candidate: a session URL or
-// ID isn't.
+// isPath says whether a session pointer is written as a file path, rather
+// than as a URL or an ID.
+func isPath(session string) bool {
+	return filepath.IsAbs(session) || strings.HasPrefix(session, "~/")
+}
+
+// localFile reports whether a session pointer is a transcript on this
+// machine, and if so, where. Agents write the pointer, so it can name any
+// file there is. We only say it's a transcript when it's a regular .jsonl
+// file (not a link) under the user's home folder, which is where the tools
+// that write transcripts keep them.
 func localFile(session string) (string, bool) {
 	session = clean(session)
-	if rest, ok := strings.CutPrefix(session, "~/"); ok {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", false
-		}
-		session = filepath.Join(home, rest)
-	}
-	if !filepath.IsAbs(session) {
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) {
 		return "", false
 	}
-	info, err := os.Stat(session)
-	if err != nil || !info.Mode().IsRegular() {
+	if rest, ok := strings.CutPrefix(session, "~/"); ok {
+		session = filepath.Join(home, rest)
+	}
+	if !filepath.IsAbs(session) || filepath.Ext(session) != ".jsonl" {
+		return "", false
+	}
+	session = filepath.Clean(session)
+	if !within(home, session) {
+		return "", false
+	}
+	// Lstat, so a link is not a file, even if it leads to one.
+	if info, err := os.Lstat(session); err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	// A folder on the way can be a link too, one that leads out of the home
+	// folder.
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return "", false
+	}
+	real, err := filepath.EvalSymlinks(session)
+	if err != nil || !within(realHome, real) {
 		return "", false
 	}
 	return session, true
+}
+
+// within reports whether path is inside the folder dir. Both are clean and
+// absolute.
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

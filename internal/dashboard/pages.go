@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/staltz/fabrica/internal/gitx"
+	"github.com/staltz/fabrica/internal/names"
 	"github.com/staltz/fabrica/internal/runs"
 )
 
@@ -22,7 +24,20 @@ func runHref(base, id string, v view) string {
 	return base + "/runs/" + url.PathEscape(id) + v.query()
 }
 
+// routineHref is the address of a routine's page, or "" when there can't be
+// one. Agents choose the routine a run records (a refused local run has no
+// factory at all), and a page exists only for names that follow the naming
+// rule, so anything else is text and not a link that ends in a 404.
 func routineHref(base, factory, routine string, v view) string {
+	if names.Validate(factory) != nil || names.Validate(routine) != nil {
+		return ""
+	}
+	return routineAddress(base, factory, routine, v)
+}
+
+// routineAddress is where a routine's page is, whatever its names are. A
+// routine's page links to itself with it.
+func routineAddress(base, factory, routine string, v view) string {
 	return base + "/routines/" + url.PathEscape(factory) + "/" + url.PathEscape(routine) + v.query()
 }
 
@@ -136,9 +151,7 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request, base string) 
 		row := routineRow{Factory: rs.Factory, Routine: rs.Routine, Runs: rs.Runs,
 			Failed: rs.Outcomes[runs.OutcomeFailed], Stale: rs.Outcomes[runs.OutcomeStale], Friction: "–", LastRun: timeOf(rs.LastRun)}
 		row.Success, row.Detail = successRate(rs.Outcomes[runs.OutcomeSucceeded], rs.Outcomes[runs.OutcomeFailed])
-		if rs.Routine != "" {
-			row.Href = routineHref(base, rs.Factory, rs.Routine, v)
-		}
+		row.Href = routineHref(base, rs.Factory, rs.Routine, v)
 		if rs.TopFriction != "" {
 			row.Friction = fmt.Sprintf("%s (%d)", rs.TopFriction, rs.TopFrictionCount)
 		}
@@ -269,7 +282,7 @@ func (h *handler) routine(w http.ResponseWriter, r *http.Request, base, factory,
 		Factory: factory, Routine: routine, Window: window,
 		// The window links keep the view's other filters, so the way back to
 		// the overview still has them.
-		Filters: v.filterGroups(func(w view) string { return routineHref(base, factory, routine, w) }, nil, "factory", "kind"),
+		Filters: v.filterGroups(func(w view) string { return routineAddress(base, factory, routine, w) }, nil, "factory", "kind"),
 	}
 	p.Tiles = []tile{
 		{"Runs", fmt.Sprint(total), "in the " + window},
@@ -388,16 +401,16 @@ func (h *handler) run(w http.ResponseWriter, r *http.Request, base, id string) {
 		SHA: shortSHA(d.BlueprintSHA), FullSHA: d.BlueprintSHA, Routine: d.Routine, Runtime: d.Runtime, Repo: d.Repo,
 		Session: d.Session, SessionLink: sessionLink(d.Session), Stub: d.Stub, Started: timeOf(d.StartedAt),
 	}
-	if d.Routine != "" && d.Factory != "" {
-		p.RoutineHref = routineHref(base, d.Factory, d.Routine, v)
-	}
+	p.RoutineHref = routineHref(base, d.Factory, d.Routine, v)
 	if d.CheckpointCount == 0 {
 		p.LastHeard = "no checkpoints yet"
 	} else {
 		p.LastHeard = fmt.Sprintf("last heard from %s UTC (%s later)", clock(d.LastAt), d.LastAt.Sub(d.StartedAt).Round(time.Second))
 	}
-	if d.Routine != "" && d.BlueprintSHA != "" {
-		p.ServedHint = fmt.Sprintf("git -C <your blueprint clone> show %s:routines/%s.md", shortSHA(d.BlueprintSHA), d.Routine)
+	// People paste this into a shell, and the routine is whatever the agent
+	// sent run_begin, so only a name that follows the naming rule gets one.
+	if d.BlueprintSHA != "" && names.Validate(d.Routine) == nil {
+		p.ServedHint = gitx.ShowCommand(d.BlueprintSHA, "routines/"+d.Routine+".md")
 	}
 
 	for _, e := range d.Timeline {

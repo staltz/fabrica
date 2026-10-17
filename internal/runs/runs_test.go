@@ -584,3 +584,20 @@ func TestDocQueries(t *testing.T) {
 		}
 	}
 }
+
+func TestValidID(t *testing.T) {
+	for range 100 {
+		if id := NewID(time.Now()); !ValidID(id) {
+			t.Fatalf("NewID made %q, which isn't a valid ID", id)
+		}
+	}
+	for id, want := range map[string]bool{
+		"run_01m4qb8knr0000000000000002": true, "run_a": true, "run_0": true,
+		"": false, "run_": false, "run": false, "RUN_A": false, "run_A": false, "run_a.md": false, "run_a/b": false, "run_a\\b": false, "../run_a": false,
+		"run_a\n": false, "run_a b": false, "run_é": false, " run_a": false, "x_run_a": false,
+	} {
+		if got := ValidID(id); got != want {
+			t.Errorf("ValidID(%q) = %v, want %v", id, got, want)
+		}
+	}
+}

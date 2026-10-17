@@ -65,10 +65,18 @@ func sessionLink(raw string) bool {
 
 // prLabel names a PR or merge request by its URL: acme/app#412, or
 // acme/app!9 for GitLab's. It falls back to the URL without its scheme.
+//
+// Agents write the links, and the label is what a person reads before
+// deciding to trust one, so any host but GitHub and GitLab's own is part of
+// it: https://evil.example/acme/app/pull/412 is evil.example/acme/app#412.
 func prLabel(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw
+	}
+	host := ""
+	if h := strings.ToLower(u.Host); h != "github.com" && h != "gitlab.com" {
+		host = u.Host + "/"
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i, p := range parts {
@@ -79,7 +87,7 @@ func prLabel(raw string) string {
 			if p == "merge_requests" {
 				sep = "!"
 			}
-			return repo + sep + parts[i+1]
+			return host + repo + sep + parts[i+1]
 		}
 	}
 	return u.Host + u.Path

@@ -249,3 +249,74 @@ func TestClientErrors(t *testing.T) {
 		t.Error("a cancelled context should be an error")
 	}
 }
+
+// A redirect would send the admin token wherever the server (or whoever is
+// in the way) points, so the client never follows one. It says where the
+// server pointed, because the address is probably just not the final one.
+func TestClientDoesNotFollowRedirects(t *testing.T) {
+	var hits atomic.Int32
+	var gotAuth atomic.Value
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		gotAuth.Store(r.Header.Get("Authorization"))
+		rw.Write([]byte(`{"runs":[]}`))
+	}))
+	defer elsewhere.Close()
+
+	for _, status := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		for name, location := range map[string]string{"another host": elsewhere.URL + "/_admin/runs", "a path": "/fabrica/_admin/runs", "nowhere": ""} {
+			redirecting := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				if location != "" {
+					rw.Header().Set("Location", location)
+				}
+				rw.WriteHeader(status)
+			}))
+			c := NewClient(redirecting.URL, token.Admin(secret))
+			ctx := context.Background()
+			_, _, err := c.List(ctx, runs.Filter{})
+			_, err2 := c.Detail(ctx, "run_a")
+			for _, err := range []error{err, err2} {
+				if err == nil || !IsStatus(err, status) || !strings.Contains(err.Error(), "the server answered with a redirect") || !strings.Contains(err.Error(), "use its final address as --server") {
+					t.Errorf("%d to %s: error = %v", status, name, err)
+				}
+				switch {
+				case err != nil && location == elsewhere.URL+"/_admin/runs" && !strings.Contains(err.Error(), "to "+location):
+					t.Errorf("%d to %s: the error should say where to: %v", status, name, err)
+				case err != nil && location == "/fabrica/_admin/runs" && !strings.Contains(err.Error(), "to "+redirecting.URL+location):
+					t.Errorf("%d to %s: the error should say where to: %v", status, name, err)
+				}
+			}
+			redirecting.Close()
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("the client followed a redirect to another server %d times, and sent it %q", n, gotAuth.Load())
+	}
+}
+
+// The run's file in a bundle is named after its ID, so a server can't be
+// allowed to answer for a run with another run's ID, or with a made-up one.
+func TestClientChecksTheRunItGot(t *testing.T) {
+	w := newWorld(t)
+	for name, answer := range map[string]string{
+		"another run":    `{"run_id":"` + w.ids["r2"] + `","outcome":"succeeded"}`,
+		"a path":         `{"run_id":"../../../evil","outcome":"succeeded"}`,
+		"no ID":          `{"outcome":"succeeded"}`,
+		"a different ID": `{"run_id":"run_other","outcome":"succeeded"}`,
+	} {
+		ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) { rw.Write([]byte(answer)) }))
+		c := NewClient(ts.URL, token.Admin(secret))
+		d, err := c.Detail(context.Background(), w.ids["r1"])
+		if err == nil || d != nil || !strings.Contains(err.Error(), "a different run") {
+			t.Errorf("%s: Detail = %v, %v; want an error that says the server answered for a different run", name, d, err)
+		}
+		if _, err := c.Details(context.Background(), []string{w.ids["r1"]}); err == nil {
+			t.Errorf("%s: Details should fail too", name)
+		}
+		ts.Close()
+	}
+	// The right run still comes back.
+	if d, err := w.client().Detail(context.Background(), w.ids["r1"]); err != nil || d.RunID != w.ids["r1"] {
+		t.Errorf("Detail = %v, %v", d, err)
+	}
+}

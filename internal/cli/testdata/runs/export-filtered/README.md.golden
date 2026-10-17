@@ -68,7 +68,7 @@ The review comments on these are often the best sign of what went wrong.
 
 ### Transcripts
 
-No run points at a file on this machine. Some may point at a session URL or ID instead; that's the `session` of each run.
+No run points at a transcript file on this machine. Some may point at a session URL or ID instead; that's the `session` of each run.
 
 ## Fields you can't fully trust
 

@@ -68,7 +68,8 @@ func newRunsWorld(t *testing.T) *runsWorld {
 	w := &runsWorld{home: t.TempDir(), ids: map[string]string{}}
 	t.Setenv("FABRICA_HOME", w.home)
 	t.Setenv("FABRICA_CACHE", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
 	t.Setenv("CI", "")
 	testkit.FreshCredentials(t)
 	unsetenv(t, token.EnvVar)
@@ -83,7 +84,8 @@ func newRunsWorld(t *testing.T) *runsWorld {
 	t.Cleanup(func() { runsClock = old })
 
 	// A transcript on this machine, for the one run that points at a file.
-	w.session = filepath.Join(t.TempDir(), "session.jsonl")
+	// Only a .jsonl file in the home folder counts as one.
+	w.session = filepath.Join(userHome, "session.jsonl")
 	if err := os.WriteFile(w.session, []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -867,6 +869,43 @@ func TestRunsServer(t *testing.T) {
 	_, errOut = w.run(t, 1, "runs", "--server", server)
 	if !strings.Contains(errOut, "refused the admin token (made from the server secret in ") {
 		t.Errorf("a wrong secret:\n%s", errOut)
+	}
+}
+
+// A bundle writes a file for each run, named after its ID, and with --server
+// the IDs come from the server. One that isn't a run ID is refused before
+// anything is written, wherever the file would have gone.
+func TestRunsExportRefusesRunIDsThatAreNotRunIDs(t *testing.T) {
+	w := newRunsWorld(t)
+	t.Setenv(token.AdminEnvVar, token.Admin(testkit.Secret))
+	const evil = "../../evil"
+	honest := admin.New(w.db, testkit.Secret)
+	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// A server that calls one of its runs by a path.
+		r.URL.Path, r.URL.RawPath = strings.ReplaceAll(r.URL.Path, evil, w.ids["review"]), ""
+		rec := httptest.NewRecorder()
+		honest.ServeHTTP(rec, r)
+		rw.Header().Set("Content-Type", rec.Header().Get("Content-Type"))
+		rw.WriteHeader(rec.Code)
+		rw.Write([]byte(strings.ReplaceAll(rec.Body.String(), w.ids["review"], evil)))
+	}))
+	defer ts.Close()
+
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "nested", "bundle")
+	out, errOut := w.run(t, 1, "runs", "export", "--server", ts.URL, "--since", "30d", "--out", dir)
+	if out != "" || !strings.Contains(errOut, `can't export a run whose ID is "../../evil"`) || !strings.Contains(errOut, "isn't a run ID") {
+		t.Errorf("stdout %q, stderr %q", out, errOut)
+	}
+	var left []string
+	_ = filepath.WalkDir(parent, func(p string, d os.DirEntry, err error) error {
+		if err == nil && p != parent {
+			left = append(left, p)
+		}
+		return nil
+	})
+	if len(left) != 0 {
+		t.Errorf("nothing should be written: %v", left)
 	}
 }
 

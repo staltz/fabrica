@@ -256,6 +256,41 @@ func TestLocalCodeKeepsTheRestOfTheAddress(t *testing.T) {
 	}
 }
 
+// The address in the redirect is made from the address that was asked for,
+// so it has to stay a path of this site. Two slashes at the start would be
+// another site's address (//evil.com/…).
+func TestLocalCodeNeverRedirectsToAnotherSite(t *testing.T) {
+	w := newWorld(t)
+	for target, want := range map[string]string{
+		"//evil.com/_dashboard?code=c0de":                         "/evil.com/_dashboard",
+		"///evil.com/_dashboard?code=c0de&days=7":                 "/evil.com/_dashboard?days=7",
+		"//evil.com//_dashboard/runs/x?code=c0de&days=7":          "/evil.com/_dashboard/runs/x?days=7",
+		"/fabrica//evil.com/_dashboard?code=c0de":                 "/fabrica/evil.com/_dashboard",
+		"/fabrica/_dashboard/../../evil.com/_dashboard?code=c0de": "/evil.com/_dashboard",
+		`/\evil.com/_dashboard?code=c0de`:                         "",
+	} {
+		h := New(w.db, Options{Code: "c0de"})
+		rec := do(h, "GET", target, nil, nil)
+		loc := rec.Header().Get("Location")
+		if rec.Code != http.StatusSeeOther {
+			t.Errorf("GET %s: %d", target, rec.Code)
+			continue
+		}
+		if u, err := url.Parse(loc); err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(loc, "/") || strings.HasPrefix(loc, "//") || strings.HasPrefix(loc, `/\`) {
+			t.Errorf("GET %s sends the visitor to %q, which isn't a path of this site", target, loc)
+		}
+		if want != "" && loc != want {
+			t.Errorf("GET %s: Location %q, want %q", target, loc, want)
+		}
+
+		// Someone who's in already gets the same kind of address.
+		again := do(h, "GET", target, rec.Result().Cookies(), nil)
+		if got := again.Header().Get("Location"); again.Code != http.StatusSeeOther || got != loc {
+			t.Errorf("GET %s with the cookie: %d, Location %q, want %q", target, again.Code, got, loc)
+		}
+	}
+}
+
 // Two dashboards on 127.0.0.1 share cookies (they ignore ports), so each has
 // a cookie of its own.
 func TestLocalDashboardsDontLogEachOtherOut(t *testing.T) {

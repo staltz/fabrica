@@ -31,7 +31,12 @@ func NewClient(server, adminToken string) *Client {
 	return &Client{
 		base:  strings.TrimRight(server, "/"),
 		token: adminToken,
-		http:  &http.Client{Timeout: 30 * time.Second},
+		http: &http.Client{
+			Timeout: 30 * time.Second,
+			// A redirect would send the admin token wherever it points. get
+			// reports it instead.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
 }
 
@@ -87,6 +92,11 @@ func (c *Client) Detail(ctx context.Context, runID string) (*runs.Detail, error)
 	var d runs.Detail
 	if err := c.get(ctx, "/_admin/runs/"+url.PathEscape(runID), &d); err != nil {
 		return nil, err
+	}
+	// The ID names the run's file in a bundle, so a server doesn't get to
+	// answer with another one.
+	if d.RunID != runID {
+		return nil, errors.New("the server answered for a different run than the one asked for; is the address right?")
 	}
 	if d.Timeline == nil {
 		d.Timeline = []runs.Event{}
@@ -156,6 +166,13 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxAnswer))
 	if err != nil {
 		return err
+	}
+	if res.StatusCode >= 300 && res.StatusCode < 400 {
+		msg := "the server answered with a redirect"
+		if to, err := res.Location(); err == nil {
+			msg += " to " + to.String()
+		}
+		return &Error{Status: res.StatusCode, Message: msg + "; use its final address as --server"}
 	}
 	if res.StatusCode != http.StatusOK {
 		var said struct {

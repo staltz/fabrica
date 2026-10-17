@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -217,15 +218,28 @@ func TestNoToolLeaksRunHistory(t *testing.T) {
 	})
 }
 
-// readFunctions are the read API of internal/runs. Only operator-plane code
-// (the CLI, the admin API and the dashboard) may call them.
-var readFunctions = []string{"List", "Detail", "Stats"}
+// readFunctions are the read API of internal/runs: the methods of the
+// run-history database that give run history back, and ListAll, which reads
+// it page by page. Only operator-plane code (the CLI, the admin API and the
+// dashboard) may call them.
+var readFunctions = []string{"List", "ListAll", "Detail", "Stats", "Checkpoints", "SkillsLoaded"}
+
+// notRunHistory are the few uses of those names that aren't a read of run
+// history. Keep it short and say why, because every entry is a hole in the
+// guard.
+var notRunHistory = map[string]string{
+	// A type, not a call: the list of diagnostics that firstLines in
+	// local.go takes.
+	"diag.List": "a type of internal/diag",
+}
 
 // readCalls lists where a Go file calls (or takes) a read function of the
-// run-history database. It looks at who the function is called on: a name
-// that says it's the run-history database, like Runs, runs or db. That
-// catches the obvious mistake without tripping on, say, ListRoots or
-// diag.List.
+// run-history database. It goes by the name of the function alone, whatever
+// it's called on: an alias (r := s.core.Runs; r.List(…)), a field, the
+// result of another call and a package (runs.ListAll) all count. Nothing in
+// the MCP server has a reason to call a function with one of these names
+// that isn't run history, so a false alarm gets an entry in notRunHistory,
+// not a smarter guess about the receiver.
 func readCalls(fset *token.FileSet, file *ast.File) []string {
 	var found []string
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -233,16 +247,10 @@ func readCalls(fset *token.FileSet, file *ast.File) []string {
 		if !ok || !isOneOf(sel.Sel.Name, readFunctions) {
 			return true
 		}
-		var recv string
-		switch x := sel.X.(type) {
-		case *ast.Ident:
-			recv = x.Name
-		case *ast.SelectorExpr:
-			recv = x.Sel.Name
+		if x, ok := sel.X.(*ast.Ident); ok && notRunHistory[x.Name+"."+sel.Sel.Name] != "" {
+			return true
 		}
-		if lower := strings.ToLower(recv); strings.Contains(lower, "runs") || lower == "db" {
-			found = append(found, fset.Position(sel.Pos()).String()+": "+recv+"."+sel.Sel.Name)
-		}
+		found = append(found, fset.Position(sel.Pos()).String()+": "+types.ExprString(sel))
 		return true
 	})
 	return found
@@ -277,35 +285,65 @@ func TestMCPServerNeverCallsTheReadFunctions(t *testing.T) {
 	}
 }
 
-// TestReadCallsFindsTheObviousMistakes makes sure the check above isn't
-// vacuous, now that the read functions don't exist yet.
-func TestReadCallsFindsTheObviousMistakes(t *testing.T) {
-	src := `package x
-
-func bad(s *session, db *runs.DB, opts Options) {
-	s.core.Runs.List(ctx, f)
-	opts.Runs.Detail(ctx, id)
-	db.Stats(ctx, f)
-	runs.List(ctx, f)
-	fn := s.core.Runs.Stats
-	_ = fn
-}
-
-func fine(ss *mcp.ServerSession, diags diag.List) {
-	ss.ListRoots(ctx, nil)
-	_ = diag.List(nil)
-	s.core.Runs.Get(ctx, id)
-	s.core.Runs.Begin(ctx, run)
-	tools.List(ctx)
-	x.Detail()
-}
-`
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "x.go", src, 0)
-	if err != nil {
-		t.Fatal(err)
+// TestReadCallsFindsTheMistakes makes sure the check above isn't vacuous: it
+// fires for each read function, however the database is reached, and it
+// leaves alone what isn't one.
+func TestReadCallsFindsTheMistakes(t *testing.T) {
+	count := func(src string) []string {
+		t.Helper()
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "x.go", "package x\n\nfunc f() {\n"+src+"\n}\n", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return readCalls(fset, file)
 	}
-	if got := readCalls(fset, file); len(got) != 5 {
-		t.Errorf("found %d read calls, want the 5 bad ones: %v", len(got), got)
+	for name, src := range map[string]string{
+		"a field of the session":                `s.core.Runs.List(ctx, f)`,
+		"a field of the options":                `opts.Runs.Detail(ctx, id)`,
+		"the database by its name":              `db.Stats(ctx, f)`,
+		"the runs package":                      `runs.List(ctx, f)`,
+		"ListAll of the runs package":           `runs.ListAll(ctx, l, f)`,
+		"a method taken, not called":            "fn := s.core.Runs.Stats\n_ = fn",
+		"a method passed on":                    `use(s.core.Runs.List)`,
+		"in a goroutine":                        `go s.core.Runs.Detail(ctx, id)`,
+		"the checkpoints of a run":              `s.core.Runs.Checkpoints(ctx, id)`,
+		"the skills a run loaded":               `s.core.Runs.SkillsLoaded(ctx, id)`,
+		"the database kept in a short variable": "r := s.core.Runs\nr.List(ctx, f)",
+		"an alias, for each read function":      "r := s.core.Runs\nr.List(ctx, f)\nr.ListAll(ctx, f)\nr.Detail(ctx, id)\nr.Stats(ctx, f)\nr.Checkpoints(ctx, id)\nr.SkillsLoaded(ctx, id)",
+		"an alias, from the options":            "x := opts.Runs\nx.Detail(ctx, id)",
+		"an alias with a type":                  "var lister runs.Lister = opts.Runs\nlister.List(ctx, f)",
+		"the result of a call":                  `s.database().Stats(ctx, f)`,
+		"an element of a list":                  `dbs[0].List(ctx, f)`,
+		"a dereferenced database":               `(*db).Detail(ctx, id)`,
+		"any other receiver":                    "tools.List(ctx)\nx.Detail()",
+		"a closure that reads":                  `func() { _, _, _ = s.core.Runs.List(ctx, f) }()`,
+	} {
+		want := 1
+		if strings.Contains(name, "for each read function") {
+			want = 6
+		}
+		if name == "any other receiver" {
+			want = 2
+		}
+		if got := count(src); len(got) != want {
+			t.Errorf("%s: found %d read calls in %q, want %d: %v", name, len(got), src, want, got)
+		}
+	}
+	for name, src := range map[string]string{
+		"the roots of a client":   `ss.ListRoots(ctx, nil)`,
+		"a diagnostics list type": "var d diag.List\n_ = diag.List(nil)",
+		"getting a run":           `s.core.Runs.Get(ctx, id)`,
+		"writing":                 "s.core.Runs.Begin(ctx, run)\ns.core.Runs.AddCheckpoint(ctx, id, c)\ns.core.Runs.Loaded(ctx, id, kind, name, at)",
+		"memory":                  "s.core.Runs.Memory(ctx, f, r, repo)\ns.core.Runs.SaveMemory(ctx, f, r, repo, text, id, at)",
+		"other names":             "s.list(ctx)\ns.listAll(ctx)\ns.details()\ns.StatsOf()",
+	} {
+		if got := count(src); len(got) != 0 {
+			t.Errorf("%s: found read calls in %q, want none: %v", name, src, got)
+		}
+	}
+	// The exception is for diag.List and nothing else.
+	if got := count(`other.List(nil)`); len(got) != 1 {
+		t.Errorf("other.List: %v", got)
 	}
 }

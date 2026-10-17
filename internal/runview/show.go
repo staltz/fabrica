@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/staltz/fabrica/internal/gitx"
+	"github.com/staltz/fabrica/internal/names"
 	"github.com/staltz/fabrica/internal/runs"
 )
 
@@ -243,20 +244,30 @@ func loaded(kind string, names []string) string {
 // rules it loaded. Blueprints keep routines in routines/<name>.md, skills in
 // skills/<name>/SKILL.md and rules in rules/<name>.mdc, inside the folder
 // the factory's blueprint path: names, if it has one.
+//
+// An agent chooses the routine name that run_begin records, even when
+// Fabrica refuses the run, and people paste these commands into a shell. So
+// only a name that follows the naming rule gets a command; for any other
+// name there is none.
 func (v View) hint(d *runs.Detail) hint {
 	if d.BlueprintSHA == "" {
 		return hint{}
 	}
 	var files []string
 	if d.Routine != "" {
-		files = append(files, "routines/"+d.Routine+".md")
+		if names.Validate(d.Routine) == nil {
+			files = append(files, "routines/"+d.Routine+".md")
+		}
 	} else {
 		for _, e := range d.Timeline {
+			if e.Type != runs.EventLoad || names.Validate(e.Name) != nil {
+				continue
+			}
 			var file string
-			switch {
-			case e.Type == runs.EventLoad && e.Kind == runs.LoadSkill:
+			switch e.Kind {
+			case runs.LoadSkill:
 				file = "skills/" + e.Name + "/SKILL.md"
-			case e.Type == runs.EventLoad && e.Kind == runs.LoadRule:
+			case runs.LoadRule:
 				file = "rules/" + e.Name + ".mdc"
 			}
 			if file != "" && !slices.Contains(files, file) {
@@ -284,9 +295,7 @@ func (v View) blueprintPath(factory string) (string, bool) {
 
 // gitShow is the command that prints a file of the blueprint as it was at a
 // commit.
-func gitShow(sha, file string) string {
-	return fmt.Sprintf("git -C <your blueprint clone> show %s:%s", gitx.Short(clean(sha)), clean(file))
-}
+func gitShow(sha, file string) string { return gitx.ShowCommand(clean(sha), clean(file)) }
 
 func orElse(s, fallback string) string {
 	if s == "" {

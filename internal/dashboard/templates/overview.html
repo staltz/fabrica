@@ -14,7 +14,7 @@
 {{if .Routines}}<div class="scroll"><table>
 <thead><tr><th scope="col">Routine</th><th scope="col" class="num">Runs</th><th scope="col" class="num">Success rate</th><th scope="col" class="num">Failed</th><th scope="col" class="num">Stale</th><th scope="col">Top friction</th><th scope="col">Last run</th></tr></thead>
 <tbody>{{range .Routines}}<tr>
-<td>{{if .Href}}<a href="{{.Href}}">{{.Routine}}</a>{{else}}Interactive sessions{{end}}<span class="sub">{{.Factory}}</span></td>
+<td>{{if .Href}}<a href="{{.Href}}">{{.Routine}}</a>{{else if .Routine}}{{.Routine}}{{else}}Interactive sessions{{end}}<span class="sub">{{.Factory}}</span></td>
 <td class="num">{{.Runs}}</td>
 <td class="num" title="{{.Detail}}">{{.Success}}</td>
 <td class="num">{{.Failed}}</td>

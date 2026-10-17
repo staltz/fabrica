@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -551,6 +552,15 @@ func CheckFriction(notes []Friction) error {
 	}
 	return nil
 }
+
+// idRe is what a run ID looks like: run_ and then lowercase letters and
+// digits, which is all NewID uses. (Tests make IDs of hex digits.)
+var idRe = regexp.MustCompile(`^run_[0-9a-z]+$`)
+
+// ValidID reports whether id looks like a run ID. Anything that reads run
+// IDs from a place it doesn't trust, like a server, checks them first when it
+// makes a file name or a path of one.
+func ValidID(id string) bool { return idRe.MatchString(id) }
 
 // NewID makes a new run ID. IDs sort by creation time, which keeps
 // `ORDER BY run_id` meaningful.

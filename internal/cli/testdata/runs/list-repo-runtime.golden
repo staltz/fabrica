@@ -1,0 +1,4 @@
+STARTED       OUTCOME  ROUTINE  REPO      INTENT                    RUN
+Oct 16 22:15  failed   autofix  acme/api  Fix lint failure on main  run_01m535n1
+
+1 run from factory acme. Show one with: fabrica runs show <run>

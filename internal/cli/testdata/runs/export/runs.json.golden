@@ -1,0 +1,357 @@
+{
+  "schema_version": 3,
+  "filters": {
+    "since": "2026-09-17T08:04:00Z",
+    "limit": 200
+  },
+  "runs": [
+    {
+      "run_id": "run_03pfb96cc00000000000000006",
+      "started_at": "2099-01-01T07:00:00Z",
+      "last_at": "2099-01-01T07:05:00Z",
+      "outcome": "in_progress",
+      "intent": "Draft the release notes",
+      "runtime": "claude-code-local",
+      "repo": "github.com/acme/web",
+      "factory": "acme",
+      "served_by": "local",
+      "last_summary": "Listed the merged PRs",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [],
+      "timeline": [
+        {
+          "at": "2099-01-01T07:05:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Listed the merged PRs",
+          "links": []
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m54cx6ng1000000000000000",
+      "started_at": "2026-10-17T07:41:02Z",
+      "last_at": "2026-10-17T07:50:00Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 413 for the search index change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f1420a5b6c7d8e9f00112233445566778899a",
+      "served_by": "remote",
+      "last_summary": "Approved with one nit",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [
+        "https://github.com/acme/app/pull/413"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-17T07:41:07Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:41:08Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:50:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Approved with one nit",
+          "links": [
+            "https://github.com/acme/app/pull/413"
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m54cx6ng0000000000000001",
+      "started_at": "2026-10-17T07:41:02Z",
+      "last_at": "2026-10-17T07:58:40Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 412 for the billing retry change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f1420a5b6c7d8e9f00112233445566778899a",
+      "served_by": "remote",
+      "session": "https://claude.ai/code/session_01Abc",
+      "last_summary": "Posted review with two blocking comments",
+      "checkpoint_count": 3,
+      "friction_count": 1,
+      "pr_links": [
+        "https://github.com/acme/app/pull/412"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-17T07:41:05Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:41:06Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "product-knowledge-only"
+        },
+        {
+          "at": "2026-10-17T07:41:06Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "commit-messages"
+        },
+        {
+          "at": "2026-10-17T07:41:09Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:47:30Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Read the diff and the retry tests",
+          "links": []
+        },
+        {
+          "at": "2026-10-17T07:52:11Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Found the retry backoff settings",
+          "links": []
+        },
+        {
+          "at": "2026-10-17T07:52:11Z",
+          "type": "friction",
+          "kind": "navigation",
+          "note": "couldn't find where retry backoff is configured"
+        },
+        {
+          "at": "2026-10-17T07:58:40Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Posted review with two blocking comments",
+          "links": [
+            "https://github.com/acme/app/pull/412"
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m535n1d00000000000000003",
+      "started_at": "2026-10-16T20:15:00Z",
+      "last_at": "2026-10-16T20:20:30Z",
+      "outcome": "failed",
+      "intent": "Fix lint failure on main",
+      "routine": "autofix",
+      "runtime": "cursor-cloud",
+      "repo": "github.com/acme/api",
+      "factory": "acme",
+      "blueprint_sha": "b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7",
+      "served_by": "remote",
+      "last_summary": "Lint still fails after two attempts",
+      "checkpoint_count": 2,
+      "friction_count": 2,
+      "pr_links": [
+        "https://github.com/acme/api/pull/77"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-16T20:15:04Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "autofix"
+        },
+        {
+          "at": "2026-10-16T20:15:05Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "lint-fix"
+        },
+        {
+          "at": "2026-10-16T20:16:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Found the failing eslint rule",
+          "links": []
+        },
+        {
+          "at": "2026-10-16T20:20:30Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "failed",
+          "summary": "Lint still fails after two attempts",
+          "links": [
+            "https://github.com/acme/api/pull/77"
+          ]
+        },
+        {
+          "at": "2026-10-16T20:20:30Z",
+          "type": "friction",
+          "kind": "checks",
+          "note": "no way to run lint locally before pushing"
+        },
+        {
+          "at": "2026-10-16T20:20:30Z",
+          "type": "friction",
+          "kind": "standards",
+          "note": "the lint config and the style rule disagree"
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m52xxv800000000000000004",
+      "started_at": "2026-10-16T18:00:00Z",
+      "last_at": "2026-10-16T18:00:00Z",
+      "outcome": "failed",
+      "intent": "Review PR 99 for the billing change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/api",
+      "factory": "acme",
+      "served_by": "remote",
+      "last_summary": "Refused: stub is outdated; the factory needs fabrica apply",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [],
+      "timeline": [
+        {
+          "at": "2026-10-16T18:00:00Z",
+          "type": "checkpoint",
+          "author": "fabrica",
+          "status": "failed",
+          "summary": "Refused: stub is outdated; the factory needs fabrica apply",
+          "links": []
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m4qb8knr0000000000000002",
+      "started_at": "2026-10-12T06:02:11Z",
+      "last_at": "2026-10-12T06:20:00Z",
+      "outcome": "stale",
+      "intent": "Fix flaky checkout test",
+      "runtime": "claude-code-local",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f1420a5b6c7d8e9f00112233445566778899a",
+      "served_by": "local",
+      "session": "$TRANSCRIPTS/session.jsonl",
+      "last_summary": "Reproduced the flake in checkout.spec",
+      "checkpoint_count": 1,
+      "friction_count": 1,
+      "pr_links": [],
+      "timeline": [
+        {
+          "at": "2026-10-12T06:02:15Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "product-knowledge-only"
+        },
+        {
+          "at": "2026-10-12T06:02:15Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "product-knowledge-only"
+        },
+        {
+          "at": "2026-10-12T06:02:16Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "debugging"
+        },
+        {
+          "at": "2026-10-12T06:20:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Reproduced the flake in checkout.spec",
+          "links": []
+        },
+        {
+          "at": "2026-10-12T06:20:00Z",
+          "type": "friction",
+          "kind": "tools",
+          "note": "test runner takes four minutes per run"
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m40900c00000000000000007",
+      "started_at": "2026-10-03T07:00:00Z",
+      "last_at": "2026-10-03T07:10:00Z",
+      "outcome": "succeeded",
+      "intent": "Tidy up my notes",
+      "runtime": "claude-code-local",
+      "repo": "github.com/me/notes",
+      "factory": "personal",
+      "served_by": "local",
+      "last_summary": "Moved the old notes to the archive",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [],
+      "timeline": [
+        {
+          "at": "2026-10-03T07:10:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Moved the old notes to the archive",
+          "links": []
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m3veg5800000000000000005",
+      "started_at": "2026-10-01T10:00:00Z",
+      "last_at": "2026-10-01T10:05:00Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 380",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7",
+      "served_by": "remote",
+      "last_summary": "Approved",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [
+        "https://github.com/acme/app/pull/380"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-01T10:00:03Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-01T10:05:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Approved",
+          "links": [
+            "https://github.com/acme/app/pull/380"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "schema_version": 3,
+  "filters": {
+    "routine": "pr-review",
+    "outcomes": [
+      "succeeded"
+    ],
+    "since": "2026-09-17T08:04:00Z",
+    "limit": 200
+  },
+  "runs": [
+    {
+      "run_id": "run_01m54cx6ng1000000000000000",
+      "started_at": "2026-10-17T07:41:02Z",
+      "last_at": "2026-10-17T07:50:00Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 413 for the search index change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f1420a5b6c7d8e9f00112233445566778899a",
+      "served_by": "remote",
+      "last_summary": "Approved with one nit",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [
+        "https://github.com/acme/app/pull/413"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-17T07:41:07Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:41:08Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:50:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Approved with one nit",
+          "links": [
+            "https://github.com/acme/app/pull/413"
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m54cx6ng0000000000000001",
+      "started_at": "2026-10-17T07:41:02Z",
+      "last_at": "2026-10-17T07:58:40Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 412 for the billing retry change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f1420a5b6c7d8e9f00112233445566778899a",
+      "served_by": "remote",
+      "session": "https://claude.ai/code/session_01Abc",
+      "last_summary": "Posted review with two blocking comments",
+      "checkpoint_count": 3,
+      "friction_count": 1,
+      "pr_links": [
+        "https://github.com/acme/app/pull/412"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-17T07:41:05Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:41:06Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "product-knowledge-only"
+        },
+        {
+          "at": "2026-10-17T07:41:06Z",
+          "type": "load",
+          "kind": "rule",
+          "name": "commit-messages"
+        },
+        {
+          "at": "2026-10-17T07:41:09Z",
+          "type": "load",
+          "kind": "skill",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-17T07:47:30Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Read the diff and the retry tests",
+          "links": []
+        },
+        {
+          "at": "2026-10-17T07:52:11Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "progress",
+          "summary": "Found the retry backoff settings",
+          "links": []
+        },
+        {
+          "at": "2026-10-17T07:52:11Z",
+          "type": "friction",
+          "kind": "navigation",
+          "note": "couldn't find where retry backoff is configured"
+        },
+        {
+          "at": "2026-10-17T07:58:40Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Posted review with two blocking comments",
+          "links": [
+            "https://github.com/acme/app/pull/412"
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "run_01m3veg5800000000000000005",
+      "started_at": "2026-10-01T10:00:00Z",
+      "last_at": "2026-10-01T10:05:00Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 380",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7",
+      "served_by": "remote",
+      "last_summary": "Approved",
+      "checkpoint_count": 1,
+      "friction_count": 0,
+      "pr_links": [
+        "https://github.com/acme/app/pull/380"
+      ],
+      "timeline": [
+        {
+          "at": "2026-10-01T10:00:03Z",
+          "type": "load",
+          "kind": "routine",
+          "name": "pr-review"
+        },
+        {
+          "at": "2026-10-01T10:05:00Z",
+          "type": "checkpoint",
+          "author": "agent",
+          "status": "succeeded",
+          "summary": "Approved",
+          "links": [
+            "https://github.com/acme/app/pull/380"
+          ]
+        }
+      ]
+    }
+  ]
+}

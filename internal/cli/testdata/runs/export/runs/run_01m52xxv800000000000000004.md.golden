@@ -1,0 +1,12 @@
+# Run run_01m52xxv800000000000000004: failed
+
+- **Intent:** Review PR 99 for the billing change
+- **Factory:** acme (served remotely)
+- **Routine:** pr-review on claude-code-cloud, repo github.com/acme/api
+- **Started:** 2026-10-16 20:00:00, last heard from 20:00:00
+
+Times are local to the machine that made this bundle (UTC+02:00 when it was made).
+
+## Timeline
+
+- 20:00:00 **fabrica**: failed: Refused: stub is outdated; the factory needs fabrica apply

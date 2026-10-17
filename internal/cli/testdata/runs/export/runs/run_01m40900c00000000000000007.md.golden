@@ -1,0 +1,12 @@
+# Run run_01m40900c00000000000000007: succeeded
+
+- **Intent:** Tidy up my notes
+- **Factory:** personal (served locally)
+- **Routine:** none (interactive) on claude-code-local, repo github.com/me/notes
+- **Started:** 2026-10-03 09:00:00, last heard from 09:10:00 (10m later)
+
+Times are local to the machine that made this bundle (UTC+02:00 when it was made).
+
+## Timeline
+
+- 09:10:00 **succeeded**: Moved the old notes to the archive

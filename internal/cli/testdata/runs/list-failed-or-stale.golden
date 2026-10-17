@@ -1,0 +1,6 @@
+STARTED       OUTCOME  ROUTINE    REPO      INTENT                  RUN
+Oct 16 22:15  failed   autofix    acme/api  Fix lint failure on m…  run_01m535n1
+Oct 16 20:00  failed   pr-review  acme/api  Review PR 99 for the …  run_01m52xxv
+Oct 12 08:02  stale    —          acme/app  Fix flaky checkout te…  run_01m4qb8k
+
+3 runs from factory acme. Show one with: fabrica runs show <run>

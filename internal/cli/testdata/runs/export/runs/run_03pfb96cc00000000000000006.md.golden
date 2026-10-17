@@ -1,0 +1,12 @@
+# Run run_03pfb96cc00000000000000006: in_progress
+
+- **Intent:** Draft the release notes
+- **Factory:** acme (served locally)
+- **Routine:** none (interactive) on claude-code-local, repo github.com/acme/web
+- **Started:** 2099-01-01 09:00:00, last heard from 09:05:00 (5m later)
+
+Times are local to the machine that made this bundle (UTC+02:00 when it was made).
+
+## Timeline
+
+- 09:05:00 **progress**: Listed the merged PRs

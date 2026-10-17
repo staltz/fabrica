@@ -19,6 +19,99 @@ When Fabrica refuses a run (an outdated stub, a repo without the Fabrica line, a
 
 Fields written by the server (times, blueprint commit, factory, loads) are reliable. Fields written by the agent (intent, summaries, statuses, links, friction, the session pointer) are best effort: they depend on the agent calling the tools, and on it knowing the answer. A cloud agent might not know where its transcript is, for example.
 
+## Reading it
+
+Run history is for people to read, not agents. From your terminal, `fabrica runs` does it:
+
+- `fabrica runs` lists the latest runs, newest first.
+- `fabrica runs show <run>` shows one run in full: what it loaded, what it reported and what slowed it down.
+- `fabrica runs export` writes a [retro bundle](#the-retro-bundle), a folder of Markdown and JSON for you or your own retro skill.
+
+```
+$ fabrica runs --since 3d
+STARTED       OUTCOME    ROUTINE    REPO      INTENT                RUN
+Oct 17 09:41  succeeded  pr-review  acme/app  Review PR 412 for t…  run_06gmjeps
+Oct 17 08:02  stale      —          acme/app  Fix flaky checkout …  run_06gmj9xq
+Oct 16 22:15  failed     autofix    acme/api  Fix lint failure on…  run_06gmh2aa
+
+3 runs from factory acme. Show one with: fabrica runs show <run>
+```
+
+It reads the `runs.db` of your local sessions. To read a remote server's history, add `--server` with the server's URL or the name of one of its factories, and have its admin token ready (`FABRICA_ADMIN_TOKEN`, or the server secret that `fabrica auth login` saved). Local and remote history are never merged: you read one or the other. Filters, flags and the rest are in the [CLI reference](cli.md#fabrica-runs).
+
+Two things to keep in mind while reading:
+
+- **Outcomes are worked out, not reported.** A run's outcome follows its latest checkpoint, and a run that went quiet for 6 hours is `stale`. See [How `outcome` works](#how-outcome-works).
+- **Agents wrote most of what you read.** Intents, summaries, statuses, friction notes and session pointers are best effort. Times, blueprint commits, factories and loads are Fabrica's own, so those you can trust.
+
+## The retro bundle
+
+`fabrica runs export` writes a retro bundle: a folder you hand to a person, or to your own retro skill. Fabrica doesn't ship a retro skill; the bundle is what it provides. The format is a public interface, like the [schema](#the-schema): Fabrica adds to it carefully, and `schema_version` in `runs.json` is the [schema version](#the-schema) the runs come from.
+
+```
+fabrica-runs-20261017-1004/
+  README.md        what this is, the filters used, totals, and how to read it
+  runs.json        {"schema_version": 3, "filters": {…}, "runs": [<run in full>, …]}
+  runs/
+    run_06gmjeps8jf8zfjjrfmydev50g.md   one run, the same as `fabrica runs show`
+    …
+```
+
+Fabrica only writes into a folder that isn't there yet, or is empty. The default name comes from the local time you ran it.
+
+### `README.md`
+
+Start here. It's Markdown, and it always has these parts, in this order:
+
+1. **What this is.** One paragraph: when and where it was made, which factory, which server (or your own machine's history), which time window and filters, how many runs, and whether more runs matched than the bundle holds (`--limit`).
+2. **Totals**, worked out from the runs in the bundle:
+   - runs by outcome;
+   - runs by routine, with how many succeeded, failed and went stale, and a success rate. The rate is the runs that succeeded out of those that succeeded or failed, so stale and in-progress runs aren't in it. Interactive runs are one row of their own;
+   - friction notes by kind;
+   - the most-loaded skills and rules, 10 of each at most, by how many runs loaded them;
+   - refusals by reason: the runs Fabrica refused itself, from its own failed checkpoints.
+3. **The runs**, grouped by outcome: failed first, then stale, succeeded and in progress. Each line links to the run's file. Failed and stale ones also say the last thing they reported.
+4. **Where to look next.** Pointers to what's outside the bundle:
+   - **Instructions the runs were served.** Every blueprint commit in the bundle, with the `git show <commit>:<path>` command for each routine it served. Run it in a clone of your blueprint repo to read the exact routine an agent got.
+   - **Pull requests.** Every PR (or merge request) the runs linked, with the runs that touched it. The review comments on them are often the best sign of what went wrong.
+   - **Transcripts.** The session pointers that are files on this machine, so a tool can read them. Pointers that are URLs or session IDs aren't listed here; they're in each run's file.
+5. **Fields you can't fully trust.** Intents, summaries, statuses, friction notes, links and session pointers are written by agents on a best-effort basis. Times, blueprint commits, factories and loads are written by Fabrica.
+
+### `runs.json`
+
+The same runs as JSON, for programs:
+
+```json
+{
+  "schema_version": 3,
+  "filters": {"routine": "pr-review", "since": "2026-10-03T07:04:00Z", "limit": 200},
+  "runs": [ … ]
+}
+```
+
+- **`filters`** is what the bundle was asked for. `factory`, `routine`, `repo` and `runtime` are there only when you used them, `outcomes` is a list that's there when you gave `--outcome`, and `since` and `limit` are always there. `since` is the moment `--since` meant when it ran, as an RFC 3339 time in UTC. The server and the time it was made are only in the README.
+- **`runs`** are newest first, and each one is exactly what the [admin API](mcp-server.md#the-admin-api) answers for `GET /_admin/runs/<run_id>`: the run's fields, its `stub`, and its `timeline` of loads, checkpoints and friction notes. It's always a list, even when it's empty.
+
+### `runs/<run_id>.md`
+
+One file per run, with the same content as `fabrica runs show`, as Markdown: the run's fields, a timeline (consecutive loads of one kind are a line, and Fabrica's own checkpoints are marked `fabrica`), and the `git show` commands for what it was served. Dates include the year (`2026-10-17 09:41:02`), because the file will be read some other day. Times are in the time zone of the machine that made the bundle, and the file says which.
+
+### What isn't in it
+
+**Transcripts.** They can be huge and hold anything, so the bundle only points at them. If a run's session pointer is a file on your machine, the README lists it.
+
+Text from agents is cleaned when it's written to the Markdown files: line breaks and control characters become spaces, so a summary can't add headings or lists to the file, or send commands to your terminal. `runs.json` keeps the text as the agent wrote it.
+
+### Working from a bundle
+
+A retro skill (or you) can start with `README.md`: the failed and stale runs come first, then the friction totals. From there:
+
+- Read the friction notes in the runs' files. Their kinds (`navigation`, `checks`, `standards`, `tools`, `info`, `other`) are the usual retro categories.
+- For failed and stale runs, read the transcript when the README lists one.
+- Read the review comments on the linked PRs.
+- Use the `git show` commands to read what the runs were actually served. A rule that every run loads but that never matters in any transcript might be a no-op.
+- Fix what you find in the blueprint (a skill, rule or routine change) or in the product repo (AGENTS.md, a lint rule, a test).
+
 ## The schema
 
 The database's `PRAGMA user_version` is the schema version, `3` for this one. Version 3 added `runs.session`, `loads` (so rules and routines are recorded, not just skills), `friction` and the new `run_overview` columns. Version 2 added `memories`. Fabrica migrates older databases when it opens them, and a database made by a newer Fabrica than yours is refused.

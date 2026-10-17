@@ -733,23 +733,35 @@ FABRICA_ADMIN_TOKEN, without ever having the server secret.`,
 			if err != nil {
 				return err
 			}
-			found, err := credentials.ServerSecret(server)
+			tok, found, err := adminTokenOf(server)
 			if err != nil {
 				return err
 			}
 			switch {
-			case found.Value == "" && found.Env:
+			case tok == "" && found.Env:
 				return fmt.Errorf("%s is set to nothing in your environment, so there's no server secret to make the admin token with", token.EnvVar)
-			case found.Value == "":
+			case tok == "":
 				return fmt.Errorf("there's no server secret for %s; run `fabrica auth login %s` to save the one your server uses, or set %s", server, server, token.EnvVar)
 			}
 			if isTerminalWriter(out) {
 				fmt.Fprintln(errOut, "This is a secret: whoever has it can read your run history. Pipe it where it goes, rather than copying it around.")
 			}
-			fmt.Fprintln(out, token.Admin(found.Value))
+			fmt.Fprintln(out, tok)
 			return nil
 		},
 	}
+}
+
+// adminTokenOf makes the admin token of the server at server from the server
+// secret Fabrica has for it (FABRICA_SERVER_SECRET, or the one `fabrica auth
+// login` saved), and says where that secret came from. The token is empty
+// when there's no secret.
+func adminTokenOf(server string) (tok string, found credentials.Found, err error) {
+	found, err = credentials.ServerSecret(server)
+	if err != nil || found.Value == "" {
+		return "", found, err
+	}
+	return token.Admin(found.Value), found, nil
 }
 
 // adminTokenServer works out which server `fabrica auth admin-token` is

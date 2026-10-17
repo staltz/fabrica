@@ -1,0 +1,14 @@
+Run run_01m54cx6ng1000000000000000: succeeded
+  Intent     Review PR 413 for the search index change
+  Factory    acme (served remotely), blueprint ee8f142
+  Routine    pr-review on claude-code-cloud, repo github.com/acme/app
+  Started    Oct 17 09:41:02, last heard from 09:50:00 (8m later)
+
+09:41:07  loaded routine pr-review
+09:41:08  loaded skill pr-review
+09:50:00  succeeded  Approved with one nit
+          → https://github.com/acme/app/pull/413
+
+See the instructions this run was served:
+  git -C <your blueprint clone> show ee8f142:routines/pr-review.md
+  (If the blueprint lives in a subfolder of its repo, put that folder in front of the path.)

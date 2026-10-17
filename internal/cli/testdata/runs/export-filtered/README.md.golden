@@ -1,0 +1,75 @@
+# Fabrica run history
+
+This is a retro bundle, made by `fabrica runs export` on 2026-10-17 10:04 (UTC+02:00). It holds 3 runs of factory acme, read from this machine's run history ($FABRICA_HOME/runs.db), the ones that started since 2026-09-17 10:04 and match routine pr-review, outcome succeeded, newest first.
+
+Read this file first. `runs/<run_id>.md` has one run in full, the same as `fabrica runs show`, and `runs.json` has all of them as JSON, for programs. Transcripts aren't copied into the bundle: it only points at them.
+
+## Totals
+
+3 runs in this bundle.
+
+### Runs by outcome
+
+- succeeded: 3
+
+### Runs by routine
+
+| Routine | Runs | Succeeded | Failed | Stale | In progress | Success rate |
+|---|---|---|---|---|---|---|
+| pr-review | 3 | 3 | 0 | 0 | 0 | 100% |
+
+The success rate is the runs that succeeded out of those that succeeded or failed. Stale and in-progress runs aren't counted in it.
+
+### Friction notes
+
+- navigation: 1
+
+### Most-loaded skills and rules
+
+| Kind | Name | Runs that loaded it |
+|---|---|---|
+| skill | pr-review | 2 |
+| rule | commit-messages | 1 |
+| rule | product-knowledge-only | 1 |
+
+### Refusals
+
+None. Fabrica refused no run.
+
+## Runs
+
+### succeeded (3)
+
+- [run_01m54cx6ng1000000000000000](runs/run_01m54cx6ng1000000000000000.md) 2026-10-17 09:41, pr-review on acme/app: Review PR 413 for the search index change
+- [run_01m54cx6ng0000000000000001](runs/run_01m54cx6ng0000000000000001.md) 2026-10-17 09:41, pr-review on acme/app: Review PR 412 for the billing retry change (1 friction note)
+- [run_01m3veg5800000000000000005](runs/run_01m3veg5800000000000000005.md) 2026-10-01 12:00, pr-review on acme/app: Review PR 380
+
+## Where to look next
+
+### Instructions the runs were served
+
+Each run was served the blueprint as it was at one commit. In a clone of your blueprint repo, `git show <commit>:<path>` prints a file as that run saw it. Routines are in `routines/<name>.md`, skills in `skills/<name>/SKILL.md` and rules in `rules/<name>.mdc`; a run's own file lists the skills and rules it loaded.
+
+- `ee8f142` (factory acme, 2 runs)
+  - `git -C <your blueprint clone> show ee8f142:routines/pr-review.md`
+
+- `b4c5d6e` (factory acme, 1 run)
+  - `git -C <your blueprint clone> show b4c5d6e:routines/pr-review.md`
+
+If your blueprint lives in a subfolder of its repo, put that folder in front of the path.
+
+### Pull requests
+
+The review comments on these are often the best sign of what went wrong.
+
+- https://github.com/acme/app/pull/413 (run_01m54cx6ng1000000000000000, succeeded)
+- https://github.com/acme/app/pull/412 (run_01m54cx6ng0000000000000001, succeeded)
+- https://github.com/acme/app/pull/380 (run_01m3veg5800000000000000005, succeeded)
+
+### Transcripts
+
+No run points at a file on this machine. Some may point at a session URL or ID instead; that's the `session` of each run.
+
+## Fields you can't fully trust
+
+Agents write the intents, summaries, statuses, friction notes, links and session pointers, on a best-effort basis, so they can be missing, wrong or vague. A run that says `succeeded` may not have. Fabrica writes the times, the blueprint commits, the factory and the loads, so those are reliable, and so are its own refusals.

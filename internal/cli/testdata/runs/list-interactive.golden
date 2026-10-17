@@ -1,0 +1,5 @@
+STARTED       OUTCOME      ROUTINE  REPO      INTENT                RUN
+Jan 1 09:00   in_progress  —        acme/web  Draft the release n…  run_03pfb96c
+Oct 12 08:02  stale        —        acme/app  Fix flaky checkout …  run_01m4qb8k
+
+2 runs from factory acme. Show one with: fabrica runs show <run>

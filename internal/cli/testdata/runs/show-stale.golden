@@ -1,0 +1,16 @@
+Run run_01m4qb8knr0000000000000002: stale
+  Intent     Fix flaky checkout test
+  Factory    acme (served locally), blueprint ee8f142
+  Routine    none (interactive) on claude-code-local, repo github.com/acme/app
+  Session    $TRANSCRIPTS/session.jsonl
+  Started    Oct 12 08:02:11, last heard from 08:20:00 (17m later)
+
+08:02:15  loaded rule product-knowledge-only (×2)
+08:02:16  loaded skill debugging
+08:20:00  progress   Reproduced the flake in checkout.spec
+08:20:00  friction   tools: test runner takes four minutes per run
+
+See the instructions this run was served:
+  git -C <your blueprint clone> show ee8f142:rules/product-knowledge-only.mdc
+  git -C <your blueprint clone> show ee8f142:skills/debugging/SKILL.md
+  (If the blueprint lives in a subfolder of its repo, put that folder in front of the path.)

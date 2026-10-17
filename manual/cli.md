@@ -175,6 +175,117 @@ Confirm commits and pushes the factory's state, and refuses while an apply holds
 
 Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created. A create on a runtime that can't list resources, whose ID was never recorded, is not adopted: `plan` reports it, and apply won't retry it until you confirm whether it exists.
 
+## `fabrica runs`
+
+Reads [run history](run-history.md): the routine firings and editor sessions that agents recorded with `run_begin`. Agents write run history and only people read it, so these commands are for you, and no tool or command of Fabrica's hands history to an agent.
+
+By default it reads `runs.db` in your personal home repo (or in the folder you give with `--home`), which holds the sessions of your local tools. With `--server` it reads a remote Fabrica server instead. Local and remote history are never mixed. If there's no `runs.db` yet, it says so and doesn't make one.
+
+`list` and `export` choose runs with the same filters, and `show` takes one run:
+
+| Flag | What it does |
+|---|---|
+| `--factory <name>` | Only runs of this factory. |
+| `--routine <name>` | Only runs of this routine. `-` means interactive runs, the ones with no routine. |
+| `--repo <repo>` | Only runs on this repo, like `github.com/acme/app`. |
+| `--runtime <name>` | Only runs on this runtime, like `claude-code-cloud`. |
+| `--outcome <outcome>` | Only runs with this outcome: `succeeded`, `failed`, `in_progress` or `stale`. Repeat the flag, or separate them with commas, for several. |
+| `--since <when>` | Only runs that started since then: a number of days or hours back, like `7d` or `48h`, or an RFC 3339 time. Default `7d`. |
+| `--limit <n>` | The most runs to read. Default `50` for `list` and `200` for `export`. |
+| `--server <server>` | Read a remote server instead; see [below](#reading-a-remote-server). |
+
+### `fabrica runs`, `fabrica runs list`
+
+Lists runs, newest first:
+
+```
+$ fabrica runs --since 3d
+STARTED       OUTCOME    ROUTINE    REPO      INTENT                RUN
+Oct 17 09:41  succeeded  pr-review  acme/app  Review PR 412 for t…  run_06gmjeps
+Oct 17 08:02  stale      —          acme/app  Fix flaky checkout …  run_06gmj9xq
+Oct 16 22:15  failed     autofix    acme/api  Fix lint failure on…  run_06gmh2aa
+
+3 runs from factory acme. Show one with: fabrica runs show <run>
+```
+
+Times are in your time zone. `—` means a run with no routine: someone working in their editor. `REPO` leaves out the host. `RUN` is enough of the run's ID to tell it apart from the other runs in the list, and at least 12 characters, so it's what you give to `show`.
+
+Lines are at most 80 characters, so long text is cut with `…`, the intent first. The `FACTORY` column only shows up when the runs come from more than one factory, since there isn't room for it otherwise; when they come from one, the line under the table says which. When there's little room left, the gaps between columns shrink too. Use `--json` for everything, uncut.
+
+| Flag | What it does |
+|---|---|
+| `--json` | Print the list as JSON, the same as the server's [admin API](mcp-server.md#the-admin-api) answers: `{"schema_version": 3, "runs": [...], "next": "..."}`. `next` is only there when there are more runs than `--limit`. |
+
+When no run matches, it says so and suggests a wider `--since`. That's not an error, and exits `0`.
+
+### `fabrica runs show <run>`
+
+Shows one run: what it was for, then its timeline of everything that happened, in time order.
+
+```
+$ fabrica runs show run_06gmjeps
+Run run_06gmjeps8jf8zfjjrfmydev50g: succeeded
+  Intent     Review PR 412 for the billing retry change
+  Factory    acme (served remotely), blueprint ee8f142
+  Routine    pr-review on claude-code-cloud, repo github.com/acme/app
+  Session    https://claude.ai/code/session_01Abc
+  Started    Oct 17 09:41:02, last heard from 09:58:40 (17m later)
+
+09:41:05  loaded routine pr-review
+09:41:06  loaded rules product-knowledge-only, commit-messages
+09:41:09  loaded skill pr-review
+09:47:30  progress   Read the diff and the retry tests
+09:52:11  progress   Found the retry backoff settings
+09:52:11  friction   navigation: couldn't find where retry backoff is configured
+09:58:40  succeeded  Posted review with two blocking comments
+          → https://github.com/acme/app/pull/412
+
+See the instructions this run was served:
+  git -C <your blueprint clone> show ee8f142:routines/pr-review.md
+```
+
+`<run>` is the whole run ID or the start of it, like the `RUN` column shows. If a start fits more than one run, it lists them and exits `1`; if it fits none, it says so. Consecutive loads of the same kind are one line. Fabrica's own checkpoints, like the refusal of an outdated stub, are marked `fabrica`, so they stand out from the agent's. A run that goes past midnight gets a line with the new date. Anything an agent wrote is printed with its line breaks and control characters turned into spaces, so it can't mess with your terminal.
+
+The last lines say how to read the instructions the run was served. The blueprint's commit is recorded with every run, so `git show` in a clone of your blueprint prints the exact routine as the agent saw it. A routine's file is `routines/<name>.md`; an interactive run points at the skills and rules it loaded instead. If the run's factory is in your home repo and its blueprint has a `path:`, the command has it in front. Without that factory, Fabrica can't know, and says to put the blueprint's folder in front if it lives in a subfolder.
+
+| Flag | What it does |
+|---|---|
+| `--json` | Print the run as JSON, the same as the admin API's `GET /_admin/runs/<run_id>`. |
+
+### `fabrica runs export`
+
+Writes a [retro bundle](run-history.md#the-retro-bundle) for the runs that match: a folder of Markdown and JSON that you hand to a person, or to your own retro skill (Fabrica doesn't ship one).
+
+```
+$ fabrica runs export --routine pr-review --since 14d
+Exported 23 runs (17 succeeded, 4 failed, 2 stale) to ./fabrica-runs-20261017-1004/
+```
+
+| Flag | What it does |
+|---|---|
+| `--out <folder>` | Where to write the bundle. Default `./fabrica-runs-<YYYYMMDD-HHMM>/`, from the local time. It must not exist, or be empty: Fabrica never writes into a folder that has files in it. |
+
+When no run matches, it says so and writes nothing. When more runs match than `--limit`, the bundle has the newest ones, and it says so, in its README too.
+
+### Reading a remote server
+
+`--server` takes the server's URL, or the name of a cloud factory in your home repo, in which case it's that factory's `server:`. A plain `http://` address only works for `localhost`, as in `server:`, because the admin token goes with every request.
+
+```sh
+fabrica runs --server https://fabrica.acme.dev --outcome failed
+fabrica runs show run_06gmjeps --server acme
+fabrica runs export --server acme --routine pr-review --out ./retro
+```
+
+Fabrica reads the server's [admin API](mcp-server.md#the-admin-api) with its admin token, which it finds like this:
+
+1. `FABRICA_ADMIN_TOKEN`, if it's set (even to nothing, which is an error).
+2. Otherwise the admin token made from the server secret: `FABRICA_SERVER_SECRET`, or the one `fabrica auth login` saved for that server.
+
+With neither, it says to run `fabrica auth login <server>`, or set `FABRICA_ADMIN_TOKEN`. A token the server refuses gets a message that says where the token came from. See [Credentials](auth.md#the-admin-token).
+
+`list` and `export` keep asking for pages until they have `--limit` runs, and `export` then reads each run in full, four at a time at most. `show` finds a run from the start of its ID by asking the server for the runs around it, so a short start works there too.
+
 ## `fabrica mcp`
 
 Serves a blueprint over MCP.

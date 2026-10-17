@@ -90,7 +90,7 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 		return
 	}
 
-	in := &Init{Routine: r, Endpoint: d.Endpoint(), Identity: stub.InitIdentity(d.Endpoint(), r.Ref.Name), Repos: d.SpecificTargets()}
+	in := &Init{Routine: r, Endpoint: d.Endpoint(), Identity: stub.InitIdentity(d.Tag(), r.Ref.Name), Repos: d.SpecificTargets()}
 	in.Repo = in.Repos[0]
 	switch {
 	case st == nil && dp.State.DestroyedAt != nil:

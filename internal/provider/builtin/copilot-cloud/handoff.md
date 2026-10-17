@@ -4,7 +4,7 @@
 Fabrica no longer deploys this routine here, so its Copilot automation should go.
 
 1. Open `{{.Repo}}` on GitHub, click **Agents**, then **Automations** in the sidebar.
-2. Find the automation named `{{.Identity}}`{{if .RemoteID}} (its ID is `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
+2. Find the automation named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (its ID is `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
 3. Delete it.
 4. If no other Fabrica routine runs on Copilot in this repository, also remove the `fabrica` server from the repository's MCP configuration (**Settings → Copilot → MCP servers**) and the `COPILOT_MCP_FABRICA_AUTHORIZATION` secret (**Settings → Secrets and variables → Agents**).
 5. Tell Fabrica you're done:
@@ -20,8 +20,8 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 {{if eq .Action "update"}}This routine's shape changed (its trigger, connectors or memory setting), so the Copilot automation needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
-1. Open `{{.Repo}}` on GitHub, click **Agents**, then **Automations** in the sidebar{{if eq .Action "update"}}, and find the automation named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}}, and click **Create new**{{end}}. Automations only work in private and internal repositories.
-2. Name: `{{.Identity}}`
+1. Open `{{.Repo}}` on GitHub, click **Agents**, then **Automations** in the sidebar{{if eq .Action "update"}}, and find the automation named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}}, and click **Create new**{{end}}. Automations only work in private and internal repositories.
+2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Repository: `{{.Repo}}` (each automation belongs to the repository you create it in).
 4. Trigger: {{.Trigger.Description}}{{if eq .Trigger.On "schedule"}}. Copilot schedules recur hourly, daily or weekly, so pick the one closest to this cron, at the same time of day.{{end}}
 5. MCP servers. Copilot reads them from the repository, not the automation, so open **Settings → Copilot → MCP servers** for `{{.Repo}}` and make sure Copilot has these (keep any servers the configuration already has):

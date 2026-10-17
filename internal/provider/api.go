@@ -14,14 +14,15 @@ import (
 
 // ProtocolVersion is the version of the JSON protocol Fabrica speaks with a
 // folder provider's `api` program. It goes into every request so programs
-// can refuse versions they don't understand.
-const ProtocolVersion = 1
+// can refuse versions they don't understand. Version 2 lists resources by
+// identity prefix instead of by endpoint.
+const ProtocolVersion = 2
 
 // Resource is everything a runtime needs to set up one stub: one routine,
 // on one repo, in one runtime.
 type Resource struct {
 	// Identity is the stable Fabrica identity, like
-	// "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app". The
+	// "k7q2#pr-review@github.com/acme/app". The
 	// runtime must store it somewhere it can read back (a name or metadata
 	// field), so `list` can return it.
 	Identity   string              `json:"identity"`
@@ -100,7 +101,7 @@ type request struct {
 	Version  int       `json:"version"`
 	Op       string    `json:"op"`
 	Factory  string    `json:"factory,omitempty"`
-	Endpoint string    `json:"endpoint,omitempty"`
+	Prefix   string    `json:"prefix,omitempty"`
 	RemoteID string    `json:"remote_id,omitempty"`
 	Resource *Resource `json:"resource,omitempty"`
 	Session  *Session  `json:"session,omitempty"`
@@ -130,10 +131,10 @@ type RuntimeAPI interface {
 	Delete(ctx context.Context, factory, remoteID string) error
 }
 
-// Lister is an API that can list every resource belonging to a factory
-// endpoint, with the identity each one carries.
+// Lister is an API that can list every resource whose identity starts
+// with a prefix, like "k7q2#", with the identity each one carries.
 type Lister interface {
-	List(ctx context.Context, factory, endpoint string) ([]RemoteResource, error)
+	List(ctx context.Context, factory, prefix string) ([]RemoteResource, error)
 }
 
 // Getter is an API that can't list resources, but can read one back by
@@ -184,7 +185,7 @@ type ManualSetup interface {
 //
 // The operations are:
 //
-//	list    → {"resources": [{"identity", "remote_id", "fingerprint"?}]}
+//	list    → {"resources": [{"identity", "remote_id", "fingerprint"?}]}   (those under "prefix")
 //	create  → {"remote_id": "…"}
 //	update  → {}
 //	delete  → {}
@@ -213,10 +214,10 @@ func (p *Provider) API() (RuntimeAPI, error) {
 	return nil, fmt.Errorf("runtime %s has no api program", p.Name())
 }
 
-// List asks the runtime for every resource belonging to one factory
-// endpoint, with the identity each one carries.
-func (c *APIClient) List(ctx context.Context, factory, endpoint string) ([]RemoteResource, error) {
-	resp, err := c.call(ctx, request{Op: "list", Factory: factory, Endpoint: endpoint})
+// List asks the runtime for every resource whose identity starts with
+// prefix, with the identity each one carries.
+func (c *APIClient) List(ctx context.Context, factory, prefix string) ([]RemoteResource, error) {
+	resp, err := c.call(ctx, request{Op: "list", Factory: factory, Prefix: prefix})
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/staltz/fabrica/internal/provider"
+	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
 )
 
@@ -66,6 +67,8 @@ func TestFactoryErrors(t *testing.T) {
 		"bad repo":           "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [app]\n",
 		"no ref":             "blueprint: { git: g.com/a/f }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
 		"local init":         "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\ninit: false\n",
+		"local alias":        "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\nalias: mine\n",
+		"bad alias":          "alias: My Factory\n" + cloudFactory,
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -251,6 +254,32 @@ func TestCopilotCloudOverlapIsAnError(t *testing.T) {
 	}
 	if len(overlaps) != 1 || !strings.Contains(overlaps[0], "factories a and b both deploy to github.com/x/y on copilot-cloud") {
 		t.Errorf("want one copilot-cloud overlap error for github.com/x/y, got:\n%s", h.Diags)
+	}
+}
+
+func TestTagHidesTheServer(t *testing.T) {
+	h := openHome(t, false, map[string]string{
+		"factories/pr-review.yaml": cloudFactory,
+		"factories/aliased.yaml":   "alias: review\n" + cloudFactory,
+	})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	if tag := h.Factories["pr-review"].Tag(); tag != stub.Tag("https://fabrica.acme.dev", "pr-review") || strings.Contains(tag, "acme") {
+		t.Errorf("Tag = %q, want a hash of the server and the factory", tag)
+	}
+	if tag := h.Factories["aliased"].Tag(); tag != "review" {
+		t.Errorf("Tag = %q, want the alias", tag)
+	}
+}
+
+func TestSharedTagIsAnError(t *testing.T) {
+	h := openHome(t, false, map[string]string{
+		"factories/a.yaml": "alias: review\n" + cloudFactory,
+		"factories/b.yaml": "alias: review\n" + cloudFactory,
+	})
+	if !h.Diags.HasCode("home.tag-clash") || !strings.Contains(h.Diags.String(), "factories a and b share the tag review") {
+		t.Errorf("want a tag clash error, got:\n%s", h.Diags)
 	}
 }
 

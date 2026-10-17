@@ -46,18 +46,17 @@ def main():
         fail("usage: api <list|create|update|delete>")
     op = sys.argv[1]
     request = json.load(sys.stdin)
-    if request.get("version") != 1:
-        fail(f"this provider speaks protocol version 1, not {request.get('version')}")
+    if request.get("version") != 2:
+        fail(f"this provider speaks protocol version 2, not {request.get('version')}")
 
     resources = load()
 
     if op == "list":
-        # Everything whose identity belongs to this factory's endpoint.
-        endpoint = request["endpoint"].split("://", 1)[-1]
+        # Everything whose identity starts with the factory's prefix.
         found = [
             {"identity": r["identity"], "remote_id": rid, "fingerprint": r["fingerprint"]}
             for rid, r in sorted(resources.items())
-            if r["identity"].startswith(endpoint + "#")
+            if r["identity"].startswith(request["prefix"])
         ]
         print(json.dumps({"resources": found}))
 

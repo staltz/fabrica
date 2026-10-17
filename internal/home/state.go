@@ -121,6 +121,11 @@ type Resource struct {
 	Runtime string `yaml:"runtime"`
 	Routine string `yaml:"routine"`
 	Repo    string `yaml:"repo"`
+	// FormerID is the identity the resource still has in the runtime, when
+	// the factory's tag changed since it was installed (a new alias: or
+	// server:, or an identity from before tags). Apply renames it, which
+	// clears this.
+	FormerID string `yaml:"former_id,omitempty"`
 	// RemoteID is the runtime's own ID for the resource. Empty means the
 	// resource is unverifiable: it was confirmed after a handoff without an
 	// ID, so Fabrica can't check on it or delete it automatically.

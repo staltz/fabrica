@@ -4,7 +4,7 @@
 Fabrica no longer deploys this routine here, so its routine on claude.ai should go.
 
 1. Open your routines on claude.ai (Claude Code on the web → Routines).
-2. Find the routine named `{{.Identity}}`{{if .RemoteID}} (its ID is `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
+2. Find the routine named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (its ID is `{{.RemoteID}}`){{end}}. The same name also appears at the top of its prompt.
 3. Delete it.
 4. Tell Fabrica you're done:
 
@@ -19,8 +19,8 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 {{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting, auto-fix setting or model), so the routine on claude.ai needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
-1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{.Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}. You can also do this from the Claude Code CLI: run `/schedule`, and give it the settings below.
-2. Name: `{{.Identity}}`
+1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}. You can also do this from the Claude Code CLI: run `/schedule`, and give it the settings below.
+2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Repository: `{{.Repo}}`
 4. Trigger: {{.Trigger.Description}}
 5. Connectors. Make sure the routine has exactly these:

@@ -97,6 +97,7 @@ func Open(dir string) (*Home, error) {
 	sort.Strings(h.StateNames)
 	h.Diags = append(h.Diags, h.checkLocalOverlap()...)
 	h.Diags = append(h.Diags, h.checkCopilotOverlap()...)
+	h.Diags = append(h.Diags, h.checkTagClash()...)
 	return h, nil
 }
 
@@ -160,6 +161,26 @@ func (h *Home) checkCopilotOverlap() diag.List {
 		if len(ds) > 1 {
 			diags.Errorf("home.copilot-overlap", FactoriesDir, "factories %s both deploy to %s on copilot-cloud, but Copilot keeps one set of MCP servers per repo, so only one of them can reach its Fabrica server", strings.Join(ds, " and "), repo).
 				Hintf("remove copilot-cloud, or the repo, from all but one of them")
+		}
+	}
+	return diags.Sorted()
+}
+
+// checkTagClash enforces that no two cloud factories share a tag. A
+// factory finds its resources in a runtime by its tag, so two that shared
+// one would claim each other's.
+func (h *Home) checkTagClash() diag.List {
+	var diags diag.List
+	byTag := map[string][]string{}
+	for _, name := range h.Names() {
+		if d := h.Factories[name]; d.Scope == provider.Cloud {
+			byTag[d.Tag()] = append(byTag[d.Tag()], name)
+		}
+	}
+	for tag, ds := range byTag {
+		if len(ds) > 1 {
+			diags.Errorf("home.tag-clash", FactoriesDir, "factories %s share the tag %s, so their routines would get the same names in runtimes", strings.Join(ds, " and "), tag).
+				Hintf("give all but one of them a different alias:, like `alias: %s-2`", ds[0])
 		}
 	}
 	return diags.Sorted()

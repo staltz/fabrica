@@ -24,6 +24,7 @@ import (
 	"github.com/staltz/fabrica/internal/names"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
+	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/yamlx"
 )
 
@@ -61,7 +62,10 @@ type Factory struct {
 	File      string
 	Blueprint BlueprintRef
 	Server    string
-	Runtimes  []string
+	// Alias is alias:, the name a cloud factory's identities use instead
+	// of its tag, or empty.
+	Alias    string
+	Runtimes []string
 	// Routines are the routines the factory names under routines:.
 	Routines []string
 	// AllRoutines is a "*" entry under routines:. It deploys every
@@ -90,6 +94,16 @@ func (d *Factory) Endpoint() string {
 		return ""
 	}
 	return strings.TrimRight(d.Server, "/") + "/" + d.Name
+}
+
+// Tag is what the factory's identities in runtimes start with: its alias:,
+// or else a short hash of its server and name, like "k7q2". Either way,
+// runtimes never show the server's address.
+func (d *Factory) Tag() string {
+	if d.Alias != "" {
+		return d.Alias
+	}
+	return stub.Tag(d.Server, d.Name)
 }
 
 // IsWildcard reports whether the factory is `targets: ["*"]`.
@@ -180,6 +194,7 @@ func (d *Factory) SpecificTargets() []string {
 type factoryFile struct {
 	Blueprint *BlueprintRef        `yaml:"blueprint"`
 	Server    string               `yaml:"server"`
+	Alias     string               `yaml:"alias"`
 	Runtimes  []string             `yaml:"runtimes"`
 	Routines  []yaml.Node          `yaml:"routines"`
 	Targets   []yaml.Node          `yaml:"targets"`
@@ -216,7 +231,12 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 	if err := yamlx.DecodeStrict(data, &f); err != nil {
 		return fail("%v", err)
 	}
-	d := &Factory{Name: name, File: file, Server: strings.TrimSpace(f.Server), NoInit: f.Init != nil && !*f.Init}
+	d := &Factory{Name: name, File: file, Server: strings.TrimSpace(f.Server), Alias: strings.TrimSpace(f.Alias), NoInit: f.Init != nil && !*f.Init}
+	if d.Alias != "" {
+		if err := names.Validate(d.Alias); err != nil {
+			return fail("alias: %v", err)
+		}
+	}
 
 	if f.Blueprint == nil || strings.TrimSpace(f.Blueprint.Git) == "" || strings.TrimSpace(f.Blueprint.Ref) == "" {
 		return fail("blueprint: needs both git and ref, like `blueprint: { git: github.com/acme/blueprint, ref: main }`")
@@ -340,6 +360,9 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		}
 		if f.Init != nil {
 			return fail("init: is only for cloud factories; local factories don't run their blueprint's init routine")
+		}
+		if d.Alias != "" {
+			return fail("alias: is only for cloud factories; it names their routines in cloud runtimes")
 		}
 	}
 	return d, diags

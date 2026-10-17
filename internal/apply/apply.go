@@ -606,7 +606,7 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		Identity: c.Key.ID, Routine: c.Routine, Repo: c.Repo,
 	}
 	if c.Current != nil {
-		data.RemoteID = c.Current.RemoteID
+		data.RemoteID, data.FormerIdentity = c.Current.RemoteID, c.Current.FormerID
 	}
 	switch c.Action {
 	case plan.Create:

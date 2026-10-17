@@ -20,6 +20,7 @@ package stub
 
 import (
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -419,29 +420,62 @@ func connectorHint(c *blueprint.Connector, m *provider.Matrix) string {
 	}
 }
 
-// Identity builds a resource's stable identity from its endpoint, routine
-// and repo, like "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app".
-// Nothing random goes in, so the same resource always gets the same
-// identity, and two home repos (which never share an endpoint) never claim
-// each other's resources.
-func Identity(endpoint, routine, repo string) string {
-	return EndpointID(endpoint) + "#" + routine + "@" + repo
+// Identity builds a resource's stable identity from its factory's tag,
+// routine and repo, like "k7q2#pr-review@github.com/acme/app". Nothing
+// random goes in, so the same resource always gets the same identity.
+func Identity(tag, routine, repo string) string {
+	return IdentityPrefix(tag) + routine + "@" + repo
 }
 
-// EndpointID is an endpoint URL without its scheme or trailing slash.
-func EndpointID(endpoint string) string {
-	u, err := url.Parse(endpoint)
+// IdentityPrefix is what every identity of a factory starts with, like
+// "k7q2#". Runtimes find a factory's resources by it.
+func IdentityPrefix(tag string) string { return tag + "#" }
+
+// SplitIdentity pulls the prefix, routine and repo out of an identity like
+// "k7q2#pr-review@github.com/acme/app". Identities from before tags have a
+// server address instead of a tag, like
+// "fabrica.acme.dev/acme-app#pr-review@github.com/acme/app", and split the
+// same way.
+func SplitIdentity(id string) (prefix, routine, repo string) {
+	tag, rest, _ := strings.Cut(id, "#")
+	routine, repo, _ = strings.Cut(rest, "@")
+	return IdentityPrefix(tag), routine, repo
+}
+
+// TagLen is how many characters of the hash a tag keeps: 20 bits, which
+// keeps names short while two factories almost never share one.
+const TagLen = 4
+
+// Tag is the short code that stands for one factory on one Fabrica server
+// in its identities, like "k7q2": a hash of the server address and the
+// factory's name, so runtimes show neither. The same server and factory
+// always give the same tag, and two factories on one server get different
+// ones.
+func Tag(server, factory string) string {
+	sum := sha256.Sum256([]byte(serverID(server) + "\x00" + factory))
+	return strings.ToLower(base32.StdEncoding.EncodeToString(sum[:]))[:TagLen]
+}
+
+// LegacyPrefix is the identity prefix that releases before tags gave a
+// factory's resources: its endpoint without the scheme, like
+// "fabrica.acme.dev/pr-review#".
+func LegacyPrefix(endpoint string) string { return serverID(endpoint) + "#" }
+
+// serverID is a server URL without its scheme or trailing slash, so
+// http://, https:// and a trailing slash don't change a tag.
+func serverID(server string) string {
+	u, err := url.Parse(server)
 	if err != nil || u.Host == "" {
-		return strings.TrimRight(endpoint, "/")
+		return strings.TrimRight(server, "/")
 	}
 	return u.Host + strings.TrimRight(u.Path, "/")
 }
 
-// InitIdentity is the identity of a factory's init, like
-// "fabrica.acme.dev/acme-app#onboard": the endpoint and the init routine.
-// There's one init per factory, so no repo goes in.
-func InitIdentity(endpoint, routine string) string {
-	return EndpointID(endpoint) + "#" + routine
+// InitIdentity is the identity of a factory's init, like "k7q2#onboard":
+// the tag and the init routine. There's one init per factory, so no repo
+// goes in.
+func InitIdentity(tag, routine string) string {
+	return IdentityPrefix(tag) + routine
 }
 
 // InitPrompt is what an init session is started with. Like a stub, it says

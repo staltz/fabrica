@@ -47,6 +47,7 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 	}
 
 	if d != nil && !e.Destroy {
+		retag(state, d.Tag())
 		e.planDesired(ctx, dp, d)
 	}
 	if e.Destroy {
@@ -126,7 +127,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			}
 			fp := ev.Shape.Fingerprint()
 			for _, repo := range d.SpecificTargets() {
-				id := stub.Identity(d.Endpoint(), r.Ref.Name, repo)
+				id := stub.Identity(d.Tag(), r.Ref.Name, repo)
 				dp.Desired = append(dp.Desired, &Resource{
 					Key: home.Key{Runtime: rt.Name, ID: id}, Factory: d.Name, Runtime: rt.Name,
 					Routine: r.Ref.Name, Repo: repo, Endpoint: d.Endpoint(), Eval: ev, Fingerprint: fp,
@@ -136,6 +137,54 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			}
 		}
 	}
+}
+
+// retag moves what state records under an earlier tag of the factory
+// (from before a new alias: or server:, or from before tags) over to its
+// current tag. A resource keeps the identity the runtime knows it by in
+// FormerID, so refresh still finds it and apply renames it. One whose new
+// identity is already taken keeps its old one, and goes as a leftover.
+func retag(s *home.State, tag string) {
+	prefix := stub.IdentityPrefix(tag)
+	moved := map[home.Key]string{}
+	taken := map[home.Key]bool{}
+	for _, r := range s.Resources {
+		taken[r.Key()] = true
+	}
+	for i := range s.Resources {
+		r := &s.Resources[i]
+		key := home.Key{Runtime: r.Runtime, ID: retagged(r.ID, prefix)}
+		if key.ID == r.ID || taken[key] {
+			continue
+		}
+		taken[key] = true
+		moved[r.Key()] = key.ID
+		if r.FormerID == "" {
+			r.FormerID = r.ID
+		}
+		r.ID = key.ID
+	}
+	for i := range s.Pending {
+		p := &s.Pending[i]
+		id, ok := moved[p.Key()]
+		if !ok {
+			id = retagged(p.Resource, prefix)
+			if id == p.Resource || taken[home.Key{Runtime: p.Runtime, ID: id}] {
+				continue
+			}
+		}
+		p.Resource = id
+		// Its handoff names the old identity, so a new one replaces it.
+		if p.Shape != nil && !p.Uncertain {
+			p.Shape.Fingerprint = ""
+		}
+	}
+}
+
+// retagged is id with its tag swapped for prefix's.
+func retagged(id, prefix string) string {
+	_, routine, repo := stub.SplitIdentity(id)
+	return prefix + routine + "@" + repo
 }
 
 // checkProductRepos reads each deployed repo's default branch and checks
@@ -231,20 +280,42 @@ func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*pr
 }
 
 // refreshByListing asks a runtime for everything under the factory's
-// endpoints. Anything it has that state doesn't is adopted.
+// identity prefixes. Anything it has that state doesn't is adopted.
 func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *provider.Provider, api provider.Lister, current map[home.Key]home.Resource) {
 	var found []provider.RemoteResource
-	for _, endpoint := range endpointsToList(dp) {
-		list, err := api.List(ctx, dp.Name, endpoint)
+	for _, prefix := range prefixesToList(dp) {
+		list, err := api.List(ctx, dp.Name, prefix)
 		if err != nil {
 			dp.Diags.Errorf("refresh.failed", rt, "couldn't list resources: %v", err)
 			return
 		}
 		found = append(found, list...)
 	}
+	// The runtime still knows a resource that's being renamed by its
+	// former identity.
+	renamed := map[string]string{}
+	for key, r := range current {
+		if key.Runtime == rt && r.FormerID != "" {
+			renamed[r.FormerID] = r.ID
+		}
+	}
+	// One that state doesn't know, under an earlier prefix, is adopted
+	// under the current one, and renamed.
+	prefix := ""
+	if dp.Spec != nil && !dp.Destroy {
+		prefix = stub.IdentityPrefix(dp.Spec.Tag())
+	}
+	formerOf := map[string]string{}
 	byID := map[string][]provider.RemoteResource{}
 	for _, r := range found {
-		byID[r.Identity] = append(byID[r.Identity], r)
+		id := r.Identity
+		if to, ok := renamed[id]; ok {
+			id = to
+		} else if _, inState := current[home.Key{Runtime: rt, ID: id}]; !inState && prefix != "" && !strings.HasPrefix(id, prefix) {
+			id = retagged(id, prefix)
+			formerOf[id] = r.Identity
+		}
+		byID[id] = append(byID[id], r)
 	}
 	for _, id := range sortedRemoteIDs(byID) {
 		list := byID[id]
@@ -260,13 +331,16 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 		key := home.Key{Runtime: rt, ID: id}
 		r, inState := current[key]
 		if !inState {
-			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API)}
-			r.Routine, r.Repo = splitIdentity(id)
+			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API), FormerID: formerOf[id]}
+			_, r.Routine, r.Repo = stub.SplitIdentity(id)
 			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
-				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
+				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), FormerID: formerOf[id], Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
 				Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
 		}
 		r.RemoteID = list[0].RemoteID
+		if list[0].Identity == id {
+			r.FormerID = "" // it already has its new name
+		}
 		if list[0].Fingerprint != "" {
 			r.Shape.Fingerprint = list[0].Fingerprint
 		}
@@ -310,7 +384,10 @@ func (e *Env) refreshByRemoteID(ctx context.Context, dp *Factory, rt string, api
 		// The installed stub is whatever its prompt says, and a stub that
 		// lost its name or fingerprint needs putting back.
 		r.Shape.Fingerprint = remote.Fingerprint
-		if remote.Identity != key.ID {
+		if remote.Identity == key.ID {
+			r.FormerID = "" // it already has its new name
+		}
+		if remote.Identity != key.ID && remote.Identity != r.FormerID {
 			r.Shape.Fingerprint = ""
 			dp.Notes = append(dp.Notes, fmt.Sprintf("%s on %s (%s) is named %q in the runtime; apply names it back", key.ID, rt, r.RemoteID, remote.Identity))
 		}
@@ -318,26 +395,30 @@ func (e *Env) refreshByRemoteID(ctx context.Context, dp *Factory, rt string, api
 	}
 }
 
-// endpointsToList is every endpoint this factory may own resources
-// under: its current one, plus any older ones still recorded in state (from
-// before a server: change, or for a deleted factory).
-func endpointsToList(dp *Factory) []string {
+// prefixesToList is every identity prefix this factory may own resources
+// under: its current tag's, plus any older ones still recorded in state
+// (from before a new alias: or server:, or for a deleted factory).
+func prefixesToList(dp *Factory) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(endpoint string) {
-		// Compare without the scheme: identities don't carry one.
-		if id := stub.EndpointID(endpoint); endpoint != "" && !seen[id] {
-			seen[id] = true
-			out = append(out, endpoint)
+	add := func(prefix string) {
+		if !seen[prefix] {
+			seen[prefix] = true
+			out = append(out, prefix)
 		}
 	}
 	if dp.Spec != nil {
-		add(dp.Spec.Endpoint())
+		add(stub.IdentityPrefix(dp.Spec.Tag()))
+		// Where a release before tags may have created one that state
+		// never recorded.
+		add(stub.LegacyPrefix(dp.Spec.Endpoint()))
 	}
 	if dp.State != nil {
 		for _, r := range dp.State.Resources {
-			if prefix, _, ok := strings.Cut(r.ID, "#"); ok {
-				add("https://" + prefix)
+			for _, id := range []string{r.ID, r.FormerID} {
+				if prefix, _, _ := stub.SplitIdentity(id); id != "" {
+					add(prefix)
+				}
 			}
 		}
 	}
@@ -386,6 +467,9 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 			if cur.RenamedFrom != "" {
 				// Its fingerprint was dropped, so say why instead.
 				reasons = []string{fmt.Sprintf("its prompt still names runtime %s, which is now called %s", cur.RenamedFrom, cur.Runtime)}
+			}
+			if cur.FormerID != "" {
+				reasons = append(reasons, fmt.Sprintf("it's still named %s in the runtime", cur.FormerID))
 			}
 			if !tokenMatches(cur.TokenHash, want.TokenHash) {
 				reasons = append(reasons, "the factory's token changed (the server secret was rotated)")
@@ -568,8 +652,8 @@ func (e *Env) whyGone(dp *Factory, r home.Resource) string {
 		return fmt.Sprintf("routine %s no longer runs on runtime %s", r.Routine, r.Runtime)
 	case !d.Covers(r.Repo):
 		return fmt.Sprintf("repo %s was removed from the factory", r.Repo)
-	case d.Endpoint() != "" && !strings.HasPrefix(r.ID, stub.EndpointID(d.Endpoint())+"#"):
-		return "the factory's server address changed, so this stub belongs to the old one"
+	case !strings.HasPrefix(r.ID, stub.IdentityPrefix(d.Tag())):
+		return "it's left over from the factory's earlier tag (before a new alias: or server:), and another stub took its name"
 	}
 	return "it's no longer deployed"
 }
@@ -603,14 +687,6 @@ func diffNames(before, after []string) (added, removed []string) {
 		}
 	}
 	return added, removed
-}
-
-// splitIdentity pulls the routine and repo out of an identity like
-// host/factory#routine@repo.
-func splitIdentity(id string) (routine, repo string) {
-	_, rest, _ := strings.Cut(id, "#")
-	routine, repo, _ = strings.Cut(rest, "@")
-	return routine, repo
 }
 
 func sortedKeysOf(m map[home.Key]home.Resource) []home.Key {

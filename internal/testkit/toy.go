@@ -184,7 +184,7 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 	db := os.Getenv(toyDBEnv)
 	var req struct {
 		Version  int    `json:"version"`
-		Endpoint string `json:"endpoint"`
+		Prefix   string `json:"prefix"`
 		RemoteID string `json:"remote_id"`
 		Resource *struct {
 			Identity    string `json:"identity"`
@@ -213,7 +213,7 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return err
 	}
-	if req.Version != 1 {
+	if req.Version != 2 {
 		return fmt.Errorf("unsupported protocol version %d", req.Version)
 	}
 	enc := json.NewEncoder(out)
@@ -223,10 +223,9 @@ func runToy(op string, in io.Reader, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		prefix := strings.TrimPrefix(strings.TrimPrefix(req.Endpoint, "https://"), "http://") + "#"
 		var found []map[string]string
 		for _, r := range all {
-			if strings.HasPrefix(r.Identity, prefix) {
+			if strings.HasPrefix(r.Identity, req.Prefix) {
 				found = append(found, map[string]string{"identity": r.Identity, "remote_id": r.RemoteID, "fingerprint": r.Fingerprint})
 			}
 		}

@@ -264,16 +264,19 @@ esac
 	}
 	ctx := context.Background()
 
-	list, err := api.List(ctx, "pr-review", "https://f.example/pr-review")
+	list, err := api.List(ctx, "pr-review", "x#")
 	if err != nil || len(list) != 1 || list[0].RemoteID != "r1" {
 		t.Fatalf("List = %+v, %v", list, err)
+	}
+	if sent, _ := os.ReadFile(filepath.Join(dir, "last-request.json")); !strings.Contains(string(sent), `"prefix":"x#"`) {
+		t.Errorf("the list request should carry the prefix: %s", sent)
 	}
 	id, err := api.Create(ctx, Resource{Identity: "x#r@github.com/a/b", Factory: "pr-review", Fabrica: ResourceFabrica{Token: "secret"}})
 	if err != nil || id != "r2" {
 		t.Fatalf("Create = %q, %v", id, err)
 	}
 	sent, _ := os.ReadFile(filepath.Join(dir, "last-request.json"))
-	if !strings.Contains(string(sent), `"version":1`) || !strings.Contains(string(sent), `"op":"create"`) {
+	if !strings.Contains(string(sent), `"version":2`) || !strings.Contains(string(sent), `"op":"create"`) {
 		t.Errorf("unexpected request: %s", sent)
 	}
 	if err := api.Update(ctx, "r2", Resource{Factory: "pr-review"}); err != nil {

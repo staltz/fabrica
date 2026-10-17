@@ -18,6 +18,7 @@ import (
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/provider"
+	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
 	"github.com/staltz/fabrica/internal/token"
 )
@@ -524,7 +525,7 @@ func TestLockIsRespectedAndCanBeRemoved(t *testing.T) {
 func TestRefreshAdoptsAndRefusesDuplicates(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
-	id := "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app"
+	id := stub.Identity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "pr-review", "github.com/acme/app")
 
 	// A crashed apply created this but never recorded it.
 	h.w.Toy.Put(testkit.ToyResource{RemoteID: "orphan", Identity: id})
@@ -548,6 +549,37 @@ func TestRefreshAdoptsAndRefusesDuplicates(t *testing.T) {
 	p = h.plan()
 	if !p.Factory("pr-review").Diags.HasCode("refresh.duplicate") || !strings.Contains(render(p), "orphan, copy") && !strings.Contains(render(p), "copy, orphan") {
 		t.Fatalf("want a duplicate error naming both:\n%s", render(p))
+	}
+}
+
+func TestRefreshAdoptsAndRenamesAnOrphanFromBeforeTags(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
+	old := "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app"
+	id := stub.Identity(stub.Tag("https://fabrica.acme.dev", "pr-review"), "pr-review", "github.com/acme/app")
+
+	// An apply from before tags created this, then crashed before
+	// recording it.
+	h.w.Toy.Put(testkit.ToyResource{RemoteID: "orphan", Identity: old})
+	p := h.plan()
+	var actions []string
+	for _, c := range p.Factory("pr-review").Changes {
+		if c.Key.Runtime == "toy" && c.Key.ID == id {
+			actions = append(actions, string(c.Action))
+		}
+	}
+	if strings.Join(actions, ",") != "adopt,update" || !strings.Contains(render(p), "it's still named "+old+" in the runtime") {
+		t.Fatalf("want the orphan adopted and renamed, got %v\n%s", actions, render(p))
+	}
+	h.apply()
+	toy := h.w.Toy.Resources()
+	if len(toy) != 2 {
+		t.Fatalf("adopting must not create a duplicate, got %+v", toy)
+	}
+	for _, r := range toy {
+		if r.RemoteID == "orphan" && r.Identity != id {
+			t.Errorf("the orphan should be renamed to %s, got %+v", id, r)
+		}
 	}
 }
 
@@ -717,6 +749,77 @@ func TestStateFromV01MovesToRenamedRuntime(t *testing.T) {
 	p = h.plan()
 	if d := p.Factory("pr-review"); d.Diags.HasErrors() || len(d.Changes) != 4 {
 		t.Fatalf("want 4 deletes:\n%s", render(p))
+	}
+}
+
+func TestIdentitiesFromBeforeTagsAreRenamedInPlace(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add")
+	h.apply()
+	for _, pend := range h.state().Pending {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "trig_"+pend.ID, false, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Make everything look like an earlier release named it, after the
+	// factory's server address.
+	tag := stub.IdentityPrefix(stub.Tag("https://fabrica.acme.dev", "pr-review"))
+	old := "fabrica.acme.dev/pr-review#"
+	h.w.Home.Pull()
+	data, _ := os.ReadFile(filepath.Join(h.w.Home.Dir, "state", "pr-review.yaml"))
+	h.w.Home.Write(map[string]string{"state/pr-review.yaml": strings.ReplaceAll(string(data), tag, old)}).CommitPush("old state")
+	for _, r := range h.w.Toy.Resources() {
+		r.Identity = strings.Replace(r.Identity, tag, old, 1)
+		h.w.Toy.Put(r)
+	}
+
+	// Plan renames each stub where it is: no creates, no deletes.
+	p := h.plan()
+	d := p.Factory("pr-review")
+	var actions []string
+	for _, c := range d.Changes {
+		actions = append(actions, string(c.Action))
+	}
+	if d.Diags.HasErrors() || strings.Join(actions, ",") != "update,update,update,update" ||
+		!strings.Contains(render(p), "it's still named "+old+"pr-review@github.com/acme/app in the runtime") {
+		t.Fatalf("want 4 renames:\n%s", render(p))
+	}
+
+	// Apply renames the toy stubs through the API, and hands off the
+	// claude.ai ones, saying which routine to look for.
+	res := h.apply()
+	if res.ExitCode() != 0 || len(res.Handoffs) != 2 {
+		t.Fatalf("apply: exit %d, handoffs %v\n%s", res.ExitCode(), res.Handoffs, h.out.String())
+	}
+	toy := h.w.Toy.Resources()
+	if len(toy) != 2 || !strings.HasPrefix(toy[0].Identity, tag) || !strings.HasPrefix(toy[1].Identity, tag) {
+		t.Errorf("the toy stubs should be renamed, not duplicated: %+v", toy)
+	}
+	handoff, _ := os.ReadFile(res.Handoffs[0])
+	if !strings.Contains(string(handoff), "find the routine named `"+old) || !strings.Contains(string(handoff), "(it was `"+old) {
+		t.Errorf("the handoff should say which routine to rename:\n%s", handoff)
+	}
+	for _, r := range h.state().Resources {
+		if !strings.HasPrefix(r.ID, tag) || (r.Runtime == "toy") != (r.FormerID == "") {
+			t.Errorf("state should record the new identity, and the old one until the rename is confirmed: %+v", r)
+		}
+	}
+	for _, pend := range h.state().Pending {
+		if _, err := apply.Confirm(context.Background(), h.w.Home.Dir, pend.ID, "", false, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Fatalf("after the renames, everything should be in sync:\n%s", render(p))
+	}
+
+	// A new alias: renames them again.
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": "alias: review\n" + testkit.PRReviewFactory}).CommitPush("alias")
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	if toy := h.w.Toy.Resources(); len(toy) != 2 || toy[0].Identity != "review#pr-review@github.com/acme/api" {
+		t.Errorf("the alias should name the toy stubs: %+v", toy)
 	}
 }
 

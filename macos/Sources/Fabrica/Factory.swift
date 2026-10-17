@@ -14,6 +14,9 @@ struct Factory: Equatable, Sendable {
     var notes = ""
     var blueprint = Blueprint()
     var server = ""
+    /// `alias:` names a cloud factory's routines in runtimes instead of its
+    /// tag, a hash of the server and the factory's name.
+    var alias = ""
     var runtimes: [String] = []
     var routines: [Routine] = []
     var targets: [Target] = []
@@ -114,6 +117,8 @@ extension Factory {
                 blueprint.path = m["path"]?.string ?? ""
             case "server":
                 server = value.string ?? ""
+            case "alias":
+                alias = value.string ?? ""
             case "runtimes":
                 runtimes = try Self.strings(value, key)
             case "routines":
@@ -224,6 +229,7 @@ extension Factory {
         out += "blueprint: { \(bp.joined(separator: ", ")) }\n"
 
         if !server.isEmpty { out += "server: \(Y.block(server))\n" }
+        if !alias.isEmpty { out += "alias: \(Y.block(alias))\n" }
         out += "runtimes: \(Y.list(runtimes))\n"
 
         if !routines.isEmpty {

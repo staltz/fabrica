@@ -491,7 +491,7 @@ func cursorModelSelectionFor(m *ResourceModel) (*cursorModelSelection, error) {
 	return sel, nil
 }
 
-// cursorWorkflowFor builds the automation for a stub: its trigger on the
+// cursorWorkflowFor builds the automation for a stub: its triggers on the
 // stub's repo, the Fabrica MCP server and the stub's connectors as
 // actions, the runtime's memory setting, its model, and the stub prompt.
 func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
@@ -501,22 +501,27 @@ func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
 		// repo non-git triggers run in, and in the list of repos.
 		GitConfig: &cursorGitConfig{Repo: res.Repo, Repos: []string{res.Repo}},
 	}
+	if len(res.Triggers) == 0 {
+		return nil, errors.New("the stub has no trigger")
+	}
 	repo := cursorTriggerRepo(res.Repo)
-	on := res.Trigger.On
-	switch {
-	case on == "schedule":
-		if res.Trigger.Cron == "" {
-			return nil, errors.New("a schedule trigger needs a cron expression")
+	for _, tr := range res.Triggers {
+		on := tr.On
+		switch {
+		case on == "schedule":
+			if tr.Cron == "" {
+				return nil, errors.New("a schedule trigger needs a cron expression")
+			}
+			wf.Triggers = append(wf.Triggers, cursorTrigger{Cron: &cursorCron{Cron: tr.Cron}})
+		case cursorPRActions[on] != "":
+			wf.Triggers = append(wf.Triggers, cursorTrigger{Git: &cursorGit{PullRequest: &cursorPullRequest{Repos: []string{repo}, PRAction: cursorPRActions[on]}}})
+		case on == "github.pull_request.labeled":
+			wf.Triggers = append(wf.Triggers, cursorTrigger{Git: &cursorGit{Label: &cursorLabel{Repos: []string{repo}, OnAdded: true, PullRequests: true}}})
+		case on == "github.push":
+			wf.Triggers = append(wf.Triggers, cursorTrigger{Git: &cursorGit{Push: &cursorPush{Repo: repo}}})
+		default:
+			return nil, fmt.Errorf("Cursor automations can't be triggered by %s", on)
 		}
-		wf.Triggers = []cursorTrigger{{Cron: &cursorCron{Cron: res.Trigger.Cron}}}
-	case cursorPRActions[on] != "":
-		wf.Triggers = []cursorTrigger{{Git: &cursorGit{PullRequest: &cursorPullRequest{Repos: []string{repo}, PRAction: cursorPRActions[on]}}}}
-	case on == "github.pull_request.labeled":
-		wf.Triggers = []cursorTrigger{{Git: &cursorGit{Label: &cursorLabel{Repos: []string{repo}, OnAdded: true, PullRequests: true}}}}
-	case on == "github.push":
-		wf.Triggers = []cursorTrigger{{Git: &cursorGit{Push: &cursorPush{Repo: repo}}}}
-	default:
-		return nil, fmt.Errorf("Cursor automations can't be triggered by %s", on)
 	}
 
 	wf.Actions = []cursorAction{{MCP: &cursorMCP{Server: cursorMCPServer{Name: CursorMCPServerName(res.Factory)}}}}

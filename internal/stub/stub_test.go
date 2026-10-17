@@ -56,13 +56,13 @@ func TestEvaluateOnClaude(t *testing.T) {
 	if !e.OK() {
 		t.Fatalf("unexpected problems:\n%s", e.Diags)
 	}
-	if got := strings.Join(e.Shape.ConnectorNames(), ","); got != "github,slack,linear" {
+	if got := strings.Join(e.Stubs[0].Shape.ConnectorNames(), ","); got != "github,slack,linear" {
 		t.Errorf("connectors = %s", got)
 	}
-	if e.Shape.TokenPlacement != provider.TokenInURL || e.Shape.Endpoint == "" {
-		t.Errorf("claude-code-cloud should get the token in the URL: %+v", e.Shape)
+	if e.Stubs[0].Shape.TokenPlacement != provider.TokenInURL || e.Stubs[0].Shape.Endpoint == "" {
+		t.Errorf("claude-code-cloud should get the token in the URL: %+v", e.Stubs[0].Shape)
 	}
-	if fp := e.Shape.Fingerprint(); len(fp) != 12 || fp != e.Shape.Fingerprint() {
+	if fp := e.Stubs[0].Shape.Fingerprint(); len(fp) != 12 || fp != e.Stubs[0].Shape.Fingerprint() {
 		t.Errorf("fingerprint %q isn't stable", fp)
 	}
 }
@@ -74,14 +74,14 @@ func TestFingerprintChangesWithShapeOnly(t *testing.T) {
 	// A new prompt doesn't change the shape: prompts are served live.
 	f2 := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "Review.", "Review carefully.", 1)})
 	e2 := stub.Evaluate(f2, f2.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if e1.Shape.Fingerprint() != e2.Shape.Fingerprint() {
+	if e1.Stubs[0].Shape.Fingerprint() != e2.Stubs[0].Shape.Fingerprint() {
 		t.Error("changing the prompt should not change the fingerprint")
 	}
 
 	// A new trigger does.
 	f3 := load(t, map[string]string{"routines/pr-review.md": strings.Replace(routine, "opened", "synchronize", 1)})
 	e3 := stub.Evaluate(f3, f3.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if e1.Shape.Fingerprint() == e3.Shape.Fingerprint() {
+	if e1.Stubs[0].Shape.Fingerprint() == e3.Stubs[0].Shape.Fingerprint() {
 		t.Error("changing the trigger should change the fingerprint")
 	}
 
@@ -91,7 +91,7 @@ func TestFingerprintChangesWithShapeOnly(t *testing.T) {
 		"connectors/linear.yaml": "kind: mcp\nurl: https://mcp.linear.app/v2\nauth: oauth\n",
 	})
 	e4 := stub.Evaluate(f4, f4.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if e1.Shape.Fingerprint() == e4.Shape.Fingerprint() {
+	if e1.Stubs[0].Shape.Fingerprint() == e4.Stubs[0].Shape.Fingerprint() {
 		t.Error("changing a connector's URL should change the fingerprint")
 	}
 }
@@ -103,7 +103,7 @@ func TestOptionalConnectorIsDroppedWithItsSideEffects(t *testing.T) {
 	if !e.OK() {
 		t.Fatalf("an optional connector shouldn't cause errors:\n%s", e.Diags)
 	}
-	if got := strings.Join(e.Shape.ConnectorNames(), ","); got != "github" {
+	if got := strings.Join(e.Stubs[0].Shape.ConnectorNames(), ","); got != "github" {
 		t.Errorf("connectors = %s, want just github", got)
 	}
 	if se, _ := e.SideEffect("slack.notify"); !se.Dropped {
@@ -137,7 +137,7 @@ func TestEmulatedConnectorUsesFallback(t *testing.T) {
 	if !e.OK() {
 		t.Fatal(e.Diags)
 	}
-	if c := e.Shape.Connectors[0]; c.Kind != "mcp" || c.Server.URL != "https://gh-mcp.example/mcp" {
+	if c := e.Stubs[0].Shape.Connectors[0]; c.Kind != "mcp" || c.Server.URL != "https://gh-mcp.example/mcp" {
 		t.Errorf("github should be emulated through its fallback, got %+v", c)
 	}
 	// Slack has no fallback, so it can't be emulated.
@@ -153,8 +153,15 @@ func TestIdentityAndPrompt(t *testing.T) {
 	if id != "k7q2#pr-review@github.com/acme/app" {
 		t.Errorf("Identity = %q", id)
 	}
-	if prefix, routine, repo := stub.SplitIdentity(id); prefix != "k7q2#" || routine != "pr-review" || repo != "github.com/acme/app" {
-		t.Errorf("SplitIdentity = %q, %q, %q", prefix, routine, repo)
+	if prefix, routine, trigger, repo := stub.SplitIdentity(id); prefix != "k7q2#" || routine != "pr-review" || trigger != "" || repo != "github.com/acme/app" {
+		t.Errorf("SplitIdentity = %q, %q, %q, %q", prefix, routine, trigger, repo)
+	}
+	split := stub.Identity("k7q2", stub.StubName("pr-review", "github.push"), "github.com/acme/app")
+	if split != "k7q2#pr-review:github.push@github.com/acme/app" {
+		t.Errorf("Identity of a stub per trigger = %q", split)
+	}
+	if prefix, routine, trigger, repo := stub.SplitIdentity(split); prefix != "k7q2#" || routine != "pr-review" || trigger != "github.push" || repo != "github.com/acme/app" {
+		t.Errorf("SplitIdentity = %q, %q, %q, %q", prefix, routine, trigger, repo)
 	}
 	p := stub.Prompt(id, "pr-review", "claude-code-cloud", "github.com/acme/app", "7f3a9c")
 	for _, want := range []string{"`run_begin`", "routine `pr-review`", "runtime `claude-code-cloud`", "repo `github.com/acme/app`", "stub `7f3a9c`", "`routine_get`", id} {
@@ -187,10 +194,10 @@ func TestMemoryOnlyShapesRuntimesWithTheirOwn(t *testing.T) {
 	// turns it on or off to match the routine.
 	off := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "cursor-cloud"))
 	on := stub.Evaluate(withMemory, withMemory.Routines["pr-review"], target(t, "cursor-cloud"))
-	if off.Shape.Memory != stub.MemoryOff || on.Shape.Memory != stub.MemoryOn || on.Memory.Support != provider.Native {
-		t.Errorf("cursor-cloud memory: off=%q on=%q (%s)", off.Shape.Memory, on.Shape.Memory, on.Memory.Support)
+	if off.Stubs[0].Shape.Memory != stub.MemoryOff || on.Stubs[0].Shape.Memory != stub.MemoryOn || on.Memory.Support != provider.Native {
+		t.Errorf("cursor-cloud memory: off=%q on=%q (%s)", off.Stubs[0].Shape.Memory, on.Stubs[0].Shape.Memory, on.Memory.Support)
 	}
-	if off.Shape.Fingerprint() == on.Shape.Fingerprint() {
+	if off.Stubs[0].Shape.Fingerprint() == on.Stubs[0].Shape.Fingerprint() {
 		t.Error("turning memory on should change a cursor-cloud stub's fingerprint")
 	}
 
@@ -198,8 +205,8 @@ func TestMemoryOnlyShapesRuntimesWithTheirOwn(t *testing.T) {
 	// changes in the stub.
 	c1 := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "claude-code-cloud"))
 	c2 := stub.Evaluate(withMemory, withMemory.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if !c2.OK() || c2.Memory.Support != provider.Emulated || c2.Shape.Memory != "" || c1.Shape.Fingerprint() != c2.Shape.Fingerprint() {
-		t.Errorf("claude-code-cloud memory should be emulated without touching the stub: %+v %+v", c2.Memory, c2.Shape)
+	if !c2.OK() || c2.Memory.Support != provider.Emulated || c2.Stubs[0].Shape.Memory != "" || c1.Stubs[0].Shape.Fingerprint() != c2.Stubs[0].Shape.Fingerprint() {
+		t.Errorf("claude-code-cloud memory should be emulated without touching the stub: %+v %+v", c2.Memory, c2.Stubs[0].Shape)
 	}
 }
 
@@ -226,24 +233,24 @@ func TestNativeSideEffectsMirrorTheRoutine(t *testing.T) {
 	fixing := load(t, map[string]string{"routines/pr-review.md": withAutofix(routine)})
 	off := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "claude-code-cloud"))
 	on := stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if !off.OK() || !on.OK() || off.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff || on.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
-		t.Errorf("claude-code-cloud auto-fix: off=%v on=%v %s %s", off.Shape.SideEffects, on.Shape.SideEffects, off.Diags, on.Diags)
+	if !off.OK() || !on.OK() || off.Stubs[0].Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff || on.Stubs[0].Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
+		t.Errorf("claude-code-cloud auto-fix: off=%v on=%v %s %s", off.Stubs[0].Shape.SideEffects, on.Stubs[0].Shape.SideEffects, off.Diags, on.Diags)
 	}
 	if u, _ := on.SideEffect(provider.PRAutofix); u.Support != provider.Native {
 		t.Errorf("auto-fix should be native on claude-code-cloud, got %+v", u)
 	}
-	if off.Shape.Fingerprint() == on.Shape.Fingerprint() {
+	if off.Stubs[0].Shape.Fingerprint() == on.Stubs[0].Shape.Fingerprint() {
 		t.Error("turning auto-fix on should change the stub's fingerprint")
 	}
-	if got := strings.Join(off.Shape.NativeSideEffectsOff(), ","); got != provider.PRAutofix {
+	if got := strings.Join(off.Stubs[0].Shape.NativeSideEffectsOff(), ","); got != provider.PRAutofix {
 		t.Errorf("NativeSideEffectsOff = %q", got)
 	}
 
 	// Runtimes without one bake nothing in, and their "*": emulated
 	// doesn't match it: it can't be emulated.
 	cursor := stub.Evaluate(plain, plain.Routines["pr-review"], target(t, "cursor-cloud"))
-	if !cursor.OK() || cursor.Shape.SideEffects != nil {
-		t.Errorf("cursor-cloud has no native side effects, so the shape shouldn't have any: %v %s", cursor.Shape.SideEffects, cursor.Diags)
+	if !cursor.OK() || cursor.Stubs[0].Shape.SideEffects != nil {
+		t.Errorf("cursor-cloud has no native side effects, so the shape shouldn't have any: %v %s", cursor.Stubs[0].Shape.SideEffects, cursor.Diags)
 	}
 	cursor = stub.Evaluate(fixing, fixing.Routines["pr-review"], target(t, "cursor-cloud"))
 	if cursor.OK() || !strings.Contains(cursor.Diags.String(), "doesn't support side effect github.pr_autofix") || !strings.Contains(cursor.Diags.String(), "can't be emulated") {
@@ -255,19 +262,19 @@ func TestNativeSideEffectsLocally(t *testing.T) {
 	// Claude Code's desktop scheduled tasks have an auto-fix setting.
 	const scheduled = "---\ntrigger: { on: schedule, cron: \"0 9 * * 1\" }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nUpdate.\n"
 	f := load(t, map[string]string{"routines/pr-review.md": withAutofix(scheduled), "routines/plain.md": scheduled})
-	if e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
-		t.Errorf("a scheduled task should get auto-fix on: %v %s", e.Shape.SideEffects, e.Diags)
+	if e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local")); !e.OK() || e.Stubs[0].Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOn {
+		t.Errorf("a scheduled task should get auto-fix on: %v %s", e.Stubs[0].Shape.SideEffects, e.Diags)
 	}
-	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff {
-		t.Errorf("a scheduled task should get auto-fix off: %v %s", e.Shape.SideEffects, e.Diags)
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Stubs[0].Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff {
+		t.Errorf("a scheduled task should get auto-fix off: %v %s", e.Stubs[0].Shape.SideEffects, e.Diags)
 	}
 
 	// Hooks run inside the session you have open, which has its own
 	// settings.
 	hook := strings.Replace(scheduled, `{ on: schedule, cron: "0 9 * * 1" }`, "{ on: session.stop }", 1)
 	f = load(t, map[string]string{"routines/pr-review.md": withAutofix(hook), "routines/plain.md": hook})
-	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Shape.SideEffects != nil {
-		t.Errorf("a hook has no settings of its own: %v %s", e.Shape.SideEffects, e.Diags)
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local")); !e.OK() || e.Stubs[0].Shape.SideEffects != nil {
+		t.Errorf("a hook has no settings of its own: %v %s", e.Stubs[0].Shape.SideEffects, e.Diags)
 	}
 	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local"))
 	if e.OK() || !strings.Contains(e.Diags.String(), "runs as a hook inside the session you have open") {
@@ -280,8 +287,8 @@ func TestNativeSideEffectsInInitSessions(t *testing.T) {
 	// the runtime's own features.
 	const initRoutine = "---\ntrigger: { on: init }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nSet up.\n"
 	f := load(t, map[string]string{"routines/plain.md": initRoutine})
-	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-cloud")); !e.OK() || e.Shape.SideEffects != nil {
-		t.Errorf("an init session has no settings of its own: %v %s", e.Shape.SideEffects, e.Diags)
+	if e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-cloud")); !e.OK() || e.Stubs[0].Shape.SideEffects != nil {
+		t.Errorf("an init session has no settings of its own: %v %s", e.Stubs[0].Shape.SideEffects, e.Diags)
 	}
 	f = load(t, map[string]string{"routines/fixing.md": withAutofix(initRoutine)})
 	e := stub.Evaluate(f, f.Routines["fixing"], target(t, "claude-code-cloud"))
@@ -314,11 +321,11 @@ func TestModelIsTheFirstTheRuntimeHas(t *testing.T) {
 	// Codex has the first one, and Claude routines only the second.
 	codex := stub.Evaluate(f, r, target(t, "codex"))
 	claude := stub.Evaluate(f, r, target(t, "claude-code-cloud"))
-	if !codex.OK() || codex.Shape.Model != "gpt-5.6-sol" || codex.Shape.Effort != "high" {
-		t.Errorf("codex: model %s (%s): %s", codex.Shape.Model, codex.Shape.Effort, codex.Diags)
+	if !codex.OK() || codex.Stubs[0].Shape.Model != "gpt-5.6-sol" || codex.Stubs[0].Shape.Effort != "high" {
+		t.Errorf("codex: model %s (%s): %s", codex.Stubs[0].Shape.Model, codex.Stubs[0].Shape.Effort, codex.Diags)
 	}
-	if !claude.OK() || claude.Shape.Model != "claude-opus-5-5" || claude.Shape.Effort != "max" {
-		t.Errorf("claude-code-cloud: model %s (%s): %s", claude.Shape.Model, claude.Shape.Effort, claude.Diags)
+	if !claude.OK() || claude.Stubs[0].Shape.Model != "claude-opus-5-5" || claude.Stubs[0].Shape.Effort != "max" {
+		t.Errorf("claude-code-cloud: model %s (%s): %s", claude.Stubs[0].Shape.Model, claude.Stubs[0].Shape.Effort, claude.Diags)
 	}
 
 	// Copilot automations and local tools pick their own, so they get
@@ -326,14 +333,14 @@ func TestModelIsTheFirstTheRuntimeHas(t *testing.T) {
 	for _, rt := range []string{"copilot-cloud", "claude-code-local"} {
 		plain := load(t, map[string]string{"routines/pr-review.md": routine})
 		e := stub.Evaluate(f, r, target(t, rt))
-		if e.Model.Name != "default" || e.Shape.Model != "" || e.Shape.Fingerprint() != stub.Evaluate(plain, plain.Routines["pr-review"], target(t, rt)).Shape.Fingerprint() {
-			t.Errorf("%s: picked %s, shape %+v", rt, e.Model, e.Shape)
+		if e.Model.Name != "default" || e.Stubs[0].Shape.Model != "" || e.Stubs[0].Shape.Fingerprint() != stub.Evaluate(plain, plain.Routines["pr-review"], target(t, rt)).Stubs[0].Shape.Fingerprint() {
+			t.Errorf("%s: picked %s, shape %+v", rt, e.Model, e.Stubs[0].Shape)
 		}
 	}
 
 	// The model is part of the shape, so changing it changes the stub.
 	other := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-opus-5-5, effort: high }]")})
-	if stub.Evaluate(other, other.Routines["pr-review"], target(t, "claude-code-cloud")).Shape.Fingerprint() == claude.Shape.Fingerprint() {
+	if stub.Evaluate(other, other.Routines["pr-review"], target(t, "claude-code-cloud")).Stubs[0].Shape.Fingerprint() == claude.Stubs[0].Shape.Fingerprint() {
 		t.Error("changing the model's effort should change the stub's fingerprint")
 	}
 }
@@ -388,22 +395,22 @@ func TestFastMode(t *testing.T) {
 	} {
 		f := load(t, map[string]string{"routines/pr-review.md": withModels(models)})
 		e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
-		if !e.OK() || e.Shape.Fast != want {
-			t.Errorf("%s: fast %q, want %q: %s", models, e.Shape.Fast, want, e.Diags)
+		if !e.OK() || e.Stubs[0].Shape.Fast != want {
+			t.Errorf("%s: fast %q, want %q: %s", models, e.Stubs[0].Shape.Fast, want, e.Diags)
 		}
 	}
 	// Fast mode is part of the shape, so turning it on changes the stub.
 	slow := load(t, map[string]string{"routines/pr-review.md": withModels("[grok-4.7]")})
 	fast := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: grok-4.7, fast: true }]")})
-	if stub.Evaluate(slow, slow.Routines["pr-review"], target(t, "cursor-cloud")).Shape.Fingerprint() == stub.Evaluate(fast, fast.Routines["pr-review"], target(t, "cursor-cloud")).Shape.Fingerprint() {
+	if stub.Evaluate(slow, slow.Routines["pr-review"], target(t, "cursor-cloud")).Stubs[0].Shape.Fingerprint() == stub.Evaluate(fast, fast.Routines["pr-review"], target(t, "cursor-cloud")).Stubs[0].Shape.Fingerprint() {
 		t.Error("turning fast mode on should change the stub's fingerprint")
 	}
 	// An entry asking for fast mode only matches runtimes that have it for
 	// the model; the next entry gets its turn elsewhere.
 	f := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-opus-5-5, effort: high, fast: true }, { model: claude-opus-5-5, effort: high }]")})
 	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-cloud"))
-	if !e.OK() || e.Model.Fast || e.Shape.Fast != "" {
-		t.Errorf("claude-code-cloud: picked %s, shape fast %q: %s", e.Model, e.Shape.Fast, e.Diags)
+	if !e.OK() || e.Model.Fast || e.Stubs[0].Shape.Fast != "" {
+		t.Errorf("claude-code-cloud: picked %s, shape fast %q: %s", e.Model, e.Stubs[0].Shape.Fast, e.Diags)
 	}
 	f = load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: claude-sonnet-5-5, fast: true }]")})
 	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
@@ -416,12 +423,81 @@ func TestModelIsCalledWhatTheRuntimeCallsIt(t *testing.T) {
 	// Cursor calls GLM 5.3 glm-5p3, but blueprints use its maker's name.
 	f := load(t, map[string]string{"routines/pr-review.md": withModels("[{ model: glm-5.3, effort: low }]")})
 	e := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
-	if !e.OK() || e.Model.Name != "glm-5.3" || e.Shape.Model != "glm-5p3" || e.Shape.Effort != "low" {
-		t.Errorf("picked %s, shape model %s (%s): %s", e.Model, e.Shape.Model, e.Shape.Effort, e.Diags)
+	if !e.OK() || e.Model.Name != "glm-5.3" || e.Stubs[0].Shape.Model != "glm-5p3" || e.Stubs[0].Shape.Effort != "low" {
+		t.Errorf("picked %s, shape model %s (%s): %s", e.Model, e.Stubs[0].Shape.Model, e.Stubs[0].Shape.Effort, e.Diags)
 	}
 	f = load(t, map[string]string{"routines/pr-review.md": withModels("[glm-5p3]")})
 	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
 	if e.OK() || !strings.Contains(e.Diags.String(), "glm-5p3 is what the runtime calls glm-5.3") {
 		t.Errorf("want an error pointing at glm-5.3, got:\n%s", e.Diags)
+	}
+}
+
+func TestSeveralTriggers(t *testing.T) {
+	const several = "---\ntriggers:\n  - { on: github.pull_request.opened }\n  - { on: schedule, cron: \"0 9 * * 1\" }\nconnectors: [github]\n---\nReview.\n"
+	const opened = "---\ntrigger: { on: github.pull_request.opened }\nconnectors: [github]\n---\nReview.\n"
+	f := load(t, map[string]string{"routines/pr-review.md": several, "routines/opened.md": opened})
+
+	// Claude routines take one trigger each, so the routine gets a stub per
+	// trigger, each shaped like a routine with only that trigger.
+	claude := stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-cloud"))
+	if !claude.OK() || len(claude.Stubs) != 2 || len(claude.Triggers) != 2 {
+		t.Fatalf("claude-code-cloud: %d stubs, %d triggers: %s", len(claude.Stubs), len(claude.Triggers), claude.Diags)
+	}
+	first, second := claude.Stubs[0], claude.Stubs[1]
+	if first.Name("pr-review") != "pr-review:github.pull_request.opened" || second.Name("pr-review") != "pr-review:schedule" {
+		t.Errorf("stub names = %s, %s", first.Name("pr-review"), second.Name("pr-review"))
+	}
+	if second.Shape.Trigger != "schedule" || second.Shape.Cron != "0 9 * * 1" || second.Shape.Triggers != nil {
+		t.Errorf("a stub per trigger should have just its own: %+v", second.Shape)
+	}
+	alone := stub.Evaluate(f, f.Routines["opened"], target(t, "claude-code-cloud"))
+	if first.Shape.Fingerprint() != alone.Stubs[0].Shape.Fingerprint() || first.Shape.Fingerprint() == second.Shape.Fingerprint() {
+		t.Errorf("fingerprints: %s, %s, alone %s", first.Shape.Fingerprint(), second.Shape.Fingerprint(), alone.Stubs[0].Shape.Fingerprint())
+	}
+	if claude.Stub(second.Shape.Fingerprint()) != second || claude.Stub("nope") != nil {
+		t.Error("Stub should find a stub by its fingerprint")
+	}
+
+	// A Cursor automation takes them all.
+	cursor := stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+	if !cursor.OK() || len(cursor.Stubs) != 1 {
+		t.Fatalf("cursor-cloud: %d stubs: %s", len(cursor.Stubs), cursor.Diags)
+	}
+	st := cursor.Stubs[0]
+	if st.Name("pr-review") != "pr-review" || st.Shape.Trigger != "" || len(st.Shape.Triggers) != 2 || st.Shape.Triggers[1] != (stub.ShapeTrigger{On: "schedule", Cron: "0 9 * * 1"}) {
+		t.Errorf("cursor-cloud stub: %s %+v", st.Name("pr-review"), st.Shape)
+	}
+	if got := blueprint.DescribeTriggers(st.Shape.TriggerList()); got != "github.pull_request.opened, schedule (0 9 * * 1)" {
+		t.Errorf("TriggerList = %s", got)
+	}
+
+	// Every trigger has to be there.
+	f = load(t, map[string]string{"routines/pr-review.md": strings.Replace(several, "schedule, cron: \"0 9 * * 1\"", "github.issues.opened", 1)})
+	cursor = stub.Evaluate(f, f.Routines["pr-review"], target(t, "cursor-cloud"))
+	if cursor.OK() || !strings.Contains(cursor.Diags.String(), "doesn't support trigger github.issues.opened") || !strings.Contains(cursor.Diags.String(), "drop github.issues.opened from its triggers") {
+		t.Errorf("an unsupported trigger among several should be an error: %s", cursor.Diags)
+	}
+}
+
+func TestSeveralTriggersLocally(t *testing.T) {
+	// Locally, a schedule is a scheduled task with settings of its own, and
+	// any other trigger is a hook inside the session you have open.
+	const mixed = "---\ntriggers:\n  - { on: schedule, cron: \"0 9 * * 1\" }\n  - { on: session.stop }\nconnectors: [github]\nside_effects:\n  - github.pr_comment\n---\nUpdate.\n"
+	f := load(t, map[string]string{"routines/plain.md": mixed, "routines/pr-review.md": withAutofix(mixed)})
+	e := stub.Evaluate(f, f.Routines["plain"], target(t, "claude-code-local"))
+	if !e.OK() || len(e.Stubs) != 2 {
+		t.Fatalf("%d stubs: %s", len(e.Stubs), e.Diags)
+	}
+	task, hook := e.Stubs[0], e.Stubs[1]
+	if task.InSession || task.Shape.SideEffects[provider.PRAutofix] != stub.SideEffectOff {
+		t.Errorf("the scheduled task should get auto-fix off: %+v", task)
+	}
+	if !hook.InSession || hook.Shape.SideEffects != nil {
+		t.Errorf("the hook has no settings of its own: %+v", hook)
+	}
+	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local"))
+	if e.OK() || !strings.Contains(e.Diags.String(), "runs on session.stop as a hook inside the session you have open") {
+		t.Errorf("auto-fix on a routine that's also a hook should be an error: %s", e.Diags)
 	}
 }

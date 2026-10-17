@@ -409,8 +409,12 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *blueprint.Ro
 		endpoint = d.Endpoint()
 	}
 	ev := stub.Evaluate(snap.Blueprint, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: endpoint})
-	if fp := ev.Shape.Fingerprint(); fp != run.Stub || !ev.OK() {
-		return fmt.Errorf("this stub is outdated: routine %s's shape (its trigger, connectors, memory setting, native side effects or model) changed, so the stub (%s) doesn't match the blueprint (%s) anymore. The factory needs `fabrica apply`", r.Ref.Name, run.Stub, fp)
+	if ev.Stub(run.Stub) == nil || !ev.OK() {
+		var fps []string
+		for _, st := range ev.Stubs {
+			fps = append(fps, st.Shape.Fingerprint())
+		}
+		return fmt.Errorf("this stub is outdated: routine %s's shape (its triggers, connectors, memory setting, native side effects or model) changed, so the stub (%s) doesn't match the blueprint (%s) anymore. The factory needs `fabrica apply`", r.Ref.Name, run.Stub, strings.Join(fps, " or "))
 	}
 	return nil
 }

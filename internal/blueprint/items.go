@@ -112,6 +112,16 @@ func (t Trigger) String() string {
 	return t.On
 }
 
+// DescribeTriggers lists triggers in words, like "github.push, schedule (0
+// 9 * * 1)".
+func DescribeTriggers(triggers []Trigger) string {
+	out := make([]string, len(triggers))
+	for i, t := range triggers {
+		out[i] = t.String()
+	}
+	return strings.Join(out, ", ")
+}
+
 // SideEffect is something a routine is allowed to do to the outside world,
 // like `github.pr_comment` or `slack.notify: {channel: "#eng"}`.
 type SideEffect struct {
@@ -148,7 +158,10 @@ type Param struct {
 type Routine struct {
 	ItemInfo
 	Description string
-	Trigger     Trigger
+	// Triggers are what fire the routine, in the order written: one or
+	// more, never two of the same event (so each can name a stub of its
+	// own). An init routine has exactly one, init.
+	Triggers []Trigger
 	// Skills are the blueprint skills the routine uses.
 	Skills      []string
 	Connectors  []names.MaybeName
@@ -180,7 +193,17 @@ func (r *Routine) withOrigin(o Origin) item { c := *r; c.Origin = o; return &c }
 const InitTrigger = "init"
 
 // IsInit reports whether the routine is an init routine.
-func (r *Routine) IsInit() bool { return r.Trigger.On == InitTrigger }
+func (r *Routine) IsInit() bool { return len(r.Triggers) == 1 && r.Triggers[0].On == InitTrigger }
+
+// HasTrigger reports whether the routine fires on an event.
+func (r *Routine) HasTrigger(on string) bool {
+	for _, t := range r.Triggers {
+		if t.On == on {
+			return true
+		}
+	}
+	return false
+}
 
 // Param looks up a declared param by name.
 func (r *Routine) Param(name string) (Param, bool) {

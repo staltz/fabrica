@@ -53,6 +53,10 @@ func TestParseMatrixRejectsMistakes(t *testing.T) {
 			t.Errorf("%s: want an error", name)
 		}
 	}
+	_, err := ParseMatrix("x", []byte("kind: local\napply_modes: [api]\nfind_by_identity: true\nskill_transport: directory\nmultiple_triggers: true\n"))
+	if err == nil || !strings.Contains(err.Error(), "a hook fires on one event") {
+		t.Errorf("a local runtime with multiple_triggers should be an error, got %v", err)
+	}
 	m, err := ParseMatrix("x", []byte("kind: cloud\napply_modes: [api]\nfind_by_remote_id: true\nskill_transport: text\nmcp_auth: {url: native}\n"))
 	if err != nil || !m.FindByRemoteID {
 		t.Errorf("api mode with find_by_remote_id should be fine, got %+v, %v", m, err)
@@ -366,5 +370,36 @@ func TestCursorHandoffMirrorsTheRoutinesMemory(t *testing.T) {
 		if err != nil || !strings.Contains(out, want) {
 			t.Errorf("memory needed=%v: want %q in:\n%s (%v)", needed, want, out, err)
 		}
+	}
+}
+
+func TestHandoffsListEveryTrigger(t *testing.T) {
+	// A runtime that takes several triggers per stub has to list them all.
+	dir := writeFolderProvider(t, "")
+	yaml, _ := os.ReadFile(filepath.Join(dir, "provider.yaml"))
+	multi := strings.Replace(string(yaml), "apply_modes: [api, handoff]", "apply_modes: [handoff]\nmultiple_triggers: true", 1)
+	if err := os.WriteFile(filepath.Join(dir, "provider.yaml"), []byte(multi), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFolder("acme-runner", dir); err == nil || !strings.Contains(err.Error(), "never lists .Triggers") {
+		t.Fatalf("want an error about .Triggers, got %v", err)
+	}
+
+	p, _ := Builtin("cursor-cloud")
+	if !p.Matrix.MultipleTriggers {
+		t.Fatal("cursor-cloud automations take several triggers")
+	}
+	out, err := p.RenderHandoff(HandoffData{
+		ID: "h_abc", Action: "create", Runtime: "cursor-cloud", Factory: "pr-review",
+		Identity: "k7q2#pr-review@github.com/acme/app", Routine: "pr-review", Repo: "github.com/acme/app",
+		Triggers: []HandoffTrigger{
+			{On: "github.pull_request.opened", Description: "GitHub event `github.pull_request.opened`"},
+			{On: "schedule", Cron: "0 9 * * 1", Description: "on a schedule, cron `0 9 * * 1` (UTC)"},
+		},
+		Prompt: "x", ConfirmCommand: "fabrica confirm h_abc",
+	})
+	want := "4. Triggers. Add each of these, so the automation fires on any of them:\n   - GitHub event `github.pull_request.opened`\n   - on a schedule, cron `0 9 * * 1` (UTC)\n5. "
+	if err != nil || !strings.Contains(out, want) {
+		t.Errorf("want %q in:\n%s (%v)", want, out, err)
 	}
 }

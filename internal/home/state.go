@@ -102,10 +102,13 @@ type StateBlueprint struct {
 // Shape is the part of a stub's shape that state records: enough to show
 // what's installed and its fingerprint.
 type Shape struct {
-	Trigger    string   `yaml:"trigger"`
-	Cron       string   `yaml:"cron,omitempty"`
-	Connectors []string `yaml:"connectors"`
-	Memory     string   `yaml:"memory,omitempty"`
+	// Trigger and Cron are the stub's trigger, when it has one; a stub with
+	// several lists them in Triggers instead.
+	Trigger    string         `yaml:"trigger,omitempty"`
+	Cron       string         `yaml:"cron,omitempty"`
+	Triggers   []ShapeTrigger `yaml:"triggers,omitempty"`
+	Connectors []string       `yaml:"connectors"`
+	Memory     string         `yaml:"memory,omitempty"`
 	// SideEffects are the runtime's own features for its native side
 	// effects, each "on" or "off" (see stub.Shape.SideEffects).
 	SideEffects map[string]string `yaml:"side_effects,omitempty"`
@@ -113,6 +116,12 @@ type Shape struct {
 	Effort      string            `yaml:"effort,omitempty"`
 	Fast        string            `yaml:"fast,omitempty"`
 	Fingerprint string            `yaml:"fingerprint"`
+}
+
+// ShapeTrigger is one of the triggers of a stub that has several.
+type ShapeTrigger struct {
+	On   string `yaml:"on"`
+	Cron string `yaml:"cron,omitempty"`
 }
 
 // Resource is one stub installed in one runtime.

@@ -126,7 +126,7 @@ func (d *Factory) Render(w io.Writer) {
 	if len(d.Pending) > 0 || d.Init != nil && d.Init.Waiting != nil {
 		fmt.Fprintln(w, "  Waiting for `fabrica confirm`:")
 		for _, p := range d.Pending {
-			fmt.Fprintf(w, "    … %s: %s %s @ %s on %s, issued %s\n", p.ID, p.Action, p.Routine, p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
+			fmt.Fprintf(w, "    … %s: %s %s @ %s on %s, issued %s\n", p.ID, p.Action, stubName(p.Resource, p.Routine), p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
 		}
 		if d.Init != nil && d.Init.Waiting != nil {
 			st := d.Init.Waiting
@@ -137,7 +137,7 @@ func (d *Factory) Render(w io.Writer) {
 		var unverifiable []string
 		for _, r := range d.State.Resources {
 			if r.Unverifiable() {
-				unverifiable = append(unverifiable, fmt.Sprintf("%s @ %s on %s", r.Routine, r.Repo, r.Runtime))
+				unverifiable = append(unverifiable, fmt.Sprintf("%s @ %s on %s", stubName(r.ID, r.Routine), r.Repo, r.Runtime))
 			}
 		}
 		if len(unverifiable) > 0 {
@@ -183,7 +183,7 @@ func (i *Init) render(w io.Writer) {
 // Describe is a one-line summary of a change.
 func (c *Change) Describe() string {
 	sym := map[Action]string{Create: "+", Update: "~", Delete: "-", Adopt: "="}[c.Action]
-	line := fmt.Sprintf("%s %-6s %s @ %s on %s (%s)", sym, c.Action, c.Routine, c.Repo, c.Key.Runtime, c.Mode)
+	line := fmt.Sprintf("%s %-6s %s @ %s on %s (%s)", sym, c.Action, stubName(c.Key.ID, c.Routine), c.Repo, c.Key.Runtime, c.Mode)
 	if len(c.Reasons) > 0 {
 		line += ": " + strings.Join(c.Reasons, "; ")
 	}
@@ -244,7 +244,11 @@ func describeRuntime(rt *Runtime) string {
 
 func describeEvaluation(ev *stub.Evaluation) string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("trigger %s [%s]", ev.Trigger.Name, ev.Trigger.Support))
+	word := "trigger"
+	if len(ev.Triggers) > 1 {
+		word = "triggers"
+	}
+	parts = append(parts, word+" "+describeUses(ev.Triggers))
 	if len(ev.Connectors) > 0 {
 		parts = append(parts, "connectors "+describeUses(ev.Connectors))
 	}
@@ -254,18 +258,38 @@ func describeEvaluation(ev *stub.Evaluation) string {
 	if ev.Memory.Support != "" {
 		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
 	}
-	if len(ev.Shape.SideEffects) > 0 {
+	// Stubs that run in a session have none of these settings.
+	for _, st := range ev.Stubs {
+		if len(st.Shape.SideEffects) == 0 {
+			continue
+		}
 		var settings []string
-		for _, name := range sortedSettings(ev.Shape.SideEffects) {
-			settings = append(settings, name+" "+ev.Shape.SideEffects[name])
+		for _, name := range sortedSettings(st.Shape.SideEffects) {
+			settings = append(settings, name+" "+st.Shape.SideEffects[name])
 		}
 		parts = append(parts, "runtime's own "+strings.Join(settings, ", "))
+		break
 	}
 	if ev.Model.Name != "" {
 		parts = append(parts, "model "+ev.Model.String())
 	}
-	parts = append(parts, "stub "+ev.Shape.Fingerprint())
+	if len(ev.Stubs) == 1 {
+		parts = append(parts, "stub "+ev.Stubs[0].Shape.Fingerprint())
+	} else {
+		var stubs []string
+		for _, st := range ev.Stubs {
+			stubs = append(stubs, st.Trigger+" "+st.Shape.Fingerprint())
+		}
+		parts = append(parts, "a stub per trigger ("+strings.Join(stubs, ", ")+")")
+	}
 	return strings.Join(parts, " · ")
+}
+
+// stubName names a stub by its routine, plus its trigger when the routine
+// has a stub per trigger, which only its identity says.
+func stubName(id, routine string) string {
+	_, _, trigger, _ := stub.SplitIdentity(id)
+	return stub.StubName(routine, trigger)
 }
 
 func describeUses(uses []stub.Use) string {

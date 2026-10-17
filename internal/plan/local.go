@@ -69,7 +69,7 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 	}
 	if d.IsWildcard() {
 		for _, r := range routines {
-			if r.Trigger.On == "schedule" {
+			if r.HasTrigger("schedule") {
 				dp.Diags.Errorf("factory.schedule-wildcard", d.File, "routine %s runs on a schedule, so it needs a repo to run in, but this factory has targets: [\"*\"]", r.Ref.Name).
 					Hintf("list the targets it should run in, or move the routine to a factory that does")
 			}
@@ -226,20 +226,26 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 			if ev == nil || !ev.OK() {
 				continue
 			}
-			if tr := ev.Routine.Trigger; tr.On == "schedule" {
-				for _, repo := range dp.Spec.SpecificTargets() {
-					cfg.Tasks = append(cfg.Tasks, localtools.Task{
-						Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: ev.Shape.Fingerprint(), Autofix: ev.Shape.SideEffects[provider.PRAutofix],
-						Prompt: stub.LocalPrompt(routine, dp.Name, rt, repo, ev.Shape.Fingerprint()),
+			// Local runtimes take one trigger per stub: a hook for each
+			// event, and a scheduled task for a schedule.
+			for _, st := range ev.Stubs {
+				tr, fp := st.Triggers[0], st.Shape.Fingerprint()
+				if tr.On == "schedule" {
+					for _, repo := range dp.Spec.SpecificTargets() {
+						cfg.Tasks = append(cfg.Tasks, localtools.Task{
+							Factory: dp.Name, Routine: routine, Repo: repo, Cron: tr.Cron, Fingerprint: fp, Autofix: st.Shape.SideEffects[provider.PRAutofix],
+							Prompt: stub.LocalPrompt(routine, dp.Name, rt, repo, fp),
+						})
+					}
+				} else {
+					cfg.Hooks = append(cfg.Hooks, localtools.Hook{
+						Binary: e.Binary, Runtime: rt, Event: tr.On,
+						Factory: dp.Name, Routine: routine, Fingerprint: fp,
 					})
 				}
-			} else {
-				cfg.Hooks = append(cfg.Hooks, localtools.Hook{
-					Binary: e.Binary, Runtime: rt, Event: tr.On,
-					Factory: dp.Name, Routine: routine, Fingerprint: ev.Shape.Fingerprint(),
-				})
 			}
-			for _, c := range ev.Shape.Connectors {
+			// Every stub of a routine has the same connectors.
+			for _, c := range ev.Stubs[0].Shape.Connectors {
 				if c.Server == nil {
 					continue
 				}
@@ -318,14 +324,14 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 			out = append(out, fmt.Sprintf("- remove MCP server %s", m.Name))
 		}
 	}
-	type hookID struct{ factory, routine string }
+	type hookID struct{ factory, routine, event string }
 	curHooks := map[hookID]localtools.Hook{}
 	for _, h := range cur.Hooks {
-		curHooks[hookID{h.Factory, h.Routine}] = h
+		curHooks[hookID{h.Factory, h.Routine, h.Event}] = h
 	}
 	wantHooks := map[hookID]bool{}
 	for _, h := range want.Hooks {
-		id := hookID{h.Factory, h.Routine}
+		id := hookID{h.Factory, h.Routine, h.Event}
 		wantHooks[id] = true
 		old, ok := curHooks[id]
 		switch {
@@ -336,8 +342,8 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 		}
 	}
 	for _, h := range cur.Hooks {
-		if !wantHooks[hookID{h.Factory, h.Routine}] {
-			out = append(out, fmt.Sprintf("- remove hook for routine %s/%s", h.Factory, h.Routine))
+		if !wantHooks[hookID{h.Factory, h.Routine, h.Event}] {
+			out = append(out, fmt.Sprintf("- remove hook for routine %s/%s on %s", h.Factory, h.Routine, h.Event))
 		}
 	}
 	curTasks := map[string]localtools.Task{}

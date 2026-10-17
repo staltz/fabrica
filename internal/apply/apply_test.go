@@ -1021,3 +1021,112 @@ func TestLocalScheduleRoutineNeedsSpecificTargets(t *testing.T) {
 		t.Fatalf("want a wildcard error:\n%s", render(p))
 	}
 }
+
+func TestSeveralTriggersGetAStubEach(t *testing.T) {
+	h := newHarness(t)
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": strings.Replace(testkit.PRReviewFactory, "runtimes: [claude-code-cloud, toy]", "runtimes: [toy]", 1)}).CommitPush("add pr-review")
+	h.apply()
+	tag := h.plan().Factory("pr-review").Spec.Tag()
+	identities := func() []string {
+		var out []string
+		for _, r := range h.w.Toy.Resources() {
+			out = append(out, r.Identity+" "+r.Trigger)
+		}
+		sort.Strings(out)
+		return out
+	}
+	if got := identities(); len(got) != 2 || got[0] != tag+"#pr-review@github.com/acme/api github.pull_request.opened" {
+		t.Fatalf("toy runtime after the first apply: %v", got)
+	}
+
+	// The toy runtime takes one trigger per stub, so a second trigger
+	// replaces each stub with one per trigger.
+	several := strings.Replace(testkit.PRReviewRoutine, "trigger: { on: github.pull_request.opened }", "triggers:\n  - { on: github.pull_request.opened }\n  - { on: github.pull_request.synchronize }", 1)
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": several})
+	p := h.plan()
+	text := render(p)
+	if p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 6 {
+		t.Fatalf("after adding a trigger: exit %d\n%s", p.ExitCode(), text)
+	}
+	for _, want := range []string{
+		"+ create pr-review:github.pull_request.synchronize @ github.com/acme/app on toy",
+		"- delete pr-review @ github.com/acme/app on toy (api): routine pr-review now has several triggers, and toy takes one per stub, so a stub for each replaces this one",
+		"triggers github.pull_request.opened [native], github.pull_request.synchronize [native]",
+		"a stub per trigger (github.pull_request.opened ",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("plan is missing %q:\n%s", want, text)
+		}
+	}
+	h.apply()
+	want := []string{
+		tag + "#pr-review:github.pull_request.opened@github.com/acme/api github.pull_request.opened",
+		tag + "#pr-review:github.pull_request.opened@github.com/acme/app github.pull_request.opened",
+		tag + "#pr-review:github.pull_request.synchronize@github.com/acme/api github.pull_request.synchronize",
+		tag + "#pr-review:github.pull_request.synchronize@github.com/acme/app github.pull_request.synchronize",
+	}
+	if got := identities(); !slices.Equal(got, want) {
+		t.Errorf("toy runtime after splitting:\n got %v\nwant %v", got, want)
+	}
+	for _, r := range h.state().Resources {
+		if r.Routine != "pr-review" || r.Shape.Trigger == "" || !strings.Contains(r.ID, ":"+r.Shape.Trigger+"@") {
+			t.Errorf("state records %+v", r)
+		}
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, the plan should be clean:\n%s", render(p))
+	}
+
+	// Back to one trigger: one stub per repo, named after the routine.
+	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine, "opened", "synchronize", 1)})
+	text = render(h.plan())
+	for _, want := range []string{
+		"- delete pr-review:github.pull_request.opened @ github.com/acme/app on toy (api): routine pr-review no longer has trigger github.pull_request.opened",
+		"- delete pr-review:github.pull_request.synchronize @ github.com/acme/app on toy (api): routine pr-review is down to one trigger",
+		"+ create pr-review @ github.com/acme/app on toy",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("plan is missing %q:\n%s", want, text)
+		}
+	}
+	h.apply()
+	if got := identities(); len(got) != 2 || got[1] != tag+"#pr-review@github.com/acme/app github.pull_request.synchronize" {
+		t.Errorf("toy runtime after joining: %v", got)
+	}
+}
+
+func TestLocalRoutineWithSeveralTriggers(t *testing.T) {
+	// Locally, a routine gets a hook for each event and a scheduled task
+	// for its schedule.
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	h.w.UpdateBlueprint(map[string]string{"routines/tidy.md": "---\ntriggers:\n  - { on: session.start }\n  - { on: session.stop }\n  - { on: schedule, cron: \"0 9 * * 1\" }\n---\nTidy up.\n"})
+	h.w.Home.Write(map[string]string{
+		"factories/mine.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [github.com/acme/app]\nroutines: [tidy]\n",
+	})
+	out := render(h.plan())
+	for _, want := range []string{"+ add hook for routine mine/tidy on session.start", "+ add hook for routine mine/tidy on session.stop", "+ add scheduled task fabrica-tidy-"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan is missing %q:\n%s", want, out)
+		}
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	settings, _ := os.ReadFile(filepath.Join(h.env.UserHome, ".claude", "settings.json"))
+	for _, want := range []string{"SessionStart", "Stop", "--event session.start", "--event session.stop"} {
+		if !strings.Contains(string(settings), want) {
+			t.Errorf("settings.json is missing %q:\n%s", want, settings)
+		}
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, local tools should be in sync:\n%s", render(p))
+	}
+
+	// Dropping one trigger removes just its hook.
+	h.w.UpdateBlueprint(map[string]string{"routines/tidy.md": "---\ntriggers:\n  - { on: session.stop }\n  - { on: schedule, cron: \"0 9 * * 1\" }\n---\nTidy up.\n"})
+	out = render(h.plan())
+	if !strings.Contains(out, "- remove hook for routine mine/tidy on session.start") || strings.Contains(out, "hook for routine mine/tidy on session.stop") || strings.Contains(out, "scheduled task") {
+		t.Errorf("only the session.start hook should go:\n%s", out)
+	}
+}

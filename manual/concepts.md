@@ -78,7 +78,7 @@ Fabrica never installs a routine's real content into a runtime. It installs a **
 
 Why stubs? Because everything else is served live. Editing a routine's prompt, skills, rules, params or (emulated) side effects takes effect on the next run. You only re-apply when the stub itself has to change.
 
-What gets baked into the stub is called its **shape**: the trigger, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the runtime's own features for its native side effects, like auto-fixing pull requests (on for the ones the routine lists, off for the rest), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
+What gets baked into the stub is called its **shape**: its triggers, the connectors and their settings, the runtime's memory setting (only on runtimes with a memory feature of their own), the runtime's own features for its native side effects, like auto-fixing pull requests (on for the ones the routine lists, off for the rest), the model, effort and fast mode the routine runs on (only on runtimes that let a stub pick them), and the Fabrica server's address. Fabrica writes a short **fingerprint** of the shape into the stub (`e128f7aa2995` above) and records it in state.
 
 ### Stale stubs
 
@@ -101,6 +101,8 @@ Every remote resource has a stable identity, built from its factory's tag, routi
 ```
 
 The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#factory-files), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica plan` prints each cloud factory's tag.
+
+When a routine has [several triggers](blueprints.md#several-triggers) and the runtime takes one per stub, each trigger gets a stub of its own, and the trigger goes in after the routine: `4ckr#pr-review:github.push@github.com/acme/app`.
 
 Nothing random goes in, so the same resource always gets the same identity. That's how Fabrica finds its own resources, adopts ones that a crashed apply created, and refuses to continue when two resources claim the same identity. The identity goes in the resource's name (or a metadata field) and always in the stub prompt.
 

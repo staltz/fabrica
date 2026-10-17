@@ -134,16 +134,19 @@ type Runtime struct {
 	Evaluations map[string]*stub.Evaluation
 }
 
-// Resource is a stub that should exist: one routine, on one repo, in one
+// Resource is a stub that should exist: one routine (or, for a routine
+// split into a stub per trigger, one of its triggers), on one repo, in one
 // runtime.
 type Resource struct {
-	Key         home.Key
-	Factory     string
-	Runtime     string
-	Routine     string
-	Repo        string
-	Endpoint    string
-	Eval        *stub.Evaluation
+	Key      home.Key
+	Factory  string
+	Runtime  string
+	Routine  string
+	Repo     string
+	Endpoint string
+	Eval     *stub.Evaluation
+	// Stub is which of the routine's stubs this is.
+	Stub        *stub.Stub
 	Fingerprint string
 	Prompt      string
 	TokenHash   string

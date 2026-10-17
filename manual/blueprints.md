@@ -196,7 +196,7 @@ Skills often mention other skills in their text (`/changelog`, "use the `test` s
 
 ## Routines
 
-A routine is **trigger + skills + connectors + side effects + params + a prompt** (and, if you like, the models to run it on), written as abstract intent, independent of any runtime.
+A routine is **triggers + skills + connectors + side effects + params + a prompt** (and, if you like, the models to run it on), written as abstract intent, independent of any runtime.
 
 ```markdown
 <!-- routines/pr-review.md -->
@@ -222,7 +222,8 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | Key | What it is |
 |---|---|
 | `description` | Optional. A one-line summary. |
-| `trigger` | Required. `on:` is the event. A `schedule` trigger also needs `cron:` (five fields, UTC). |
+| `trigger` | Required, unless there's `triggers:`. `on:` is the event. A `schedule` trigger also needs `cron:` (five fields, UTC). |
+| `triggers` | Instead of `trigger:`, a list of them, for a routine that runs on any of several events. See [Several triggers](#several-triggers). |
 | `skills` | The blueprint skills the routine uses. They **must exist** in the blueprint. |
 | `connectors` | The connectors the routine needs. `name?` marks one as optional. Don't list `fabrica`: it's added automatically. |
 | `side_effects` | What the routine may do to the outside world. Each is `connector.action`, optionally with settings. Its connector must be in `connectors:`. |
@@ -247,11 +248,31 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica p
 | `git.pre_commit`, `git.pre_push` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
 | `init` | Fired by Fabrica itself, each time `fabrica apply` creates a factory. See [Init routines](#init-routines). |
 
+#### Several triggers
+
+A routine that should run on any of several events lists them under `triggers:` instead of `trigger:`:
+
+```yaml
+triggers:
+  - { on: github.pull_request.opened }
+  - { on: github.pull_request.synchronize }
+  - { on: schedule, cron: "0 9 * * 1" }
+```
+
+Each event can appear once (so one schedule per routine: write a routine for each schedule), and `init` can't share a routine with other triggers. Every runtime the routine runs on needs every one of its triggers.
+
+How a runtime gets them depends on what it can do:
+
+- **One stub with all of them**, on runtimes whose capability matrix says `multiple_triggers: true`, like `cursor-cloud`: one Cursor automation fires on any of them. Its identity is the routine's, as usual.
+- **A stub per trigger** everywhere else: each one is a separate resource in the runtime, with the trigger in its identity, like `4ckr#pr-review:github.pull_request.synchronize@github.com/acme/app` (see [Identities](concepts.md#identities)). Locally, that's a hook for each event and a scheduled task for the schedule.
+
+Either way it's the same routine: one prompt, one memory, one run history. Adding a trigger to a routine with one, or going back to one, renames its stubs, so `plan` shows the old ones as deletes and the new ones as creates.
+
 ### Side effects
 
 Each provider maps every side effect to **native** (the runtime does it itself), **emulated** (Fabrica turns it into prompt instructions, plus the connector that carries it out) or **unsupported** (an error). Settings like `channel:` are filled in when the routine is served, with `{{params.x}}` replaced.
 
-A native side effect is one of the runtime's own features, so the routine file is its source of truth: the stub turns it **on** for routines that list it and **off** for every other routine, even where the runtime turns it on by default. That makes native side effects part of the stub's [shape](concepts.md#stubs-and-shapes): adding one to a routine, or removing it, means a re-apply on runtimes that have it, and `plan` shows the stub as an update. (Emulated side effects are only prompt instructions, so changing them takes effect on the next run.) Local hooks run inside the session you already have open, and [init routines](#init-routines) in a one-off session Fabrica starts, so there's no stub to set them up: a hook or init routine that lists a native side effect is an error.
+A native side effect is one of the runtime's own features, so the routine file is its source of truth: the stub turns it **on** for routines that list it and **off** for every other routine, even where the runtime turns it on by default. That makes native side effects part of the stub's [shape](concepts.md#stubs-and-shapes): adding one to a routine, or removing it, means a re-apply on runtimes that have it, and `plan` shows the stub as an update. (Emulated side effects are only prompt instructions, so changing them takes effect on the next run.) Local hooks run inside the session you already have open, and [init routines](#init-routines) in a one-off session Fabrica starts, so there's no stub to set them up: a hook or init routine that lists a native side effect is an error, even when the routine's schedule trigger alone would be fine.
 
 Some side effects can only be native, because they outlive the run, so no prompt instruction can do them. A runtime has them only if its capability matrix names them exactly: `"*": emulated` doesn't cover them, so on every other runtime they're an error in `check` and `plan`. In v0.1 there's one: `github.pr_autofix`.
 

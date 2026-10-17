@@ -108,6 +108,11 @@ type Matrix struct {
 	Triggers    map[string]Support
 	Connectors  map[string]Support
 	SideEffects map[string]Support
+	// MultipleTriggers says one stub can carry several triggers, so a
+	// routine with several becomes one stub with all of them. Without it,
+	// such a routine becomes one stub per trigger. Local runtimes always
+	// have one per trigger: a hook fires on one event.
+	MultipleTriggers bool
 	// Memory says how the runtime lets a routine keep notes between runs:
 	// Native means it has its own memory feature, which a stub turns on or
 	// off to match the routine; Emulated means Fabrica keeps the memory
@@ -174,6 +179,8 @@ type matrixFile struct {
 	FastModels     []string                  `yaml:"fast_models"`
 	ModelIDs       map[string]string         `yaml:"model_ids"`
 	Credentials    map[string]credentialFile `yaml:"credentials"`
+	// multiple_triggers: true means one resource fires on several triggers.
+	MultipleTriggers bool `yaml:"multiple_triggers"`
 }
 
 // credentialFile is one entry under credentials:, keyed by its variable.
@@ -243,6 +250,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		SideEffects:    orEmpty(f.SideEffects),
 		Memory:         f.Memory,
 	}
+	m.MultipleTriggers = f.MultipleTriggers
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
@@ -312,6 +320,9 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		add("mcp_auth: a cloud runtime must support passing the token in a header or in the URL, or it can't reach the Fabrica server at all")
 	}
 
+	if m.Scope == Local && m.MultipleTriggers {
+		add("multiple_triggers: a local runtime can't have it, because a hook fires on one event; drop it, and Fabrica installs a hook for each trigger")
+	}
 	for key, s := range m.Triggers {
 		if !triggerKeyRe.MatchString(key) {
 			add("triggers: %q isn't a valid trigger name (like github.pull_request.opened)", key)

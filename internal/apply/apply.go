@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
@@ -441,7 +440,7 @@ func getOnlyCreate(c *plan.Change) bool {
 // happen whose result may be lost. The returned ID is what `fabrica
 // confirm` later resolves.
 func beginUncertainCreate(ctx context.Context, repo *Repo, env *plan.Env, dp *plan.Factory, state *home.State, c *plan.Change, now time.Time) (string, error) {
-	shape := stateShape(c.Desired.Eval.Shape)
+	shape := stateShape(c.Desired.Stub.Shape)
 	id := HandoffID(dp.Name, c.Key, string(plan.Create), c.Desired.Fingerprint+c.Desired.TokenHash)
 	// One pending entry per resource. An older handoff for it is replaced:
 	// this create is what has to be resolved now.
@@ -521,12 +520,17 @@ func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *hom
 
 // resourceFor turns a desired stub into what a provider's API gets.
 func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Resource {
-	shape := r.Eval.Shape
+	shape := r.Stub.Shape
 	res := provider.Resource{
 		Identity: r.Key.ID, Factory: r.Factory, Routine: r.Routine, Repo: r.Repo,
-		Trigger: provider.ResourceTrigger{On: shape.Trigger, Cron: shape.Cron},
-		Memory:  shape.Memory, SideEffects: shape.SideEffects, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
+		Memory: shape.Memory, SideEffects: shape.SideEffects, Prompt: r.Prompt, Fingerprint: r.Fingerprint,
 		Fabrica: provider.ResourceFabrica{Placement: p.Matrix.TokenPlacement(), Token: tok, URL: fabricaURL(r.Endpoint, p, tok)},
+	}
+	for _, t := range shape.TriggerList() {
+		res.Triggers = append(res.Triggers, provider.ResourceTrigger{On: t.On, Cron: t.Cron})
+	}
+	if len(res.Triggers) == 1 {
+		res.Trigger = &res.Triggers[0]
 	}
 	res.Model, res.Connectors = modelFor(shape), connectorsFor(shape)
 	return res
@@ -568,12 +572,16 @@ func recordFor(r *plan.Resource, remoteID string, dp *plan.Factory, now time.Tim
 	return home.Resource{
 		ID: r.Key.ID, Runtime: r.Runtime, Routine: r.Routine, Repo: r.Repo, RemoteID: remoteID,
 		Mode: string(r.Mode), BlueprintCommit: blueprintCommit(dp), TokenHash: r.TokenHash,
-		Shape: stateShape(r.Eval.Shape), AppliedAt: now,
+		Shape: stateShape(r.Stub.Shape), AppliedAt: now,
 	}
 }
 
 func stateShape(s stub.Shape) home.Shape {
-	return home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, SideEffects: s.SideEffects, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
+	out := home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, SideEffects: s.SideEffects, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
+	for _, t := range s.Triggers {
+		out.Triggers = append(out.Triggers, home.ShapeTrigger{On: t.On, Cron: t.Cron})
+	}
+	return out
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -615,8 +623,13 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		data.ConfirmCommand = "fabrica confirm " + id
 	}
 	if r := c.Desired; r != nil {
-		shape := r.Eval.Shape
-		data.Trigger = provider.HandoffTrigger{On: shape.Trigger, Cron: shape.Cron, Description: stub.DescribeTrigger(blueprint.Trigger{On: shape.Trigger, Cron: shape.Cron}, r.Repo)}
+		shape := r.Stub.Shape
+		for _, t := range shape.TriggerList() {
+			data.Triggers = append(data.Triggers, provider.HandoffTrigger{On: t.On, Cron: t.Cron, Description: stub.DescribeTrigger(t, r.Repo)})
+		}
+		if len(data.Triggers) == 1 {
+			data.Trigger = data.Triggers[0]
+		}
 		for _, conn := range shape.Connectors {
 			data.Connectors = append(data.Connectors, provider.HandoffConnector{Name: conn.Name, Setup: stub.DescribeConnector(conn)})
 		}
@@ -658,7 +671,7 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		pend.RemoteID = c.Current.RemoteID
 	}
 	if c.Desired != nil {
-		shape := stateShape(c.Desired.Eval.Shape)
+		shape := stateShape(c.Desired.Stub.Shape)
 		pend.Shape, pend.TokenHash = &shape, tokenHash
 	}
 	if _, exists := state.FindPending(id); !exists {

@@ -77,7 +77,7 @@ func TestNestHeadings(t *testing.T) {
 func TestRoutineTextNestsPromptHeadings(t *testing.T) {
 	r := &blueprint.Routine{
 		ItemInfo: blueprint.ItemInfo{Ref: names.Ref{Name: "check"}},
-		Trigger:  blueprint.Trigger{On: "schedule", Cron: "0 9 * * 1"},
+		Triggers: []blueprint.Trigger{{On: "schedule", Cron: "0 9 * * 1"}},
 		Prompt:   "# Check deps\n\n## How\n\nLook.\n\n```\n# comment\n```",
 	}
 	snap := &Snapshot{Blueprint: &blueprint.Blueprint{Source: blueprint.Source{Dir: "bp"}}}

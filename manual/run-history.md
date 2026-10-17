@@ -19,6 +19,20 @@ When Fabrica refuses a run (an outdated stub, a repo without the Fabrica line, a
 
 Fields written by the server (times, blueprint commit, factory, loads) are reliable. Fields written by the agent (intent, summaries, statuses, links, friction, the session pointer) are best effort: they depend on the agent calling the tools, and on it knowing the answer. A cloud agent might not know where its transcript is, for example.
 
+## The dashboard
+
+The dashboard is a web page that shows run history as charts and tables, so you don't need SQL to see how your routines are doing. `fabrica dashboard` opens one for your local `runs.db`, and a remote server has one at `/_dashboard`: see [`fabrica dashboard`](cli.md#fabrica-dashboard) and [the MCP server](mcp-server.md#the-dashboard) for how to open it. It only reads, and only people see it: agents can't reach it.
+
+It has three kinds of page, and every view is a link you can bookmark, because the filters are in the address:
+
+- **The overview.** Tiles for the runs, the success rate, how many failed or went stale, the PRs touched and the refusals. Then a chart of runs per day, stacked by outcome, and a table with one row for each routine: its runs, success rate, failed and stale counts, its most common friction and when it last ran. Below that are the refusals, with the fix when a stub is out of date ("run `fabrica apply` for factory acme"), the friction notes agents left, and the latest PRs. Filter by factory, by window (7, 30 or 90 days, 30 by default), and by routine runs, interactive runs or both.
+- **A routine's page**, from the routines table. Its main chart is the failure rate per day, which is failed and stale runs divided by the runs that day. A vertical line marks the day each new blueprint commit was first served to the routine, labeled with the short commit, with the commit's subject when you hover it, if the git cache on that machine has the commit. So after you change a skill or a rule, you can see whether things got better. Below it are the routine's runs, its friction notes grouped by kind, and how often its runs loaded each skill and rule.
+- **A run's page**, from any run link. It's what the [admin API](mcp-server.md#the-admin-api) returns for one run, as a web page: the header, then the timeline of loads, checkpoints and friction notes. PR links are clickable. The session pointer is only a link when it's an `https://` address, because it can also be a file path or an ID.
+
+The success rate is succeeded runs divided by finished ones, where finished means succeeded or failed. Runs still going, and stale ones, haven't finished, so they're not in it. Every day on a chart is a UTC day, and every time on the dashboard is UTC.
+
+Every chart has its numbers in a table underneath ("Show the numbers as a table"), and hovering a bar or a point shows them too, so nothing depends on color or on a mouse. And since agents write the intents, summaries, friction and session pointers, the dashboard shows them as plain text, and never as anything that runs.
+
 ## The schema
 
 The database's `PRAGMA user_version` is the schema version, `3` for this one. Version 3 added `runs.session`, `loads` (so rules and routines are recorded, not just skills), `friction` and the new `run_overview` columns. Version 2 added `memories`. Fabrica migrates older databases when it opens them, and a database made by a newer Fabrica than yours is refused.

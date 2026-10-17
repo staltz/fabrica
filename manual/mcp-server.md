@@ -196,6 +196,18 @@ curl -H "Authorization: Bearer $FABRICA_ADMIN_TOKEN" \
 ]
 ```
 
+### The dashboard
+
+The remote server also serves a dashboard of run history, in your browser, at `/_dashboard`. It's the same dashboard that [`fabrica dashboard`](cli.md#fabrica-dashboard) opens for your local history, and [Run history](run-history.md#the-dashboard) says what's on each page. Like the admin API it's on the operator plane: no factory token opens it, and agents never see it.
+
+It's matched by the last `/_dashboard` in the path, so it works under any path prefix too: with `server: https://acme.dev/fabrica`, it's `https://acme.dev/fabrica/_dashboard`.
+
+- **You log in with the admin token.** Opening `/_dashboard` without the right cookie shows a small page with one password field, "Admin token". Paste what [`fabrica auth admin-token`](auth.md#the-admin-token) prints. A wrong token, and a factory's token too, gets a `401` and the same page again, with the same message.
+- **Then a cookie keeps you in.** It's called `fabrica_admin`, and holds the admin token. It's `HttpOnly` and `SameSite=Strict`, so scripts and other sites can't touch it, and it only goes to pages under `<prefix>/_dashboard`. It's `Secure` when the request came over HTTPS, either straight to Fabrica or through a proxy that sends `X-Forwarded-Proto: https`, so make your reverse proxy send that. It's gone when you close the browser, or press "Log out" (a `POST` to `/_dashboard/logout`). Changing the server secret changes the admin token, which logs everyone out.
+- **The header doesn't work here.** The admin API takes `Authorization: Bearer`, and the dashboard takes only the cookie. A factory token, in a header, a cookie or the `/t/<token>` form, gets the login page.
+- **Everything but logging in and out is a `GET`** that changes nothing, so there's nothing for a cross-site request to abuse.
+- **Every page says `Cache-Control: no-store`**, and sends a `Content-Security-Policy` that allows no scripts and nothing from other sites. The pages need no JavaScript and load nothing from the internet.
+
 ## Stale stubs
 
 Before a routine run starts, `run_begin` checks that its stub is still current. Both servers check two things, in this order:

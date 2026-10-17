@@ -49,10 +49,10 @@ struct FabricaApp: App {
         Window("About Fabrica", id: "about") {
             AboutView()
                 .environment(model)
+                .windowMinimizeBehavior(.disabled)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .windowMinimizeBehavior(.disabled)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(.suppressed)
     }

@@ -46,8 +46,8 @@ FABRICA_SERVER_SECRET, or saved by ` + "`fabrica auth login <url>`" + ` on this
 machine when you pass --url; read access to the home repo and the
 blueprints; and a persistent folder for its run-history database (--db).
 It re-fetches the home repo regularly, so merges show up shortly after
-they land. People read run history through its admin API, with the token
-` + "`fabrica auth admin-token`" + ` prints.`,
+they land. People read run history through its admin API and its dashboard
+(at <server>/_dashboard), with the token ` + "`fabrica auth admin-token`" + ` prints.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()

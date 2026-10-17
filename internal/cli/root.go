@@ -98,7 +98,8 @@ more.
 Deploying a blueprint makes a factory: a file in a home repo that says
 which product repos (its targets) and tools the blueprint runs on.
 Agents load the blueprint live from the Fabrica MCP server, so improving
-your process is just a git merge. Every agent run is recorded.
+your process is just a git merge. Every agent run is recorded, for
+people to read.
 
 Typical workflow:
   fabrica new        start a new blueprint repo
@@ -108,6 +109,8 @@ Typical workflow:
   fabrica plan       see what apply would do (exit 0 in sync, 2 changes, 1 errors)
   fabrica apply      install stubs in runtimes, and Fabrica in your local tools
   fabrica destroy    remove everything apply installed
+  fabrica runs       read run history: list runs, show one, export a retro bundle
+  fabrica dashboard  look at run history in your browser
 
 Run fabrica -u to update Fabrica itself to the latest release.`,
 		Version:       versionLine(),

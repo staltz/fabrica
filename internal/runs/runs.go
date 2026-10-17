@@ -6,10 +6,14 @@
 // their own.
 //
 // History can't be filled in after the fact, so Fabrica records from day
-// one. v0.1 has no built-in way to read it: you open the SQLite file with
-// any SQLite tool. That makes the schema below a public interface, so later
-// versions must migrate it carefully (PRAGMA user_version tracks the
-// version) or keep a compatible view.
+// one. The schema below is a public interface (Fabrica.app and people's own
+// scripts read it), so changes must migrate it carefully (PRAGMA
+// user_version tracks the version) and keep run_overview's columns in place.
+//
+// Agents write run history and only people read it. The read side (List,
+// Detail and Stats) is for the operator plane: `fabrica runs`, the admin API
+// and the dashboard. The MCP server must never call it, and no tool it
+// serves returns history. See manual/run-history.md.
 //
 // The remote server keeps its database on a persistent volume. The local
 // server uses ~/.fabrica/runs.db, which never leaves your machine.

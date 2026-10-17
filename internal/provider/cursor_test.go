@@ -16,7 +16,7 @@ func cursorResource() Resource {
 	return Resource{
 		Identity: "fabrica.acme.dev/pr-review#pr-review@github.com/acme/app",
 		Factory:  "pr-review", Routine: "pr-review", Repo: "github.com/acme/app",
-		Trigger: ResourceTrigger{On: "github.pull_request.opened"},
+		Triggers: []ResourceTrigger{{On: "github.pull_request.opened"}},
 		Connectors: []ResourceConnector{
 			{Name: "github", Kind: "native"},
 			{Name: "slack", Kind: "native"},
@@ -52,7 +52,7 @@ func TestCursorWorkflowJSON(t *testing.T) {
 	}
 	for on, want := range triggers {
 		res := cursorResource()
-		res.Trigger = ResourceTrigger{On: on, Cron: "0 3 * * *"}
+		res.Triggers = []ResourceTrigger{{On: on, Cron: "0 3 * * *"}}
 		wf, err := cursorWorkflowFor(res)
 		if err != nil {
 			t.Fatalf("%s: %v", on, err)
@@ -62,8 +62,17 @@ func TestCursorWorkflowJSON(t *testing.T) {
 		}
 	}
 
+	// An automation can fire on several triggers.
 	res := cursorResource()
-	res.Trigger.On = "github.pull_request.reopened"
+	res.Triggers = []ResourceTrigger{{On: "github.pull_request.opened"}, {On: "schedule", Cron: "0 9 * * 1"}}
+	if wf, err := cursorWorkflowFor(res); err != nil {
+		t.Fatal(err)
+	} else if got, _ := json.Marshal(wf.Triggers); string(got) != `[{"git":{"pullRequest":{"repos":["acme/app"],"prAction":"GIT_PULL_REQUEST_ACTION_OPENED"}}},{"cron":{"cron":"0 9 * * 1"}}]` {
+		t.Errorf("triggers = %s", got)
+	}
+
+	res = cursorResource()
+	res.Triggers[0].On = "github.pull_request.reopened"
 	if _, err := cursorWorkflowFor(res); err == nil {
 		t.Error("Cursor has no reopened trigger, so that should be an error")
 	}
@@ -190,7 +199,7 @@ func TestCursorAPILifecycle(t *testing.T) {
 		t.Fatalf("Get = %+v, %v", got, err)
 	}
 
-	res.Trigger.On = "github.push"
+	res.Triggers[0].On = "github.push"
 	if err := client.Update(ctx, id, res); err != nil {
 		t.Fatal(err)
 	}

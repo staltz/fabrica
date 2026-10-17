@@ -143,7 +143,7 @@ func localStub(t *testing.T, opts LocalOptions, routine string) string {
 		t.Fatal(diags)
 	}
 	p, _ := provider.Builtin(opts.Runtime)
-	return stub.Evaluate(f, f.Routines[routine], stub.Target{Runtime: p}).Shape.Fingerprint()
+	return stub.Evaluate(f, f.Routines[routine], stub.Target{Runtime: p}).Stubs[0].Shape.Fingerprint()
 }
 
 func TestLocalSession(t *testing.T) {
@@ -329,7 +329,7 @@ func (rw *remoteWorld) remoteStub(t *testing.T) string {
 	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(context.Background(), "stable")
 	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
 	p, _ := provider.Builtin("claude-code-cloud")
-	return stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Shape.Fingerprint()
+	return stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Stubs[0].Shape.Fingerprint()
 }
 
 func TestRemoteAuth(t *testing.T) {
@@ -522,7 +522,7 @@ func TestRemoteInitRun(t *testing.T) {
 	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(context.Background(), "stable")
 	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
 	p, _ := provider.Builtin("claude-code-local")
-	fp := stub.Evaluate(f, f.Routines["onboard"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Shape.Fingerprint()
+	fp := stub.Evaluate(f, f.Routines["onboard"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"}).Stubs[0].Shape.Fingerprint()
 
 	// A local runtime runs the init session of a cloud factory, from the
 	// factory's own server, like apply starts it.
@@ -824,4 +824,42 @@ func TestRunReportOnlyForRunsOfThisFactoryAndRepo(t *testing.T) {
 		other := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
 		other.ok("run_report", report(c.runID(c.ok("run_begin", map[string]any{"intent": "look around"}))))
 	})
+}
+
+func TestRemoteRoutineWithAStubPerTrigger(t *testing.T) {
+	rw := newRemoteWorld(t)
+	rw.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": strings.Replace(testkit.PRReviewRoutine,
+		"trigger: { on: github.pull_request.opened }", "triggers:\n  - { on: github.pull_request.opened }\n  - { on: github.pull_request.synchronize }", 1)})
+	if err := rw.srv.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(context.Background(), "stable")
+	f, _ := rw.loader.LoadGit(context.Background(), "github.com/acme/blueprint", resolved.Commit, "")
+	p, _ := provider.Builtin("claude-code-cloud")
+	ev := stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/pr-review"})
+	if len(ev.Stubs) != 2 {
+		t.Fatalf("claude-code-cloud should get a stub per trigger, got %d", len(ev.Stubs))
+	}
+
+	// Each of the routine's stubs runs it.
+	for _, st := range ev.Stubs {
+		c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+		c.ok("run_begin", map[string]any{"intent": "review PR 7", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/api", "stub": st.Shape.Fingerprint()})
+		if routine := c.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(routine, "- Triggers: github.pull_request.opened, github.pull_request.synchronize (any of them)") {
+			t.Errorf("routine_get should list the triggers:\n%s", routine)
+		}
+	}
+	// A stub with both triggers isn't one of them.
+	both := stub.Evaluate(f, f.Routines["pr-review"], stub.Target{Runtime: mustBuiltin(t, "cursor-cloud"), Endpoint: "https://fabrica.acme.dev/pr-review"})
+	c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
+	c.fails("run_begin", map[string]any{"intent": "review PR 7", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/api", "stub": both.Stubs[0].Shape.Fingerprint()}, "this stub is outdated")
+}
+
+func mustBuiltin(t *testing.T, name string) *provider.Provider {
+	t.Helper()
+	p, ok := provider.Builtin(name)
+	if !ok {
+		t.Fatalf("no built-in %s", name)
+	}
+	return p
 }

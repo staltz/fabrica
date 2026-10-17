@@ -95,6 +95,7 @@ func parseSkill(dir, name, file string) *Skill {
 type routineFile struct {
 	Description string               `yaml:"description"`
 	Trigger     *triggerFile         `yaml:"trigger"`
+	Triggers    []triggerFile        `yaml:"triggers"`
 	Skills      []string             `yaml:"skills"`
 	Connectors  []string             `yaml:"connectors"`
 	SideEffects []yaml.Node          `yaml:"side_effects"`
@@ -145,23 +146,45 @@ func parseRoutine(data []byte, name, file string) *Routine {
 		return fail("the routine has no prompt; write its instructions below the frontmatter")
 	}
 
-	// Trigger.
+	// Triggers: one under trigger:, or a list under triggers:.
+	var triggers []triggerFile
 	switch {
-	case f.Trigger == nil || f.Trigger.On == "":
+	case f.Trigger != nil && f.Triggers != nil:
+		return fail("the routine has both trigger: and triggers:; keep one (triggers: takes a list, like `triggers: [{ on: github.push }, { on: schedule, cron: \"0 9 * * 1\" }]`)")
+	case f.Trigger != nil:
+		triggers = []triggerFile{*f.Trigger}
+	case f.Triggers != nil && len(f.Triggers) == 0:
+		return fail("triggers: is empty; list at least one, like `triggers: [{ on: github.pull_request.opened }]`")
+	default:
+		triggers = f.Triggers
+	}
+	if len(triggers) == 0 {
 		return fail("trigger.on is missing; say what fires the routine, like `trigger: { on: github.pull_request.opened }`")
-	case !triggerRe.MatchString(f.Trigger.On):
-		return fail("trigger.on %q isn't a valid event name (like github.pull_request.opened or schedule)", f.Trigger.On)
-	case f.Trigger.On == "schedule" && f.Trigger.Cron == "":
-		return fail("a schedule trigger needs a cron expression, like `trigger: { on: schedule, cron: \"0 9 * * 1\" }`")
-	case f.Trigger.On != "schedule" && f.Trigger.Cron != "":
-		return fail("trigger.cron only makes sense with `on: schedule`")
 	}
-	if f.Trigger.Cron != "" {
-		if err := validateCron(f.Trigger.Cron); err != nil {
-			return fail("%v", err)
+	seenTriggers := map[string]bool{}
+	for _, t := range triggers {
+		switch {
+		case t.On == "":
+			return fail("trigger.on is missing; say what fires the routine, like `trigger: { on: github.pull_request.opened }`")
+		case !triggerRe.MatchString(t.On):
+			return fail("trigger.on %q isn't a valid event name (like github.pull_request.opened or schedule)", t.On)
+		case t.On == "schedule" && t.Cron == "":
+			return fail("a schedule trigger needs a cron expression, like `trigger: { on: schedule, cron: \"0 9 * * 1\" }`")
+		case t.On != "schedule" && t.Cron != "":
+			return fail("trigger.cron only makes sense with `on: schedule`")
+		case t.On == InitTrigger && len(triggers) > 1:
+			return fail("init can't share a routine with other triggers: an init routine runs once, when the factory is created; move the other triggers to a routine of their own")
+		case seenTriggers[t.On]:
+			return fail("triggers: lists %s twice; a routine fires on each event once (to run on two schedules, write a routine for each)", t.On)
 		}
+		seenTriggers[t.On] = true
+		if t.Cron != "" {
+			if err := validateCron(t.Cron); err != nil {
+				return fail("%v", err)
+			}
+		}
+		r.Triggers = append(r.Triggers, Trigger{On: t.On, Cron: strings.Join(strings.Fields(t.Cron), " ")})
 	}
-	r.Trigger = Trigger{On: f.Trigger.On, Cron: strings.Join(strings.Fields(f.Trigger.Cron), " ")}
 
 	// Init routines run once, where the routine says.
 	switch {

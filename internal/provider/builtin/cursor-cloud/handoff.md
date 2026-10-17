@@ -16,13 +16,16 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
 {{- else -}}
 # {{if eq .Action "create"}}Create{{else}}Update{{end}} Cursor automation for `{{.Routine}}` on `{{.Repo}}`
 
-{{if eq .Action "update"}}This routine's shape changed (its trigger, connectors, memory setting or model), so the Cursor automation needs updating. Until it is, the Fabrica server refuses its runs.
+{{if eq .Action "update"}}This routine's shape changed (its triggers, connectors, memory setting or model), so the Cursor automation needs updating. Until it is, the Fabrica server refuses its runs.
 
 {{end -}}
 1. Open Cursor's automations (cursor.com → Cloud Agents → Automations){{if eq .Action "update"}} and find the automation named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and create a new automation{{end}}.
 2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Repository: `{{.Repo}}`
-4. Trigger: {{.Trigger.Description}}
+4. {{if .Trigger.On}}Trigger: {{.Trigger.Description}}{{else}}Triggers. Add each of these, so the automation fires on any of them:
+{{- range .Triggers}}
+   - {{.Description}}
+{{- end}}{{end}}
 5. MCP servers and integrations. Make sure the automation has exactly these:
    - **fabrica-{{.Factory}}** (custom MCP server, HTTP): URL `{{.Fabrica.URL}}`{{if .Fabrica.Header}}, header `Authorization: {{.Fabrica.Header}}`{{end}}. Use exactly this name, the one Fabrica uses when it manages Cursor automations through Cursor's API.
 {{- range .Connectors}}

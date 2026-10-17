@@ -25,11 +25,15 @@ type Resource struct {
 	// "k7q2#pr-review@github.com/acme/app". The
 	// runtime must store it somewhere it can read back (a name or metadata
 	// field), so `list` can return it.
-	Identity   string              `json:"identity"`
-	Factory    string              `json:"factory"`
-	Routine    string              `json:"routine"`
-	Repo       string              `json:"repo"`
-	Trigger    ResourceTrigger     `json:"trigger"`
+	Identity string `json:"identity"`
+	Factory  string `json:"factory"`
+	Routine  string `json:"routine"`
+	Repo     string `json:"repo"`
+	// Triggers are the stub's triggers: one, or several on runtimes whose
+	// matrix says multiple_triggers: true. Trigger is the same one again,
+	// for a stub that has one, and nil for a stub with several.
+	Triggers   []ResourceTrigger   `json:"triggers"`
+	Trigger    *ResourceTrigger    `json:"trigger,omitempty"`
 	Connectors []ResourceConnector `json:"connectors"`
 	Fabrica    ResourceFabrica     `json:"fabrica"`
 	// Memory is "on" or "off" on runtimes with their own memory feature

@@ -13,7 +13,7 @@ Because the matrix is plain data, `fabrica check` and `fabrica plan` can tell yo
 
 What the values mean:
 
-- **Triggers** are `native` or `unsupported`. Triggers can't be emulated.
+- **Triggers** are `native` or `unsupported`. Triggers can't be emulated. `multiple_triggers: true` says one resource can fire on several triggers, so a routine with several gets one stub with all of them; without it, it gets a stub per trigger (see [Several triggers](blueprints.md#several-triggers)). Local runtimes always get one per trigger, since a hook fires on one event.
 - **Connectors** are `native` (the runtime has the integration built in), `emulated` (it doesn't, but Fabrica can register the connector's `fallback:` MCP server instead) or `unsupported`. MCP servers are listed by transport: `mcp.http`, `mcp.sse`, `mcp.stdio`.
 - **Side effects** are `native` (the runtime does it itself), `emulated` (Fabrica turns it into prompt instructions, plus the connector that carries it out) or `unsupported`. A side effect is looked up by its exact name, then `connector.*`, then `*`. A side effect named exactly as `native` is one of the runtime's own features: each stub turns it on for routines that list it and off for the rest. Some side effects can only be native, because they outlive the run (`github.pr_autofix`, which auto-fixes the pull requests a run opens): wildcards never match them, and listing one as `emulated` is an error.
 - **Models** list the models a stub can ask the runtime to run its routine on, each with the efforts it can run at (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; an empty list means the runtime has no effort setting for it). A routine runs on the first of its [`models:`](blueprints.md#models) the runtime lists. A runtime that doesn't list any picks its model itself, and only a routine's `default` entry matches it. Models go by their makers' IDs, like blueprints name them; **model IDs** (`model_ids:`) say what the runtime calls the ones it calls something else. **Fast models** (`fast_models:`) are the ones the runtime can run in a fast mode: a stub for one of them always sets fast mode, on when the routine's entry says `fast: true` and off otherwise, so the runtime's own default never decides.
@@ -64,7 +64,7 @@ Fabrica doesn't run Terraform. Cursor doesn't publish docs for this API, but its
 Each stub becomes one automation:
 
 - **Name:** the stub's identity. **Description:** says Fabrica manages it.
-- **Trigger** on the stub's repo: `github.pull_request.opened` is Cursor's *Pull request opened* (which also fires when a draft is marked ready for review), `synchronize` is *Pull request pushed*, `labeled` is *Pull request label changed* (when any label is added), `github.push` is *Push to branch*, and `schedule` is a cron schedule. Cursor has no trigger for a reopened pull request.
+- **Triggers** on the stub's repo (an automation takes several, so `cursor-cloud` has `multiple_triggers: true`, and a routine with several triggers gets one automation with all of them): `github.pull_request.opened` is Cursor's *Pull request opened* (which also fires when a draft is marked ready for review), `synchronize` is *Pull request pushed*, `labeled` is *Pull request label changed* (when any label is added), `github.push` is *Push to branch*, and `schedule` is a cron schedule. Cursor has no trigger for a reopened pull request.
 - **Tools:** the Fabrica MCP server, plus one tool per connector: `github` turns on *Comment on pull request*, `slack` turns on *Send to Slack* for any channel (routines name their channels in params, which are served live), and every MCP connector, including `linear` through its fallback, adds its MCP server.
 - **Memory:** the automation's memory tool is on for routines with `memory: true` and off for the rest.
 - **Model:** the routine's model, as one of the variants in Cursor's model catalog: the routine's effort as the model's effort parameter (Cursor calls it `effort`, `reasoning` or `reasoning_effort`, depending on the model), fast mode on if the routine's entry says `fast: true` and off otherwise (Cursor runs Grok, Composer, GPT-5.2 and GPT-5.3 Codex fast by default; GPT-5.4 and 5.5 only run fast with the 272k context window), and Cursor's defaults for the rest (context window, thinking). Without one, Cursor picks (Auto).
@@ -166,6 +166,7 @@ skill_transport: text                # text (read file by file); cloud runtimes 
 mcp_auth:
   header: native                     # can send Authorization: Bearer …
   url: native                        # can take the token in the URL
+multiple_triggers: true              # optional: one resource can fire on several triggers
 triggers:
   github.pull_request.opened: native
   schedule: native
@@ -189,7 +190,7 @@ credentials:                         # optional: what the api program needs
     instructions: Click New key, and copy it. # optional: what to do there
 ```
 
-Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`. Likewise, `api` in `launch_modes` needs the `api` program (with the `launch` operation), and `handoff` there needs a `launch.md`.
+Fabrica reads it strictly, like its other files. If `apply_modes` lists `api`, there must be an executable `api` next to it, and `find_by_identity` must be true (the protocol below has no way to look one resource up by ID, so `find_by_remote_id` is only for built-in providers); if it lists `handoff`, there must be a `handoff.md`, which has to list `.Triggers` if the matrix says `multiple_triggers: true`. Likewise, `api` in `launch_modes` needs the `api` program (with the `launch` operation), and `handoff` there needs a `launch.md`.
 
 `credentials:` lists what the `api` program needs, keyed by environment variable (not `FABRICA_…`). `fabrica auth` lists them, and `fabrica auth login` asks for them, opening `url` when there is one. Fabrica only uses `api` mode when they're all set; otherwise the runtime falls back to `handoff`, or, without it, `plan` reports an error that names what's missing. An entry can also list `aliases:`, other variables that work too. See [Credentials](auth.md#for-provider-authors).
 
@@ -215,6 +216,7 @@ A `resource` looks like this:
   "factory": "pr-review",
   "routine": "pr-review",
   "repo": "github.com/acme/app",
+  "triggers": [{ "on": "github.pull_request.opened" }],
   "trigger": { "on": "github.pull_request.opened" },
   "connectors": [
     { "name": "github", "kind": "native" },
@@ -225,6 +227,8 @@ A `resource` looks like this:
   "fingerprint": "e128f7aa2995"
 }
 ```
+
+`triggers` lists what fires the resource, each with `on` and, for `schedule`, `cron`. There's one, unless the matrix says `multiple_triggers: true`, and then a routine with several triggers sends them all. `trigger` is that same one again, for a resource with one, and is missing for a resource with several, so a provider without `multiple_triggers` can keep reading `trigger`.
 
 On runtimes with `memory: native`, a resource also has `"memory": "on"` or `"off"`: what to set the runtime's own memory feature to, mirroring the routine's `memory:` key.
 
@@ -248,7 +252,8 @@ Your program must store the `identity` somewhere it can read back (a name or a m
 | `.Identity` | The resource's Fabrica identity. Ask for it to be used as the resource's name. |
 | `.FormerIdentity` | The name the resource has now, when it's being renamed from an earlier identity (the factory's tag changed), or empty. Look for the resource under `{{or .FormerIdentity .Identity}}`. |
 | `.RemoteID` | The runtime's own ID, for updates and deletes, when known. |
-| `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. |
+| `.Trigger.On`, `.Trigger.Cron`, `.Trigger.Description` | The trigger, and a sentence describing it. Empty when the stub has several. |
+| `.Triggers` | Every trigger of the stub, each with `.On`, `.Cron` and `.Description`. There's more than one only with `multiple_triggers: true`. |
 | `.Connectors` | A list, each with `.Name` and `.Setup` (a sentence saying how to set it up). |
 | `.SideEffects` | A list of the runtime's own features for its native side effects, each with `.Name` (like `github.pr_autofix`), `.Setting` (`on` or `off`) and `.Setup` (a sentence saying what to set). Handoffs for runtimes with native side effects should have a step for them, so the runtime mirrors the routine. |
 | `.Memory.Needed`, `.Memory.Support`, `.Memory.Setup` | Whether the routine has `memory: true`, how the runtime provides memory (`native`, `emulated` or `unsupported`), and a sentence saying what to do with the runtime's own memory setting. Every handoff should have a memory step, so the runtime mirrors the routine. |

@@ -132,7 +132,7 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 			Hintf("set up one of them (like `fabrica auth login`), add a runtime it can start on to the routine's runtimes:, or set init: false in %s if this factory doesn't need it", d.File)
 		return
 	}
-	in.Fingerprint = in.Chosen.Eval.Shape.Fingerprint()
+	in.Fingerprint = in.Chosen.Eval.Stubs[0].Shape.Fingerprint() // an init has one trigger, so one stub
 	in.Prompt = stub.InitPrompt(in.Identity, d.Name, r.Ref.Name, in.Chosen.Runtime, in.Repo, in.Fingerprint, in.Repos)
 }
 

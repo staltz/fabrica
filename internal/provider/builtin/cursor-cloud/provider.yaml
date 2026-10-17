@@ -24,6 +24,9 @@ skill_transport: text
 mcp_auth:
   header: native
   url: native
+# An automation takes a list of triggers, so a routine with several gets
+# one automation that fires on any of them.
+multiple_triggers: true
 triggers:
   schedule: native
   github.pull_request.opened: native

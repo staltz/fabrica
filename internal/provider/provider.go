@@ -84,7 +84,7 @@ func mustLoadBuiltins() map[string]*Provider {
 			panic(fmt.Sprintf("built-in provider %s: launch_modes and its Go launcher disagree", name))
 		}
 		if tmpl, err := fs.ReadFile(builtinFS, path.Join("builtin", name, "handoff.md")); err == nil {
-			p.handoff, err = parseHandoff(name, string(tmpl))
+			p.handoff, err = parseHandoff(name, string(tmpl), m)
 			if err != nil {
 				panic(err)
 			}
@@ -189,7 +189,7 @@ func LoadFolder(name, dir string) (*Provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("providers/%s lists handoff in apply_modes but has no handoff.md", name)
 		}
-		p.handoff, err = parseHandoff(name, string(tmpl))
+		p.handoff, err = parseHandoff(name, string(tmpl), m)
 		if err != nil {
 			return nil, fmt.Errorf("providers/%s/handoff.md: %w", name, err)
 		}
@@ -225,7 +225,11 @@ type HandoffData struct {
 	Repo           string
 	// RemoteID is the runtime's own ID for the resource, when Fabrica knows
 	// it (for updates and deletes).
-	RemoteID    string
+	RemoteID string
+	// Triggers are the stub's triggers: one, or several on runtimes whose
+	// matrix says multiple_triggers: true. Trigger is the same one again,
+	// for a stub that has one, and empty for a stub with several.
+	Triggers    []HandoffTrigger
 	Trigger     HandoffTrigger
 	Connectors  []HandoffConnector
 	Memory      HandoffMemory
@@ -322,7 +326,12 @@ var handoffFuncs = template.FuncMap{
 	},
 }
 
-func parseHandoff(name, text string) (*template.Template, error) {
+func parseHandoff(name, text string, m *Matrix) (*template.Template, error) {
+	// .Trigger is empty for a stub with several triggers, so a template
+	// that only uses it would leave them all out.
+	if m.MultipleTriggers && !strings.Contains(text, ".Triggers") {
+		return nil, errors.New("the capability matrix says multiple_triggers: true, so a stub can have several triggers, but handoff.md never lists .Triggers; list them with {{range .Triggers}}")
+	}
 	return template.New(name).Funcs(handoffFuncs).Option("missingkey=error").Parse(text)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -89,7 +90,7 @@ func TestLoadLocalBlueprint(t *testing.T) {
 	}
 
 	r := f.Routines["pr-review"]
-	if r.Trigger.On != "github.pull_request.opened" || len(r.SideEffects) != 2 || r.SideEffects[1].Args[0].Value != "{{params.slack_channel}}" {
+	if len(r.Triggers) != 1 || r.Triggers[0].On != "github.pull_request.opened" || len(r.SideEffects) != 2 || r.SideEffects[1].Args[0].Value != "{{params.slack_channel}}" {
 		t.Errorf("routine parsed wrong: %+v", r)
 	}
 	if !r.Connectors[1].Optional || r.Connectors[1].Name != "slack" {
@@ -156,6 +157,21 @@ func TestStrictErrors(t *testing.T) {
 		}},
 		{"schedule without cron", "routine.invalid", "cron", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: schedule }\n---\nHi\n",
+		}},
+		{"trigger and triggers", "routine.invalid", "both trigger: and triggers:", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: github.push }\ntriggers: [{ on: github.push }]\n---\nHi\n",
+		}},
+		{"no triggers", "routine.invalid", "triggers: is empty", map[string]string{
+			"routines/x.md": "---\ntriggers: []\n---\nHi\n",
+		}},
+		{"the same event twice", "routine.invalid", "lists schedule twice", map[string]string{
+			"routines/x.md": "---\ntriggers: [{ on: schedule, cron: \"0 9 * * 1\" }, { on: schedule, cron: \"0 9 * * 5\" }]\n---\nHi\n",
+		}},
+		{"init with other triggers", "routine.invalid", "init can't share a routine", map[string]string{
+			"routines/x.md": "---\ntriggers: [{ on: init }, { on: github.push }]\n---\nHi\n",
+		}},
+		{"a schedule without cron among several", "routine.invalid", "cron", map[string]string{
+			"routines/x.md": "---\ntriggers: [{ on: github.push }, { on: schedule }]\n---\nHi\n",
 		}},
 		{"skill name mismatch", "skill.invalid", "needs them to match", map[string]string{
 			"skills/a/SKILL.md": skill("b", ""),
@@ -529,6 +545,24 @@ func refsEqual(refs []names.Ref, want ...string) bool {
 	return true
 }
 
+func TestRoutineWithSeveralTriggers(t *testing.T) {
+	f := mustLoad(t, newLoader(t), writeBlueprint(t, map[string]string{
+		"fabrica.yaml":       "",
+		"routines/review.md": "---\ntriggers:\n  - { on: github.pull_request.opened }\n  - { on: schedule, cron: \" 0  9 * * 1\" }\n---\nReview.\n",
+	}))
+	r := f.Routines["review"]
+	want := []blueprint.Trigger{{On: "github.pull_request.opened"}, {On: "schedule", Cron: "0 9 * * 1"}}
+	if !reflect.DeepEqual(r.Triggers, want) {
+		t.Errorf("Triggers = %+v, want %+v", r.Triggers, want)
+	}
+	if !r.HasTrigger("schedule") || r.HasTrigger("github.push") || r.IsInit() {
+		t.Errorf("HasTrigger or IsInit is wrong for %+v", r.Triggers)
+	}
+	if got := blueprint.DescribeTriggers(r.Triggers); got != "github.pull_request.opened, schedule (0 9 * * 1)" {
+		t.Errorf("DescribeTriggers = %q", got)
+	}
+}
+
 func TestInitRoutines(t *testing.T) {
 	const init = "---\ntrigger: { on: init }\nruntimes: [cursor-cloud, claude-code-local]\n---\nGet the repos ready.\n"
 	f := mustLoad(t, newLoader(t), writeBlueprint(t, map[string]string{
@@ -539,7 +573,7 @@ func TestInitRoutines(t *testing.T) {
 	if r == nil || !r.IsInit() || strings.Join(r.Runtimes, ",") != "cursor-cloud,claude-code-local" {
 		t.Fatalf("Init = %+v", r)
 	}
-	if got := r.Trigger.String(); got != "init (once, when the factory is created)" {
+	if got := r.Triggers[0].String(); got != "init (once, when the factory is created)" {
 		t.Errorf("Trigger = %q", got)
 	}
 

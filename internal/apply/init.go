@@ -82,7 +82,7 @@ func startInit(ctx context.Context, opts Options, repo *Repo, env *plan.Env, dp 
 
 // sessionFor describes the init session to a launcher.
 func sessionFor(factory string, in *plan.Init, c *plan.InitCandidate, tok, dir string) provider.Session {
-	shape := c.Eval.Shape
+	shape := c.Eval.Stubs[0].Shape // an init has one trigger, so one stub
 	return provider.Session{
 		ID: in.ID, Identity: in.Identity, Factory: factory, Routine: in.Routine.Ref.Name,
 		Repo: in.Repo, Repos: in.Repos, Connectors: connectorsFor(shape), Model: modelFor(shape),
@@ -94,17 +94,18 @@ func sessionFor(factory string, in *plan.Init, c *plan.InitCandidate, tok, dir s
 // writeLaunchHandoff writes how a person starts the init session. Like
 // any handoff, it holds the factory's token, so only you can read it.
 func writeLaunchHandoff(opts Options, factory string, in *plan.Init, c *plan.InitCandidate, s provider.Session) (string, error) {
+	shape := c.Eval.Stubs[0].Shape
 	data := provider.LaunchData{
 		ID: in.ID, Runtime: c.Runtime, Factory: factory, Routine: s.Routine, Identity: in.Identity,
 		Repo: in.Repo, Repos: in.Repos, Prompt: s.Prompt, Fingerprint: s.Fingerprint,
-		Model:          provider.HandoffModel{Name: c.Eval.Shape.Model, Effort: c.Eval.Shape.Effort, Fast: c.Eval.Shape.Fast, Setup: stub.DescribeModel(c.Eval.Shape)},
+		Model:          provider.HandoffModel{Name: shape.Model, Effort: shape.Effort, Fast: shape.Fast, Setup: stub.DescribeModel(shape)},
 		Fabrica:        provider.HandoffFabrica{URL: s.Fabrica.URL},
 		ConfirmCommand: fmt.Sprintf("fabrica confirm %s --remote-id <the session's ID or URL>", in.ID),
 	}
 	if s.Fabrica.Placement == provider.TokenInHeader {
 		data.Fabrica.Header = "Bearer " + s.Fabrica.Token
 	}
-	for _, conn := range c.Eval.Shape.Connectors {
+	for _, conn := range shape.Connectors {
 		data.Connectors = append(data.Connectors, provider.HandoffConnector{Name: conn.Name, Setup: stub.DescribeConnector(conn)})
 	}
 	text, err := c.Provider.RenderLaunch(data)

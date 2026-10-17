@@ -125,15 +125,17 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			if ev == nil {
 				continue // the routine doesn't run on this runtime
 			}
-			fp := ev.Shape.Fingerprint()
-			for _, repo := range d.SpecificTargets() {
-				id := stub.Identity(d.Tag(), r.Ref.Name, repo)
-				dp.Desired = append(dp.Desired, &Resource{
-					Key: home.Key{Runtime: rt.Name, ID: id}, Factory: d.Name, Runtime: rt.Name,
-					Routine: r.Ref.Name, Repo: repo, Endpoint: d.Endpoint(), Eval: ev, Fingerprint: fp,
-					Prompt: stub.Prompt(id, r.Ref.Name, rt.Name, repo, fp), TokenHash: tokenHash,
-					Mode: rt.Mode, Provider: rt.Provider,
-				})
+			for _, st := range ev.Stubs {
+				fp := st.Shape.Fingerprint()
+				for _, repo := range d.SpecificTargets() {
+					id := stub.Identity(d.Tag(), st.Name(r.Ref.Name), repo)
+					dp.Desired = append(dp.Desired, &Resource{
+						Key: home.Key{Runtime: rt.Name, ID: id}, Factory: d.Name, Runtime: rt.Name,
+						Routine: r.Ref.Name, Repo: repo, Endpoint: d.Endpoint(), Eval: ev, Stub: st, Fingerprint: fp,
+						Prompt: stub.Prompt(id, r.Ref.Name, rt.Name, repo, fp), TokenHash: tokenHash,
+						Mode: rt.Mode, Provider: rt.Provider,
+					})
+				}
 			}
 		}
 	}
@@ -183,8 +185,8 @@ func retag(s *home.State, tag string) {
 
 // retagged is id with its tag swapped for prefix's.
 func retagged(id, prefix string) string {
-	_, routine, repo := stub.SplitIdentity(id)
-	return prefix + routine + "@" + repo
+	_, routine, trigger, repo := stub.SplitIdentity(id)
+	return prefix + stub.StubName(routine, trigger) + "@" + repo
 }
 
 // checkProductRepos reads each deployed repo's default branch and checks
@@ -332,7 +334,7 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 		r, inState := current[key]
 		if !inState {
 			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API), FormerID: formerOf[id]}
-			_, r.Routine, r.Repo = stub.SplitIdentity(id)
+			_, r.Routine, _, r.Repo = stub.SplitIdentity(id)
 			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
 				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), FormerID: formerOf[id], Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
 				Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
@@ -416,7 +418,7 @@ func prefixesToList(dp *Factory) []string {
 	if dp.State != nil {
 		for _, r := range dp.State.Resources {
 			for _, id := range []string{r.ID, r.FormerID} {
-				if prefix, _, _ := stub.SplitIdentity(id); id != "" {
+				if prefix, _, _, _ := stub.SplitIdentity(id); id != "" {
 					add(prefix)
 				}
 			}
@@ -553,12 +555,13 @@ func shapeReasons(cur home.Shape, want *Resource) []string {
 	if cur.Fingerprint == want.Fingerprint {
 		return nil
 	}
-	shape := want.Eval.Shape
+	shape := want.Stub.Shape
 	var reasons []string
-	if cur.Trigger != "" && (cur.Trigger != shape.Trigger || cur.Cron != shape.Cron) {
-		reasons = append(reasons, fmt.Sprintf("the trigger changed from %s to %s", describeTrigger(cur.Trigger, cur.Cron), describeTrigger(shape.Trigger, shape.Cron)))
+	installed := len(cur.Triggers) > 0 || cur.Trigger != ""
+	if before, after := describeStateTriggers(cur), blueprint.DescribeTriggers(shape.TriggerList()); installed && before != after {
+		reasons = append(reasons, fmt.Sprintf("the %s changed from %s to %s", triggersWord(cur, shape), before, after))
 	}
-	if cur.Trigger != "" {
+	if installed {
 		if added, removed := diffNames(cur.Connectors, shape.ConnectorNames()); len(added)+len(removed) > 0 {
 			var parts []string
 			if len(added) > 0 {
@@ -627,11 +630,24 @@ func describeModel(model, effort, fast string) string {
 	return model + " (" + strings.Join(settings, ", ") + ")"
 }
 
-func describeTrigger(on, cron string) string {
-	if cron != "" {
-		return on + " (" + cron + ")"
+// describeStateTriggers lists the triggers state records for a stub.
+func describeStateTriggers(s home.Shape) string {
+	list := s.Triggers
+	if s.Trigger != "" {
+		list = []home.ShapeTrigger{{On: s.Trigger, Cron: s.Cron}}
 	}
-	return on
+	triggers := make([]blueprint.Trigger, len(list))
+	for i, t := range list {
+		triggers[i] = blueprint.Trigger{On: t.On, Cron: t.Cron}
+	}
+	return blueprint.DescribeTriggers(triggers)
+}
+
+func triggersWord(cur home.Shape, want stub.Shape) string {
+	if len(cur.Triggers) > 0 || len(want.Triggers) > 0 {
+		return "triggers"
+	}
+	return "trigger"
 }
 
 // whyGone explains why an installed stub is no longer deployed.
@@ -654,6 +670,20 @@ func (e *Env) whyGone(dp *Factory, r home.Resource) string {
 		return fmt.Sprintf("repo %s was removed from the factory", r.Repo)
 	case !strings.HasPrefix(r.ID, stub.IdentityPrefix(d.Tag())):
 		return "it's left over from the factory's earlier tag (before a new alias: or server:), and another stub took its name"
+	case dp.Blueprint != nil && dp.Blueprint.Routines[r.Routine] != nil:
+		// The routine is still deployed, but under other stub names.
+		routine := dp.Blueprint.Routines[r.Routine]
+		_, _, trigger, _ := stub.SplitIdentity(r.ID)
+		switch {
+		case trigger != "" && !routine.HasTrigger(trigger):
+			return fmt.Sprintf("routine %s no longer has trigger %s", r.Routine, trigger)
+		case trigger != "" && len(routine.Triggers) == 1:
+			return fmt.Sprintf("routine %s is down to one trigger, so a stub named after the routine alone replaces this one", r.Routine)
+		case trigger != "":
+			return fmt.Sprintf("routine %s now gets one stub with all its triggers on %s", r.Routine, r.Runtime)
+		case len(routine.Triggers) > 1:
+			return fmt.Sprintf("routine %s now has several triggers, and %s takes one per stub, so a stub for each replaces this one", r.Routine, r.Runtime)
+		}
 	}
 	return "it's no longer deployed"
 }

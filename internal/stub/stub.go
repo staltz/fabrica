@@ -7,7 +7,11 @@
 // and side effects are all served live over MCP, so editing them never
 // needs a re-apply.
 //
-// What a stub bakes into the runtime is its shape: the trigger, plus the
+// A routine with several triggers becomes one stub with all of them on a
+// runtime that takes several triggers per stub, and one stub per trigger
+// elsewhere.
+//
+// What a stub bakes into the runtime is its shape: its triggers, plus the
 // connectors and their definitions (including connectors that emulated side
 // effects need), plus the runtime's memory setting where it has its own
 // memory feature, plus the settings of the runtime's own features for the
@@ -46,8 +50,12 @@ type Target struct {
 
 // Shape is everything a stub bakes into a runtime.
 type Shape struct {
-	Trigger    string           `json:"trigger"`
+	// Trigger and Cron are the stub's trigger, when it has one. A stub with
+	// several has them in Triggers instead, which keeps the fingerprints of
+	// one-trigger stubs what they always were.
+	Trigger    string           `json:"trigger,omitempty"`
 	Cron       string           `json:"cron,omitempty"`
+	Triggers   []ShapeTrigger   `json:"triggers,omitempty"`
 	Connectors []ShapeConnector `json:"connectors"`
 	// Memory is the runtime's own memory setting for the stub, "on" or
 	// "off", mirroring the routine's memory: key. It's only set on runtimes
@@ -78,6 +86,35 @@ type Shape struct {
 	// server (cloud only).
 	Endpoint       string `json:"endpoint,omitempty"`
 	TokenPlacement string `json:"token_placement,omitempty"`
+}
+
+// ShapeTrigger is one of the triggers of a stub that has several.
+type ShapeTrigger struct {
+	On   string `json:"on"`
+	Cron string `json:"cron,omitempty"`
+}
+
+// setTriggers sets a shape's triggers.
+func (s *Shape) setTriggers(triggers []blueprint.Trigger) {
+	if len(triggers) == 1 {
+		s.Trigger, s.Cron = triggers[0].On, triggers[0].Cron
+		return
+	}
+	for _, t := range triggers {
+		s.Triggers = append(s.Triggers, ShapeTrigger{On: t.On, Cron: t.Cron})
+	}
+}
+
+// TriggerList is the shape's triggers, however many it has.
+func (s Shape) TriggerList() []blueprint.Trigger {
+	if s.Trigger != "" {
+		return []blueprint.Trigger{{On: s.Trigger, Cron: s.Cron}}
+	}
+	out := make([]blueprint.Trigger, len(s.Triggers))
+	for i, t := range s.Triggers {
+		out[i] = blueprint.Trigger{On: t.On, Cron: t.Cron}
+	}
+	return out
 }
 
 // ShapeConnector is one connector as it's actually installed in the
@@ -154,8 +191,9 @@ type Use struct {
 
 // Evaluation is a routine checked against one runtime.
 type Evaluation struct {
-	Routine     *blueprint.Routine
-	Trigger     Use
+	Routine *blueprint.Routine
+	// Triggers are how the runtime handles each of the routine's triggers.
+	Triggers    []Use
 	Connectors  []Use
 	SideEffects []Use
 	// Memory is how the runtime gives the routine its memory. Its Support
@@ -165,9 +203,39 @@ type Evaluation struct {
 	// Its Name is empty when the routine lists no models, and
 	// provider.DefaultModel when the runtime picks one itself.
 	Model blueprint.Model
-	Shape Shape
+	// Stubs are what the runtime gets for the routine, on each repo: one
+	// stub with all its triggers, or, on a runtime that takes one trigger
+	// per stub, one for each.
+	Stubs []*Stub
 	// Diags holds an error for everything the runtime can't do.
 	Diags diag.List
+}
+
+// Stub is one of the stubs a runtime gets for a routine.
+type Stub struct {
+	// Trigger tells the stub apart from its routine's other stubs: the
+	// event of its one trigger, when the routine is split into a stub per
+	// trigger, and empty when the stub is the routine's only one.
+	Trigger  string
+	Triggers []blueprint.Trigger
+	Shape    Shape
+	// InSession means the stub runs inside a session rather than one the
+	// runtime starts for it: a local hook, or an init.
+	InSession bool
+}
+
+// Name is how identities and descriptions name the stub: its routine,
+// then its trigger, if it has one, like "pr-review:github.push".
+func (s *Stub) Name(routine string) string { return StubName(routine, s.Trigger) }
+
+// Stub finds the stub with a fingerprint, or nil.
+func (e *Evaluation) Stub(fingerprint string) *Stub {
+	for _, s := range e.Stubs {
+		if s.Shape.Fingerprint() == fingerprint {
+			return s
+		}
+	}
+	return nil
 }
 
 // OK reports whether the routine can run on the runtime.
@@ -195,22 +263,29 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	switch {
 	case r.IsInit():
 		// Fabrica fires init itself, by starting a session.
-		e.Trigger = Use{Name: r.Trigger.On, Support: provider.Unsupported}
+		use := Use{Name: blueprint.InitTrigger, Support: provider.Unsupported}
 		if m.CanLaunch() {
-			e.Trigger.Support = provider.Native
+			use.Support = provider.Native
 		} else {
 			e.Diags.Errorf("capability.init", where, "Fabrica can't start a session on runtime %s, so init routine %s can't run there", rt, r.Ref.Name).
 				Hintf("list runtimes Fabrica can start sessions on in the init routine's runtimes: (their capability matrices have launch_modes)")
 		}
+		e.Triggers = []Use{use}
 	default:
-		e.Trigger = Use{Name: r.Trigger.On, Support: m.Trigger(r.Trigger.On)}
-		if e.Trigger.Support != provider.Native {
-			e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, r.Trigger.On).
-				Hintf("triggers can't be emulated; deploy this routine to a runtime that has %s, or change its trigger", r.Trigger.On)
+		for _, tr := range r.Triggers {
+			use := Use{Name: tr.On, Support: m.Trigger(tr.On)}
+			if use.Support != provider.Native {
+				e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, tr.On).
+					Hintf("%s", triggerHint(r, tr.On))
+			}
+			e.Triggers = append(e.Triggers, use)
 		}
 	}
+	e.Stubs = split(r, m)
 
-	shape := Shape{Trigger: r.Trigger.On, Cron: r.Trigger.Cron}
+	// What every stub of the routine bakes in; the triggers and the native
+	// side effects differ from stub to stub.
+	var shape Shape
 	if t.Endpoint != "" {
 		shape.Endpoint = t.Endpoint
 		shape.TokenPlacement = m.TokenPlacement()
@@ -258,18 +333,24 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		e.Connectors = append(e.Connectors, use)
 	}
 
-	// The stub sets the runtime's own features for its native side effects,
-	// but some routines run in a session instead, where the session's own
+	// A stub sets the runtime's own features for its native side effects,
+	// but some stubs run in a session instead, where the session's own
 	// settings decide: a local hook inside the session you already have
 	// open, and an init routine in the one-off session Fabrica starts.
 	var session, sessionHint string
-	switch {
-	case r.Trigger.On == blueprint.InitTrigger:
-		session = "is an init routine, which runs in a one-off session Fabrica starts"
-		sessionHint = "drop it from side_effects:, and turn it on in that session when you want it"
-	case m.Scope == provider.Local && r.Trigger.On != "schedule":
-		session = "runs as a hook inside the session you have open"
-		sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it; on %s, only schedule routines get settings of their own", rt)
+	for _, st := range e.Stubs {
+		switch {
+		case !st.InSession || session != "":
+		case r.IsInit():
+			session = "is an init routine, which runs in a one-off session Fabrica starts"
+			sessionHint = "drop it from side_effects:, and turn it on in that session when you want it"
+		case len(r.Triggers) > 1:
+			session = fmt.Sprintf("runs on %s as a hook inside the session you have open", st.Trigger)
+			sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it, or move the routine's %s trigger to a routine of its own; on %s, only schedule triggers get settings of their own", st.Trigger, rt)
+		default:
+			session = "runs as a hook inside the session you have open"
+			sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it; on %s, only schedule routines get settings of their own", rt)
+		}
 	}
 	listed := map[string]bool{}
 	for _, se := range r.SideEffects {
@@ -293,15 +374,14 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		}
 		e.SideEffects = append(e.SideEffects, use)
 	}
-	if session == "" {
-		for _, name := range m.NativeSideEffects() {
-			if shape.SideEffects == nil {
-				shape.SideEffects = map[string]string{}
-			}
-			shape.SideEffects[name] = SideEffectOff
-			if listed[name] {
-				shape.SideEffects[name] = SideEffectOn
-			}
+	var nativeSideEffects map[string]string
+	for _, name := range m.NativeSideEffects() {
+		if nativeSideEffects == nil {
+			nativeSideEffects = map[string]string{}
+		}
+		nativeSideEffects[name] = SideEffectOff
+		if listed[name] {
+			nativeSideEffects[name] = SideEffectOn
 		}
 	}
 
@@ -350,8 +430,43 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		}
 	}
 
-	e.Shape = shape
+	for _, st := range e.Stubs {
+		st.Shape = shape
+		st.Shape.setTriggers(st.Triggers)
+		if !st.InSession {
+			st.Shape.SideEffects = nativeSideEffects
+		}
+	}
 	return e
+}
+
+// split works out the stubs a runtime gets for a routine: one with all its
+// triggers where the runtime takes several per stub, and one for each
+// elsewhere. A routine with one trigger always gets one stub, named after
+// the routine alone.
+func split(r *blueprint.Routine, m *provider.Matrix) []*Stub {
+	inSession := func(tr blueprint.Trigger) bool {
+		return tr.On == blueprint.InitTrigger || m.Scope == provider.Local && tr.On != "schedule"
+	}
+	if len(r.Triggers) <= 1 || m.MultipleTriggers {
+		st := &Stub{Triggers: r.Triggers}
+		for _, tr := range r.Triggers {
+			st.InSession = st.InSession || inSession(tr)
+		}
+		return []*Stub{st}
+	}
+	out := make([]*Stub, len(r.Triggers))
+	for i, tr := range r.Triggers {
+		out[i] = &Stub{Trigger: tr.On, Triggers: []blueprint.Trigger{tr}, InSession: inSession(tr)}
+	}
+	return out
+}
+
+func triggerHint(r *blueprint.Routine, on string) string {
+	if len(r.Triggers) > 1 {
+		return fmt.Sprintf("triggers can't be emulated; deploy this routine to a runtime that has %s, or drop %s from its triggers (or move it to a routine of its own)", on, on)
+	}
+	return fmt.Sprintf("triggers can't be emulated; deploy this routine to a runtime that has %s, or change its trigger", on)
 }
 
 // PickModel picks the first of a routine's models that the runtime has:
@@ -421,25 +536,38 @@ func connectorHint(c *blueprint.Connector, m *provider.Matrix) string {
 }
 
 // Identity builds a resource's stable identity from its factory's tag,
-// routine and repo, like "k7q2#pr-review@github.com/acme/app". Nothing
-// random goes in, so the same resource always gets the same identity.
-func Identity(tag, routine, repo string) string {
-	return IdentityPrefix(tag) + routine + "@" + repo
+// stub name (see StubName) and repo, like
+// "k7q2#pr-review@github.com/acme/app". Nothing random goes in, so the
+// same resource always gets the same identity.
+func Identity(tag, name, repo string) string {
+	return IdentityPrefix(tag) + name + "@" + repo
+}
+
+// StubName names a stub: its routine, plus its trigger when the routine is
+// split into a stub per trigger, like "pr-review:github.push". Routine
+// names have no colons, so the two always come apart again.
+func StubName(routine, trigger string) string {
+	if trigger == "" {
+		return routine
+	}
+	return routine + ":" + trigger
 }
 
 // IdentityPrefix is what every identity of a factory starts with, like
 // "k7q2#". Runtimes find a factory's resources by it.
 func IdentityPrefix(tag string) string { return tag + "#" }
 
-// SplitIdentity pulls the prefix, routine and repo out of an identity like
-// "k7q2#pr-review@github.com/acme/app". Identities from before tags have a
+// SplitIdentity pulls the prefix, routine, trigger and repo out of an
+// identity like "k7q2#pr-review:github.push@github.com/acme/app"; trigger
+// is empty for a routine's only stub. Identities from before tags have a
 // server address instead of a tag, like
 // "fabrica.acme.dev/acme-app#pr-review@github.com/acme/app", and split the
 // same way.
-func SplitIdentity(id string) (prefix, routine, repo string) {
+func SplitIdentity(id string) (prefix, routine, trigger, repo string) {
 	tag, rest, _ := strings.Cut(id, "#")
-	routine, repo, _ = strings.Cut(rest, "@")
-	return IdentityPrefix(tag), routine, repo
+	name, repo, _ := strings.Cut(rest, "@")
+	routine, trigger, _ = strings.Cut(name, ":")
+	return IdentityPrefix(tag), routine, trigger, repo
 }
 
 // TagLen is how many characters of the hash a tag keeps: 20 bits, which

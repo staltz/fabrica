@@ -138,6 +138,7 @@ Run fabrica -u to update Fabrica itself to the latest release.`,
 		newConfirm(g),
 		newUnlock(g),
 		newMCP(g),
+		newDashboard(g),
 		newHook(g),
 		newVersion(),
 	)

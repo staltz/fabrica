@@ -18,6 +18,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/admin"
 	"github.com/staltz/fabrica/internal/blueprint"
+	"github.com/staltz/fabrica/internal/dashboard"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/home"
@@ -57,6 +58,9 @@ type Remote struct {
 	// the operator plane: agents never reach it, and it's not in this
 	// package's tools.
 	admin http.Handler
+	// dashboard is the run-history dashboard, also for people only. This
+	// package just routes to it.
+	dashboard http.Handler
 
 	mu          sync.RWMutex
 	state       *remoteState
@@ -93,7 +97,24 @@ func NewRemote(opts RemoteOptions) (*Remote, error) {
 	if opts.RefreshEvery == 0 {
 		opts.RefreshEvery = time.Minute
 	}
-	return &Remote{opts: opts, admin: admin.New(opts.Runs, opts.Secret), handlers: map[string]*mcp.StreamableHTTPHandler{}, state: &remoteState{factories: map[string]*remoteFactory{}, routes: map[string]string{}}}, nil
+	s := &Remote{opts: opts, admin: admin.New(opts.Runs, opts.Secret), handlers: map[string]*mcp.StreamableHTTPHandler{}, state: &remoteState{factories: map[string]*remoteFactory{}, routes: map[string]string{}}}
+	s.dashboard = dashboard.New(opts.Runs, dashboard.Options{Secret: opts.Secret, Subject: s.blueprintSubject, Now: opts.Now, Logger: opts.Logger})
+	return s, nil
+}
+
+// blueprintSubject finds the subject line of a commit of a factory's
+// blueprint, for the dashboard's charts. It only looks in the git cache the
+// server already has, and says nothing when the commit isn't there.
+func (s *Remote) blueprintSubject(ctx context.Context, factory, sha string) string {
+	rd := s.current().factories[factory]
+	if rd == nil || s.opts.Git == nil {
+		return ""
+	}
+	subject, err := s.opts.Git.Remote(repourl.GitURL(rd.factory.Blueprint.Git), gitx.Full).Subject(ctx, sha)
+	if err != nil {
+		return ""
+	}
+	return subject
 }
 
 // Refresh re-reads the home repo and the blueprints it deploys. When it
@@ -214,6 +235,7 @@ func (s *Remote) RunRefresher(ctx context.Context) {
 //	/<factory>                  token in an Authorization: Bearer header
 //	/<factory>/t/<token>        token in the URL, for runtimes that only take a URL
 //	…/_admin/runs               the admin API: only the admin token, only in a header
+//	…/_dashboard                the dashboard: log in with the admin token, then a cookie
 func (s *Remote) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		s.health(w)
@@ -247,10 +269,20 @@ func (s *Remote) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // so it works under a path prefix too. Factory names never contain an
 // underscore, so no factory endpoint can look like one.
 func (s *Remote) operator(urlPath string) http.Handler {
-	if admin.Matches(urlPath) {
+	isAdmin, isDashboard := admin.Matches(urlPath), dashboard.Matches(urlPath)
+	switch {
+	case isAdmin && isDashboard:
+		// A path with both is the one whose marker comes last.
+		p := path.Clean("/" + urlPath)
+		if strings.LastIndex(p, "/_admin") > strings.LastIndex(p, "/_dashboard") {
+			return s.admin
+		}
+		return s.dashboard
+	case isAdmin:
 		return s.admin
+	case isDashboard:
+		return s.dashboard
 	}
-	// The dashboard (/_dashboard) goes here the same way.
 	return nil
 }
 

@@ -15,8 +15,10 @@ func sampleConfig(runtime string) Config {
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: GitPrePush, Factory: "oss-work", Routine: "review-before-push", Fingerprint: "7f3a9c7f3a9c"},
 		{Binary: "/opt/fab rica/bin/fabrica", Runtime: runtime, Event: SessionStop, Factory: "oss-work", Routine: "tidy", Fingerprint: "abcdefabcdef"},
 	}
-	if runtime == "claude-code-local" || runtime == "codex-cli" || runtime == "copilot-local" {
-		hooks = append(hooks, Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Factory: "d", Routine: "hello", Fingerprint: "111111111111"})
+	if HasSessionStart(runtime) {
+		hooks = append(hooks,
+			Hook{Binary: "/usr/bin/fabrica", Runtime: runtime, Event: SessionStart, Factory: "d", Routine: "hello", Fingerprint: "111111111111"},
+			SessionHook("/opt/fab rica/bin/fabrica", runtime))
 	}
 	var tasks []Task
 	if runtime == "claude-code-local" {
@@ -40,11 +42,11 @@ func sampleConfig(runtime string) Config {
 // survive Fabrica's edits untouched.
 var userFiles = map[string]string{
 	".claude.json":             `{"numStartups": 7, "mcpServers": {"github": {"type": "http", "url": "https://gh.example"}}, "zzz": true}`,
-	".claude/settings.json":    `{"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}]}}`,
+	".claude/settings.json":    `{"model": "x", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}], "SessionStart": [{"hooks": [{"type": "command", "command": "my-session-hook"}]}]}}`,
 	".cursor/mcp.json":         `{"mcpServers": {"mine": {"command": "mine"}}}`,
 	".cursor/hooks.json":       `{"version": 1, "hooks": {"afterFileEdit": [{"command": "./format.sh"}]}}`,
 	".codex/config.toml":       "# my codex config\nmodel = \"o5\"\n\n[mcp_servers.mine]\ncommand = \"mine\" # keep me\n",
-	".codex/hooks.json":        `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}]}}`,
+	".codex/hooks.json":        `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-me"}]}], "SessionStart": [{"hooks": [{"type": "command", "command": "my-session-hook"}]}]}}`,
 	".copilot/mcp-config.json": `{"mcpServers": {"mine": {"type": "local", "command": "mine", "args": [], "tools": ["*"]}}}`,
 	// The user's own scheduled tasks, including one whose name happens to
 	// start with fabrica- but that Fabrica didn't write.
@@ -80,7 +82,7 @@ func TestToolsRoundTripAndPreserveUserSettings(t *testing.T) {
 			// The user's own settings are all still there.
 			for _, f := range tool.Files() {
 				data, _ := os.ReadFile(f)
-				for _, keep := range []string{"numStartups", "github", "my-linter", "mine", "./format.sh", "# my codex config", "# keep me", "notify-me"} {
+				for _, keep := range []string{"numStartups", "github", "my-linter", "mine", "./format.sh", "# my codex config", "# keep me", "notify-me", "my-session-hook"} {
 					rel, _ := filepath.Rel(home, f)
 					if strings.Contains(userFiles[rel], keep) && !strings.Contains(string(data), keep) {
 						t.Errorf("%s lost the user's %q:\n%s", rel, keep, data)
@@ -242,13 +244,74 @@ func TestCursorRefusesUnsupportedTrigger(t *testing.T) {
 	}
 }
 
+func TestSessionHookShape(t *testing.T) {
+	home := t.TempDir()
+	tool, _ := For("claude-code-local", home)
+	if err := tool.Write(Config{Hooks: []Hook{SessionHook("/usr/bin/fabrica", "claude-code-local")}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	var v struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if g := v.Hooks["SessionStart"]; len(v.Hooks) != 1 || len(g) != 1 || g[0].Matcher != "" || g[0].Hooks[0].Command != "/usr/bin/fabrica hook session --runtime claude-code-local" {
+		t.Errorf("unexpected hooks:\n%s", data)
+	}
+
+	tool, _ = For("copilot-local", home)
+	if err := tool.Write(Config{Hooks: []Hook{SessionHook("/usr/bin/fabrica", "copilot-local")}}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(filepath.Join(home, ".copilot", "hooks", "fabrica.json"))
+	if !strings.Contains(string(data), `"sessionStart"`) || !strings.Contains(string(data), `"command": "/usr/bin/fabrica hook session --runtime copilot-local"`) {
+		t.Errorf("Copilot CLI should get a sessionStart hook:\n%s", data)
+	}
+}
+
+func TestHasSessionStart(t *testing.T) {
+	for rt, want := range map[string]bool{
+		"claude-code-local": true, "codex-cli": true, "copilot-local": true,
+		"cursor-local": false, "claude-code-cloud": false, "nonsense": false,
+	} {
+		if got := HasSessionStart(rt); got != want {
+			t.Errorf("HasSessionStart(%q) = %v, want %v", rt, got, want)
+		}
+	}
+	// Cursor would refuse the hook, so nothing may ask for it.
+	tool, _ := For("cursor-local", t.TempDir())
+	if err := tool.Write(Config{Hooks: []Hook{SessionHook("fabrica", "cursor-local")}}); err == nil {
+		t.Error("Cursor has no session-start hook, so writing the session hook should fail")
+	}
+}
+
 func TestHookCommandRoundTrip(t *testing.T) {
 	h := Hook{Binary: "/Users/me/My Tools/fabrica", Runtime: "cursor-local", Event: GitPrePush, Factory: "d", Routine: "r", Fingerprint: "f"}
 	got, ok := ParseHookCommand(HookCommand(h))
 	if !ok || got != h {
 		t.Errorf("round trip = %+v, %v", got, ok)
 	}
-	for _, notOurs := range []string{"my-linter", "fabrica mcp", "/bin/fabricate hook", "fabrica hook --factory d"} {
+	h = SessionHook("/Users/me/My Tools/fabrica", "codex-cli")
+	if cmd := HookCommand(h); cmd != "'/Users/me/My Tools/fabrica' hook session --runtime codex-cli" {
+		t.Errorf("session hook command = %s", cmd)
+	}
+	got, ok = ParseHookCommand(HookCommand(h))
+	if !ok || got != h {
+		t.Errorf("session hook round trip = %+v, %v", got, ok)
+	}
+	for _, notOurs := range []string{
+		"my-linter", "fabrica mcp", "/bin/fabricate hook", "fabrica hook --factory d",
+		"fabrica hook session", "fabrica hook session --runtime", "fabrica hook session --runtime ''",
+		"fabrica hook session --factory d", "fabrica hook session --runtime codex-cli --event session.start",
+		"my-tool hook session --runtime codex-cli",
+	} {
 		if _, ok := ParseHookCommand(notOurs); ok {
 			t.Errorf("%q shouldn't be recognized as a Fabrica hook", notOurs)
 		}

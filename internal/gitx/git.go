@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -96,6 +97,27 @@ func Short(commit string) string {
 		return commit[:7]
 	}
 	return commit
+}
+
+// ShowCommand is the command that prints a file of a blueprint as it was at
+// a commit, for people to paste into a shell: `git -C <your blueprint clone>
+// show ee8f142:routines/pr-review.md`. The clone's folder is theirs to fill
+// in, so it stays a placeholder. The commit and the file are quoted if they
+// have anything in them a shell would act on, so callers still decide
+// whether a name is fit to print at all.
+func ShowCommand(commit, file string) string {
+	return "git -C <your blueprint clone> show " + shellQuote(Short(commit)+":"+file)
+}
+
+// shellWord matches what a shell reads as itself in a word.
+var shellWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// shellQuote quotes s for a POSIX shell, unless it's plain enough already.
+func shellQuote(s string) string {
+	if shellWord.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // CanRead checks that git can read the repo at url, with your credentials,

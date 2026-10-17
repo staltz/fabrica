@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -283,5 +284,122 @@ func TestRemoteServerSecretFromTheStore(t *testing.T) {
 	t.Setenv(token.EnvVar, other)
 	if got, _ := remoteSecret("https://fabrica.acme.dev"); got != other {
 		t.Errorf("FABRICA_SERVER_SECRET should win, got %q", got)
+	}
+}
+
+func TestAuthAdminToken(t *testing.T) {
+	w := setupCLI(t)
+	factory := func(server string) map[string]string {
+		return map[string]string{"factories/pr-review.yaml": "blueprint: { git: github.com/acme/blueprint, ref: stable }\nserver: " + server + "\nruntimes: [claude-code-cloud]\nroutines: [pr-review]\ntargets: [github.com/acme/app]\n"}
+	}
+	home := w.Home.Dir
+	w.Home.Write(factory("https://fabrica.acme.dev"))
+
+	// FABRICA_SERVER_SECRET counts for every server, so it needs no URL.
+	out := fabIn(t, home, "", 0, "auth", "admin-token")
+	if want := token.Admin(testkit.Secret) + "\n"; out != want {
+		t.Errorf("admin-token = %q, want only %q", out, want)
+	}
+	if out := fabIn(t, home, "", 0, "auth", "admin-token", "https://anywhere.example"); out != token.Admin(testkit.Secret)+"\n" {
+		t.Errorf("admin-token with a URL = %q", out)
+	}
+	if strings.Contains(out, testkit.Secret) || token.Admin(testkit.Secret) == token.For(testkit.Secret, "pr-review") {
+		t.Error("the admin token isn't the secret, and isn't a factory's token")
+	}
+	t.Setenv(token.EnvVar, "")
+	if out := fabIn(t, home, "", 1, "auth", "admin-token"); !strings.Contains(out, "FABRICA_SERVER_SECRET is set to nothing") {
+		t.Errorf("an empty FABRICA_SERVER_SECRET:\n%s", out)
+	}
+
+	// Without the environment variable, it's the secret saved for the
+	// server: the home repo's only one when no URL is named.
+	unsetenv(t, token.EnvVar)
+	out = fabIn(t, home, "", 1, "auth", "admin-token")
+	if !strings.Contains(out, "there's no server secret for https://fabrica.acme.dev; run `fabrica auth login https://fabrica.acme.dev`") {
+		t.Errorf("no saved secret:\n%s", out)
+	}
+	if _, err := credentials.Set(credentials.ServerKey("https://fabrica.acme.dev"), testkit.Secret); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"auth", "admin-token"}, {"auth", "admin-token", "https://fabrica.acme.dev"}, {"auth", "admin-token", "https://Fabrica.acme.dev/"}} {
+		if out := fabIn(t, home, "", 0, args...); out != token.Admin(testkit.Secret)+"\n" {
+			t.Errorf("fabrica %s = %q", strings.Join(args, " "), out)
+		}
+	}
+	if out := fabIn(t, home, "", 1, "auth", "admin-token", "https://other.acme.dev"); !strings.Contains(out, "there's no server secret for https://other.acme.dev") {
+		t.Errorf("a server with no saved secret:\n%s", out)
+	}
+
+	// Several servers: name one. Each has its own secret, so its own token.
+	otherSecret := strings.Repeat("o", 40)
+	if _, err := credentials.Set(credentials.ServerKey("https://other.acme.dev"), otherSecret); err != nil {
+		t.Fatal(err)
+	}
+	w.Home.Write(map[string]string{"factories/autofix.yaml": strings.Replace(factory("https://other.acme.dev")["factories/pr-review.yaml"], "pr-review]", "autofix]", 1)})
+	out = fabIn(t, home, "", 1, "auth", "admin-token")
+	if !strings.Contains(out, "use 2 servers (https://fabrica.acme.dev, https://other.acme.dev); name the one you want, like `fabrica auth admin-token https://fabrica.acme.dev`") {
+		t.Errorf("several servers:\n%s", out)
+	}
+	if out := fabIn(t, home, "", 0, "auth", "admin-token", "https://other.acme.dev"); out != token.Admin(otherSecret)+"\n" {
+		t.Errorf("the other server's token = %q", out)
+	}
+
+	// Names that aren't servers, and homes that have none.
+	if out := fabIn(t, home, "", 1, "auth", "admin-token", "acme"); !strings.Contains(out, `"acme" isn't a server URL`) {
+		t.Errorf("admin-token acme:\n%s", out)
+	}
+	if out := fabIn(t, home, "", 1, "auth", "admin-token", "a", "b"); !strings.Contains(out, "accepts at most 1 arg") {
+		t.Errorf("too many arguments:\n%s", out)
+	}
+	w.Home.Write(map[string]string{
+		"factories/pr-review.yaml": "blueprint: { git: github.com/acme/blueprint, ref: stable }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n",
+	})
+	if err := os.Remove(filepath.Join(home, "factories", "autofix.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if out := fabIn(t, home, "", 1, "auth", "admin-token"); !strings.Contains(out, "use no Fabrica server; name one") {
+		t.Errorf("a home repo with no servers:\n%s", out)
+	}
+}
+
+// The token the CLI prints is the one a real server takes, and the secret
+// the server uses stays out of it.
+func TestAuthAdminTokenOpensTheServer(t *testing.T) {
+	w := setupCLI(t)
+	db, err := runs.Open(filepath.Join(t.TempDir(), "runs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cache := gitx.NewCache(t.TempDir())
+	srv, err := mcpserver.NewRemote(mcpserver.RemoteOptions{Home: "github.com/acme/home", Secret: testkit.Secret, Git: cache, Loader: blueprint.NewLoader(cache), Runs: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	adminToken := strings.TrimSpace(fabIn(t, w.Home.Dir, "", 0, "auth", "admin-token", ts.URL))
+	for _, c := range []struct {
+		auth string
+		want int
+	}{
+		{"Bearer " + adminToken, 200},
+		{"Bearer " + token.For(testkit.Secret, "pr-review"), 401},
+		{"Bearer " + testkit.Secret, 401},
+		{"", 401},
+	} {
+		req, _ := http.NewRequest("GET", ts.URL+"/_admin/runs", nil)
+		if c.auth != "" {
+			req.Header.Set("Authorization", c.auth)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != c.want {
+			t.Errorf("GET /_admin/runs with %q: %d, want %d", c.auth, res.StatusCode, c.want)
+		}
 	}
 }

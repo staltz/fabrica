@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/staltz/fabrica/internal/auth"
 	"github.com/staltz/fabrica/internal/credentials"
 	"github.com/staltz/fabrica/internal/home"
+	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/token"
 )
 
@@ -51,7 +53,7 @@ Exits 1 when something apply needs is missing or refused.`,
 		RunE:  status,
 	}
 	statusCmd.Flags().BoolVar(&noCheck, "no-check", false, "don't ask servers, runtime APIs or git whether the credentials work")
-	cmd.AddCommand(statusCmd, newAuthLogin(g), newAuthLogout(g), newAuthEnv(g))
+	cmd.AddCommand(statusCmd, newAuthLogin(g), newAuthLogout(g), newAuthEnv(g), newAuthAdminToken(g))
 	return cmd
 }
 
@@ -702,6 +704,103 @@ out, and the ones you named are an error.`,
 			return nil
 		},
 	}
+}
+
+func newAuthAdminToken(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "admin-token [server-url]",
+		Short: "Print a server's admin token, which lets people read its run history",
+		Long: `Admin-token prints the admin token of a Fabrica server. It unlocks the
+server's admin API and its dashboard, where people read run history, and
+nothing else: it can't make factory tokens, and it doesn't work as one.
+
+The admin token is computed from the server secret, so there's nothing new
+to keep: rotating the server secret rotates it too. Fabrica finds the
+secret the way ` + "`fabrica auth`" + ` does: FABRICA_SERVER_SECRET, or else the one
+` + "`fabrica auth login <url>`" + ` saved for that server.
+
+Name the server's URL, like https://fabrica.acme.dev. Without one, it's the
+only server your home repo's cloud factories use (and with several, you
+name one).
+
+The token is the only thing printed, so it's easy to pipe where it goes.
+Give it to whoever should read run history. They can set it as
+FABRICA_ADMIN_TOKEN, without ever having the server secret.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
+			server, err := adminTokenServer(cmd.Context(), g, args)
+			if err != nil {
+				return err
+			}
+			tok, found, err := adminTokenOf(server)
+			if err != nil {
+				return err
+			}
+			switch {
+			case tok == "" && found.Env:
+				return fmt.Errorf("%s is set to nothing in your environment, so there's no server secret to make the admin token with", token.EnvVar)
+			case tok == "":
+				return fmt.Errorf("there's no server secret for %s; run `fabrica auth login %s` to save the one your server uses, or set %s", server, server, token.EnvVar)
+			}
+			if isTerminalWriter(out) {
+				fmt.Fprintln(errOut, "This is a secret: whoever has it can read your run history. Pipe it where it goes, rather than copying it around.")
+			}
+			fmt.Fprintln(out, tok)
+			return nil
+		},
+	}
+}
+
+// adminTokenOf makes the admin token of the server at server from the server
+// secret Fabrica has for it (FABRICA_SERVER_SECRET, or the one `fabrica auth
+// login` saved), and says where that secret came from. The token is empty
+// when there's no secret.
+func adminTokenOf(server string) (tok string, found credentials.Found, err error) {
+	found, err = credentials.ServerSecret(server)
+	if err != nil || found.Value == "" {
+		return "", found, err
+	}
+	return token.Admin(found.Value), found, nil
+}
+
+// adminTokenServer works out which server `fabrica auth admin-token` is
+// about: the one named, or the only one the home repo's cloud factories
+// use. It's empty when FABRICA_SERVER_SECRET is set, because that one
+// secret counts for every server.
+func adminTokenServer(ctx context.Context, g *globals, args []string) (string, error) {
+	if len(args) == 1 {
+		if !strings.Contains(args[0], "://") {
+			return "", fmt.Errorf("%q isn't a server URL; name one like https://fabrica.acme.dev", args[0])
+		}
+		return credentials.NormalizeServer(args[0]), nil
+	}
+	if _, ok := os.LookupEnv(token.EnvVar); ok {
+		return "", nil
+	}
+	dir, err := g.homeDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	h, err := home.Open(dir)
+	if err != nil {
+		return "", err
+	}
+	var servers []string
+	for _, name := range h.Names() {
+		d := h.Factories[name]
+		if server := credentials.NormalizeServer(d.Server); d.Scope == provider.Cloud && !slices.Contains(servers, server) {
+			servers = append(servers, server)
+		}
+	}
+	slices.Sort(servers)
+	switch len(servers) {
+	case 0:
+		return "", errors.New("this home repo's factories use no Fabrica server; name one, like `fabrica auth admin-token https://fabrica.acme.dev`")
+	case 1:
+		return servers[0], nil
+	}
+	return "", fmt.Errorf("this home repo's factories use %d servers (%s); name the one you want, like `fabrica auth admin-token %s`", len(servers), strings.Join(servers, ", "), servers[0])
 }
 
 // isTerminalWriter reports whether w is an interactive terminal.

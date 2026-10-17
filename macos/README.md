@@ -10,7 +10,7 @@ A small macOS app for Fabrica. It lives in the menu bar (or the Dock, or both), 
 - **My Factories.** Edit your personal home repo (`~/.fabrica`, or `FABRICA_HOME`) with forms, never YAML: the blueprint, where it runs, which repos, which routines, params, and init. Turn a factory off without deleting it: the app saves it as `<name>.off`, which Fabrica ignores. Every save is a git commit, because `fabrica apply` refuses uncommitted factory changes and the server only serves what's committed. **Push** sends those commits to your home repo's remote. It only ever fast-forwards: it never merges or rebases.
 - **Plan and Apply.** Each factory has a status dot from `fabrica plan` (green in sync, orange changes to apply, red problems), and the problems show up on the factory itself. The toolbar runs `fabrica plan` and `fabrica apply` and shows their output as it's printed.
 - **Server.** Starts and stops `fabrica mcp --http` on this Mac, for your cloud factories: pick the `server:` URL to serve (it uses the secret `fabrica auth login` saved for it), and where to listen. It shows the server's health, each factory's endpoint and the output. The tools on your Mac don't need it, since they start their own `fabrica mcp` over stdio. It's for when cloud runtimes should reach a server on this Mac, through a tunnel or a proxy. The server stops when the app quits.
-- **Recent Runs.** Fabrica's run history (the `run_overview` view), from this Mac's `runs.db` or from the server's own database. The CLI has no command for it yet.
+- **Recent Runs.** Fabrica's run history (the `run_overview` view), from this Mac's `runs.db` or from the server's own database. **Dashboard** (a button here, and in the menu bar) opens that history as charts and tables in your browser. The app runs `fabrica dashboard` for it and opens the link it prints, so the dashboard stays locked to anyone without that link. Asking again gets you a fresh link, and the tabs you already have stay open. The dashboards stop when the app quits. For more, `fabrica runs` reads the same history in a terminal.
 
 ## Installing
 
@@ -54,6 +54,7 @@ Then move `dist/Fabrica.app` to `/Applications`. For working on the app itself, 
 | `Sources/Fabrica/Factory.swift` | A factory file, read with Yams and written in the style of Fabrica's examples. The keys mirror `internal/home/factory.go`. |
 | `Sources/Fabrica/HomeRepo.swift` | The factories folder, git, and `fabrica plan --json`. |
 | `Sources/Fabrica/Server.swift` | `fabrica mcp --http` as a child process, and its `/healthz`. |
+| `Sources/Fabrica/Dashboard.swift` | `fabrica dashboard` as a child process for each source of runs, and the links it prints. |
 | `Sources/Fabrica/CLI.swift` | The bundled CLI and its link in `~/.local/bin`. |
 | `Sources/Fabrica/Runs.swift` | Reads run history straight from SQLite, read-only. |
 | `Sources/Fabrica/Updater.swift`, `Release.swift` | Finds the latest release, and swaps its app in for this one after checking it. |

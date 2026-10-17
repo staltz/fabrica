@@ -6,6 +6,10 @@
 // `fabrica apply` (holding the same secret, for example as a CI secret)
 // computes the same token to put into each runtime's connector. To rotate
 // every token at once, change the server secret and re-apply.
+//
+// A server also has an admin token, computed the same way from the name
+// "_admin", which no factory can have. It unlocks the read side of run
+// history (the admin API and the dashboard), and nothing else.
 package token
 
 import (
@@ -24,9 +28,21 @@ import (
 // `fabrica mcp --http` and for `fabrica apply`.
 const EnvVar = "FABRICA_SERVER_SECRET"
 
+// AdminEnvVar is the environment variable holding an admin token, for
+// people who have it but not the server secret.
+const AdminEnvVar = "FABRICA_ADMIN_TOKEN"
+
 // prefix makes Fabrica tokens easy to recognize, for people and for secret
 // scanners alike.
 const prefix = "fab_"
+
+// adminPrefix and adminName make the admin token. Factory names can't
+// contain an underscore, so no factory is called _admin, and the prefix
+// keeps the admin token apart from every factory token anyway.
+const (
+	adminPrefix = "fab_admin_"
+	adminName   = "_admin"
+)
 
 // minSecretLen is the shortest server secret we accept. Anything shorter
 // is too easy to guess.
@@ -64,9 +80,14 @@ func NewSecret() (string, error) {
 
 // For computes the token of one factory.
 func For(secret, factory string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(factory))
-	return prefix + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return prefix + mac(secret, factory)
+}
+
+// mac is HMAC-SHA256 of a name under the secret, as base64url.
+func mac(secret, name string) string {
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(name))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
 // Valid reports whether tok is the right token for the factory. It
@@ -74,6 +95,17 @@ func For(secret, factory string) string {
 func Valid(secret, factory, tok string) bool {
 	want := For(secret, factory)
 	return hmac.Equal([]byte(want), []byte(tok))
+}
+
+// Admin is the admin token of a server: it unlocks the admin API and the
+// dashboard, and nothing else.
+func Admin(secret string) string {
+	return adminPrefix + mac(secret, adminName)
+}
+
+// ValidAdmin checks a token against the admin token, in constant time.
+func ValidAdmin(secret, tok string) bool {
+	return hmac.Equal([]byte(Admin(secret)), []byte(tok))
 }
 
 // Hash is a short, one-way fingerprint of a token. State files record it,

@@ -17,7 +17,7 @@
 * Generic skills and rules live outside of your product's repository, so your agents cannot change the rules
 * Provisioning routines (a.k.a. "loops", "scheduled tasks") should be easy and independent of AI coding tools
 * Reusing and composing factories should be instant
-* Observability data for all agents in a factory
+* Observability data for all agents in a factory, for people to read (`fabrica runs`, a dashboard) and not for agents
 
 ## Quick start
 
@@ -155,7 +155,7 @@ fabrica apply
 Before starting, load this repo's working rules from the Fabrica MCP server; if you don't have it, ignore this line.
 ```
 
-**5. Open the repo in Claude Code or Cursor.** The agent calls `run_begin`, loads your rules with `rules_get`, and loads skills as it needs them. Every session gets recorded in `~/.fabrica/runs.db`.
+**5. Open the repo in Claude Code or Cursor.** The agent calls `run_begin`, loads your rules with `rules_get`, and loads skills as it needs them. Every session gets recorded in `~/.fabrica/runs.db`. Read the history with `fabrica runs`, or see it as charts and tables in your browser with `fabrica dashboard`.
 
 The full walkthrough, including a team setup with a cloud PR reviewer, is in [manual/getting-started.md](manual/getting-started.md).
 
@@ -173,6 +173,8 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [ma
 | `fabrica destroy [factory…]` | The opposite of `apply`: removes everything it installed, and leaves your factory files alone. Asks first. |
 | `fabrica confirm <id>` | Closes a handoff once someone has followed its instructions. |
 | `fabrica unlock <factory>` | Removes a lock left behind by a crashed apply. |
+| `fabrica runs` | Reads run history: lists runs, shows one in full (`runs show`), or exports a retro bundle for your own retro skill (`runs export`). |
+| `fabrica dashboard` | Shows run history as charts and tables in your browser. It listens on your machine only. |
 | `fabrica mcp [--http]` | Serves a blueprint over MCP: locally over stdio, or remotely over HTTP. |
 | `fabrica -u` | Updates Fabrica itself to the latest release. |
 
@@ -188,7 +190,7 @@ Every command has `--help`. The full reference is in [manual/cli.md](manual/cli.
 - [The MCP server](manual/mcp-server.md): the tools agents use, and how to run the remote server.
 - [Providers](manual/providers.md): what each runtime supports, and how to write your own provider.
 - [Credentials](manual/auth.md): what `apply` needs access to, and how `fabrica auth` sets it up and keeps it safe.
-- [Run history](manual/run-history.md): the SQLite schema and some handy queries.
+- [Run history](manual/run-history.md): who can read it, `fabrica runs`, the dashboard, the retro bundle, the SQLite schema and some handy queries.
 - [Safety checks](manual/safety-checks.md): every way Fabrica fails closed, and where it catches each problem.
 - [CLI reference](manual/cli.md): every command and flag.
 - [Architecture](manual/architecture.md): how the code is organized, for contributors.
@@ -199,7 +201,7 @@ Examples live in [examples/](examples/): a [starter blueprint](examples/starter-
 
 - **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [manual/providers.md](manual/providers.md).
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
-- **There's no command to read run history yet.** Open the SQLite file with any SQLite tool.
+- **A local agent with a shell can read local run history.** `~/.fabrica/runs.db` is a file on your disk. Fabrica's own tools never hand it to agents, but nothing can stop a shell from opening a file. See [Who can read it](manual/run-history.md#who-can-read-it).
 
 ## Contributing
 

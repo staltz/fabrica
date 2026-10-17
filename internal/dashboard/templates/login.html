@@ -1,0 +1,13 @@
+{{define "content"}}
+<section class="card narrow">
+<h1>Fabrica run history</h1>
+<p class="sub">This dashboard shows what your agents did. Log in with the admin token of this server; <code>fabrica auth admin-token</code> prints it.</p>
+<form class="stack" method="post" action="{{.Base}}/login">
+<label for="token">Admin token</label>
+<input id="token" name="token" type="password" autocomplete="current-password" autofocus required>
+{{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
+{{if .Error}}<p class="alert" role="alert">{{.Error}}</p>{{end}}
+<button type="submit">Log in</button>
+</form>
+</section>
+{{end}}

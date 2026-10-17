@@ -1,0 +1,62 @@
+{{define "filters"}}<nav class="filters" aria-label="Filters">
+{{range .}}<div class="group"><span class="label">{{.Label}}</span>{{range .Chips}}<a class="chip" href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+{{end}}</nav>{{end}}
+
+{{define "tiles"}}<section class="tiles" aria-label="Totals">
+{{range .}}<div class="tile"><div class="tile-label">{{.Label}}</div><div class="tile-value">{{.Value}}</div><div class="tile-note">{{.Note}}</div></div>
+{{end}}</section>{{end}}
+
+{{define "outcome"}}<span class="chip-o"><span class="shape o-{{.}}" aria-hidden="true"></span>{{outcomeLabel .}}</span>{{end}}
+
+{{define "time"}}{{if .ISO}}<time datetime="{{.ISO}}" title="{{.ISO}}">{{.Short}}</time>{{else}}–{{end}}{{end}}
+
+{{define "twin"}}<details class="twin"><summary>{{.Summary}}</summary>
+<div class="scroll"><table>
+<thead><tr>{{range $i, $h := .Head}}<th scope="col"{{if $i}} class="num"{{end}}>{{$h}}</th>{{end}}</tr></thead>
+<tbody>{{range .Rows}}<tr>{{range $i, $c := .}}{{if $i}}<td class="num">{{$c}}</td>{{else}}<th scope="row">{{$c}}</th>{{end}}{{end}}</tr>
+{{end}}</tbody>
+</table></div>
+{{if .Note}}<p class="hint">{{.Note}}</p>{{end}}
+</details>{{end}}
+
+{{define "barchart"}}<figure>
+<ul class="legend" aria-label="Legend">{{range .Legend}}<li><span class="swatch {{.Class}}" aria-hidden="true"></span>{{.Label}}</li>{{end}}</ul>
+<div class="chart-scroll"><svg class="chart" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-labelledby="{{.ID}}-t {{.ID}}-d">
+<title id="{{.ID}}-t">{{.Title}}</title><desc id="{{.ID}}-d">{{.Desc}}</desc>
+<defs>
+<pattern id="{{.ID}}-p-in_progress" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="tex-line" x1="0" y1="0" x2="0" y2="6"/></pattern>
+<pattern id="{{.ID}}-p-stale" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><line class="tex-line" x1="0" y1="0" x2="0" y2="6"/></pattern>
+<pattern id="{{.ID}}-p-failed" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="tex-line" x1="0" y1="0" x2="0" y2="6"/><line class="tex-line" x1="0" y1="0" x2="6" y2="0"/></pattern>
+</defs>
+{{range .Ticks}}<line class="grid" x1="{{$.Left}}" x2="{{$.Right}}" y1="{{.Y}}" y2="{{.Y}}"/><text x="{{$.Left}}" y="{{.Y}}" dx="-8" dy="4" text-anchor="end">{{.Label}}</text>
+{{end}}<line class="axis" x1="{{.Left}}" x2="{{.Right}}" y1="{{.Baseline}}" y2="{{.Baseline}}"/>
+{{range .Cols}}<g class="col"><title>{{.Title}}</title><rect class="hit" x="{{.X}}" y="0" width="{{.W}}" height="{{$.Baseline}}"/>{{range .Segs}}<path class="seg {{.Class}}" d="{{.D}}"/>{{if .Pattern}}<path class="tex" fill="url(#{{$.ID}}-p-{{.Pattern}})" d="{{.D}}"/>{{end}}{{end}}</g>
+{{end}}{{range .XLabels}}<text x="{{.X}}" y="{{$.Baseline}}" dy="18" text-anchor="middle">{{.Text}}</text>
+{{end}}</svg></div>
+{{template "twin" .Table}}
+</figure>{{end}}
+
+{{define "linechart"}}<figure>
+<ul class="legend" aria-label="Legend"><li><span class="keyline" aria-hidden="true"></span>Failure rate</li>{{if .Markers}}<li><span class="keymark" aria-hidden="true"></span>New blueprint version first served</li>{{end}}</ul>
+<div class="chart-scroll"><svg class="chart" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-labelledby="{{.ID}}-t {{.ID}}-d">
+<title id="{{.ID}}-t">{{.Title}}</title><desc id="{{.ID}}-d">{{.Desc}}</desc>
+{{range .Ticks}}<line class="grid" x1="{{$.Left}}" x2="{{$.Right}}" y1="{{.Y}}" y2="{{.Y}}"/><text x="{{$.Left}}" y="{{.Y}}" dx="-8" dy="4" text-anchor="end">{{.Label}}</text>
+{{end}}<line class="axis" x1="{{.Left}}" x2="{{.Right}}" y1="{{.Baseline}}" y2="{{.Baseline}}"/>
+{{range .Hits}}<g class="col"><title>{{.Title}}</title><rect class="hit" x="{{.X}}" y="{{$.Top}}" width="{{.W}}" height="{{$.PlotH}}"/></g>
+{{end}}{{range .Markers}}<g><title>{{.Title}}</title><line class="mark" x1="{{.X}}" x2="{{.X}}" y1="{{.LabelY}}" y2="{{$.Baseline}}"/><rect class="hit" x="{{.HitX}}" y="{{.LabelY}}" width="12" height="{{.HitH}}"/><text class="mark-label" x="{{.LabelX}}" y="{{.LabelY}}" dy="-1" text-anchor="{{.Anchor}}">{{.Label}}</text></g>
+{{end}}{{if .Path}}<path class="line" d="{{.Path}}"/>
+{{end}}{{range .Dots}}<circle class="dot" cx="{{.X}}" cy="{{.Y}}" r="4"><title>{{.Title}}</title></circle>
+{{end}}{{with .EndLabel}}<text class="end-label" x="{{.X}}" y="{{.Y}}">{{.Text}}</text>{{end}}
+{{range .XLabels}}<text x="{{.X}}" y="{{$.Baseline}}" dy="18" text-anchor="middle">{{.Text}}</text>
+{{end}}</svg></div>
+{{template "twin" .Table}}
+</figure>{{end}}
+
+{{define "hbarchart"}}<figure>
+<div class="chart-scroll"><svg class="chart" viewBox="0 0 {{.W}} {{.H}}" role="img" aria-label="{{.Title}}">
+<title>{{.Title}}</title>
+{{range .Rows}}<g class="row"><title>{{.Title}}</title><rect class="rowhit" x="0" y="{{.RowY}}" width="{{$.W}}" height="30"/><text x="0" y="{{.LabelY}}">{{.Label}}</text>{{if .D}}<path class="bar" d="{{.D}}"/>{{end}}<text class="value" x="{{.ValueX}}" y="{{.LabelY}}">{{.Value}}</text></g>
+{{end}}</svg></div>
+</figure>{{end}}
+
+{{define "runlink"}}<a class="mono" href="{{.Href}}">{{.ID}}</a>{{end}}

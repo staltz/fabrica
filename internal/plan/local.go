@@ -41,9 +41,9 @@ type LocalRuntime struct {
 
 // planLocalFactory checks one local factory. Choosing a blueprint
 // needs no apply (`fabrica mcp` matches the workspace each time a session
-// starts), so the only installs are the shared MCP entry plus hooks and
-// scheduled tasks for local routines; those are worked out across
-// factories in planLocalTools.
+// starts), so the only installs are the shared MCP entry and session
+// pointer hook, plus hooks and scheduled tasks for local routines; those
+// are worked out across factories in planLocalTools.
 func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 	dp := &Factory{Name: d.Name, Spec: d}
 	e.loadBlueprint(ctx, dp, d.Blueprint)
@@ -202,6 +202,9 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 		args = append(args, "--home", personalHome)
 	}
 	cfg.MCP = append(cfg.MCP, localtools.MCPEntry{Name: "fabrica", Transport: "stdio", Command: e.Binary, Args: args})
+	if localtools.HasSessionStart(rt) {
+		cfg.Hooks = append(cfg.Hooks, localtools.SessionHook(e.Binary, rt))
+	}
 
 	connectors := map[string]localtools.MCPEntry{}
 	connectorFrom := map[string]string{}
@@ -336,14 +339,16 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 		old, ok := curHooks[id]
 		switch {
 		case !ok:
-			out = append(out, fmt.Sprintf("+ add hook for routine %s/%s on %s", h.Factory, h.Routine, h.Event))
+			out = append(out, fmt.Sprintf("+ add %s on %s", hookName(h), h.Event))
+		case old != h && h.Session:
+			out = append(out, "~ update session pointer hook")
 		case old != h:
 			out = append(out, fmt.Sprintf("~ update hook for routine %s/%s (%s, stub %s)", h.Factory, h.Routine, h.Event, h.Fingerprint))
 		}
 	}
 	for _, h := range cur.Hooks {
 		if !wantHooks[hookID{h.Factory, h.Routine, h.Event}] {
-			out = append(out, fmt.Sprintf("- remove hook for routine %s/%s on %s", h.Factory, h.Routine, h.Event))
+			out = append(out, fmt.Sprintf("- remove %s on %s", hookName(h), h.Event))
 		}
 	}
 	curTasks := map[string]localtools.Task{}
@@ -368,6 +373,15 @@ func describeLocalChanges(cur, want localtools.Config) []string {
 		}
 	}
 	return out
+}
+
+// hookName says which hook a change is about. The session pointer hook has
+// no factory or routine, so it's the only one with that ID.
+func hookName(h localtools.Hook) string {
+	if h.Session {
+		return "session pointer hook"
+	}
+	return fmt.Sprintf("hook for routine %s/%s", h.Factory, h.Routine)
 }
 
 // taskAutofix describes a scheduled task's auto-fix setting, if it has one.

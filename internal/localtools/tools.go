@@ -7,7 +7,8 @@
 //   - MCP servers: the `fabrica` server itself (which picks the right
 //     blueprint each time a session starts), plus a `fabrica-<connector>`
 //     server for each connector a local routine needs.
-//   - Hooks: one per local routine, running `fabrica hook …`.
+//   - Hooks: one per local routine, running `fabrica hook …`, plus one
+//     session pointer hook per tool, running `fabrica hook session …`.
 //   - Scheduled tasks: one per repo for each local routine with a
 //     schedule trigger (Claude Code only).
 //

@@ -15,8 +15,8 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 | Tool | What it does |
 |---|---|
-| `run_begin(intent, routine?, runtime?, repo?, stub?)` | Starts a run and returns a `run_id`. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes the other four values. Refuses routine runs whose stub is outdated or no longer deployed. |
-| `run_report(run_id, summary, status?, links?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. |
+| `run_begin(intent, routine?, runtime?, repo?, stub?, session?)` | Starts a run and returns a `run_id` and a hint for what to do next. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes `routine`, `runtime`, `repo` and `stub`. Refuses routine runs whose stub is outdated or no longer deployed. `session` is optional and says where the session's transcript lives: a file path, a session ID or a session URL (at most 512 bytes, on one line). A bad one is an error, and the run isn't recorded, so the agent can try again. |
+| `run_report(run_id, summary, status?, links?, friction?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. `friction` is optional: up to 5 notes about what slowed the agent down since its last report, each with a kind (`navigation`, `checks`, `standards`, `tools`, `info` or `other`) and a note of at most 20 words. It answers with an acknowledgement and nothing else. Only accepts a run that was begun for this factory (and, on the local server, this repo), from any session; for any other `run_id`, whether it exists or not, it gives the same error. |
 | `rules_get()` | Every always-on rule in full, plus an index of the other rules (name, description, globs). It always starts with the "product knowledge only" rule. |
 | `rule_load(name)` | One rule. |
 | `skills_list()` | Names and descriptions of all skills. Remotely, skills that need their folder on disk are marked unavailable, with the reason. Also lists the skills the blueprint expects the repo to provide. |
@@ -27,7 +27,11 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 Skills over MCP aren't a standard yet, so Fabrica emulates them with these plain tools. The server's MCP instructions, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how relative paths in a skill work. When native skills over MCP arrive, the emulation can go away.
 
-The server rejects an `intent` or `summary` longer than 20 words and asks for a shorter one.
+The server rejects an `intent`, `summary` or friction note longer than 20 words and asks for a shorter one.
+
+After `run_begin`, the server also records every skill, rule and routine the session loads (`skill_load`, `rule_load`, `routine_get`, and each always-on rule `rules_get` hands over) as loads of that run. See [Run history](run-history.md).
+
+**No tool returns run history, on purpose.** Agents write run history; only people read it. `run_begin` gives back a `run_id` and a hint, `run_report` an acknowledgement, and neither says anything about earlier runs or checkpoints, not even the agent's own. The one exception is a routine's [memory](blueprints.md#memory), which `routine_get` shows to the routine that saved it. That's a separate feature, not run history.
 
 ## The local server
 
@@ -57,7 +61,7 @@ You host it yourself: a container or a small VM. There's no official hosted serv
 - **One endpoint per factory**, at the path of the factory's `server:` URL plus its name: `https://fabrica.acme.dev/pr-review`.
 - **It re-fetches regularly** (every minute by default), so merges to followed branches and new factories show up shortly after they land. If a fetch fails, it keeps serving what it had.
 - **Routines only run from stubs.** A `run_begin` that names a routine but leaves out its runtime, repo or stub fingerprint is refused, and so is `routine_get` before a routine run has begun.
-- **Cloud runtimes only get text-only skills** in v0.1, since the server can't put files on their disk.
+- **Cloud runtimes only get text-only skills** for now, since the server can't put files on their disk.
 
 ### Auth
 
@@ -67,6 +71,7 @@ Each factory has a secret token, computed as `HMAC(server secret, factory name)`
 - A request without the right token gets a `401`. A path that isn't a factory gets a `404`, and so does a factory that was deleted from the home repo.
 - To rotate every token, change the server secret and re-apply. `fabrica auth login <server URL>` makes a new one when you press Enter, and `fabrica plan` notices rotated tokens (when it has the secret) and lists the affected stubs as updates.
 - `fabrica auth` checks that the secret you have is the server's own, by asking the server: a wrong token gets a `401`, and the right one doesn't. See [Credentials](auth.md).
+- Factory tokens only open their own factory's endpoint. Reading run history takes a different token, the admin token, which opens the [admin API](#the-admin-api) and nothing else.
 
 OAuth is planned for later.
 
@@ -113,7 +118,95 @@ The image keeps its database and git cache in `/data`.
 
 Put it behind HTTPS (a reverse proxy like Caddy or nginx, or your platform's load balancer) at the URL your factories use as `server:`. The server checks a token on every request, so it works fine behind a proxy that connects over localhost.
 
-The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its skill loads to its run. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+
+### The admin API
+
+The remote server also has a small read-only JSON API for people, to read run history. It's on the **operator plane**, the part of Fabrica that people use, and agents never reach it: no MCP tool returns run history, and no factory token opens this.
+
+| Route | What it returns |
+|---|---|
+| `GET /_admin/runs` | A page of runs, newest first |
+| `GET /_admin/runs/<run_id>` | One run in full: the same fields, plus its stub and its timeline of loads, checkpoints and friction notes |
+
+The routes are matched by the last `/_admin/` in the path, so they work under any path prefix: with `server: https://acme.dev/fabrica`, it's `https://acme.dev/fabrica/_admin/runs`. Factory names can't contain an underscore, so this can't clash with a factory's endpoint.
+
+The rules:
+
+- **The token goes in `Authorization: Bearer <admin token>`**, and nowhere else. The `/t/<token>` form that factory endpoints accept isn't allowed here, so the admin token never ends up in a proxy's logs. [`fabrica auth admin-token`](auth.md#the-admin-token) prints it.
+- **Anything that isn't the admin token gets a `401`**, with the same message every time. That includes a factory's token, even a valid one.
+- **Only `GET`.** Anything else gets a `405`.
+- **Every response says `Cache-Control: no-store`.**
+- **A bad query value gets a `400`**, with a JSON `{"error": "…"}`. An unknown run gets a `404`.
+
+`GET /_admin/runs` takes these query parameters:
+
+| Parameter | What it does | Default |
+|---|---|---|
+| `factory` | Only this factory. | all |
+| `routine` | Only this routine. `-` means interactive runs, the ones with no routine. | all |
+| `repo` | Only this repo, like `github.com/acme/app`. | all |
+| `runtime` | Only this runtime. | all |
+| `outcome` | Only these outcomes, comma-separated: `succeeded`, `failed`, `in_progress`, `stale`. | all |
+| `since` | Only runs that started since then: `7d`, `48h`, or an RFC 3339 time. | `7d` |
+| `limit` | How many runs, from 1 to 500. | `100` |
+| `before` | A `run_id`: only runs older than it. This is for paging. | none |
+
+```sh
+curl -H "Authorization: Bearer $FABRICA_ADMIN_TOKEN" \
+  "https://fabrica.acme.dev/_admin/runs?routine=pr-review&outcome=failed,stale&since=14d"
+```
+
+```json
+{
+  "schema_version": 3,
+  "runs": [
+    {
+      "run_id": "run_06gmjeps8jf8zfjjrfmydev50g",
+      "started_at": "2026-10-17T09:41:02Z",
+      "last_at": "2026-10-17T09:58:40Z",
+      "outcome": "succeeded",
+      "intent": "Review PR 412 for the billing retry change",
+      "routine": "pr-review",
+      "runtime": "claude-code-cloud",
+      "repo": "github.com/acme/app",
+      "factory": "acme",
+      "blueprint_sha": "ee8f142…",
+      "served_by": "remote",
+      "session": "https://claude.ai/code/session_…",
+      "last_summary": "Posted review with two blocking comments",
+      "checkpoint_count": 3,
+      "friction_count": 1,
+      "pr_links": ["https://github.com/acme/app/pull/412"]
+    }
+  ],
+  "next": "run_06gm…"
+}
+```
+
+`schema_version` is the [run-history schema](run-history.md) these fields come from. `next` is the `before` value for the next page, and it's missing on the last page, so to read every run, keep asking with `before` set to the last `next` until there isn't one. Fields that are empty (a run with no `routine`, or no `session`) are left out, except `pr_links`, which is always a list. Times are UTC, to the second.
+
+`GET /_admin/runs/<run_id>` adds `stub` (the stub fingerprint the run claimed, when it claimed one) and a `timeline`, every load, checkpoint and friction note of the run, sorted by time. A friction note has the time of the checkpoint it came with, and comes right after it:
+
+```json
+"timeline": [
+  {"at": "2026-10-17T09:41:05Z", "type": "load",       "kind": "routine", "name": "pr-review"},
+  {"at": "2026-10-17T09:47:30Z", "type": "checkpoint", "author": "agent", "status": "progress", "summary": "Read the diff and the retry tests", "links": []},
+  {"at": "2026-10-17T09:47:30Z", "type": "friction",   "kind": "navigation", "note": "couldn't find where retry backoff is configured"}
+]
+```
+
+### The dashboard
+
+The remote server also serves a dashboard of run history, in your browser, at `/_dashboard`. It's the same dashboard that [`fabrica dashboard`](cli.md#fabrica-dashboard) opens for your local history, and [Run history](run-history.md#the-dashboard) says what's on each page. Like the admin API it's on the operator plane: no factory token opens it, and agents never see it.
+
+It's matched by the last `/_dashboard` in the path, so it works under any path prefix too: with `server: https://acme.dev/fabrica`, it's `https://acme.dev/fabrica/_dashboard`.
+
+- **You log in with the admin token.** Opening `/_dashboard` without the right cookie shows a small page with one password field, "Admin token". Paste what [`fabrica auth admin-token`](auth.md#the-admin-token) prints. A wrong token, and a factory's token too, gets a `401` and the same page again, with the same message.
+- **Then a cookie keeps you in.** It's called `fabrica_admin`, and holds the admin token. It's `HttpOnly` and `SameSite=Strict`, so scripts and other sites can't touch it, and it only goes to pages under `<prefix>/_dashboard`. It's `Secure` when the request came over HTTPS, either straight to Fabrica or through a proxy that sends `X-Forwarded-Proto: https`, so make your reverse proxy send that. It's gone when you close the browser, or press "Log out" (a `POST` to `/_dashboard/logout`). Changing the server secret changes the admin token, which logs everyone out.
+- **The header doesn't work here.** The admin API takes `Authorization: Bearer`, and the dashboard takes only the cookie. A factory token, in a header, a cookie or the `/t/<token>` form, gets the login page.
+- **Everything but logging in and out is a `GET`** that changes nothing, so there's nothing for a cross-site request to abuse.
+- **Every page says `Cache-Control: no-store`**, and sends a `Content-Security-Policy` that allows no scripts and nothing from other sites. The pages need no JavaScript and load nothing from the internet.
 
 ## Stale stubs
 
@@ -126,4 +219,4 @@ An [init session](blueprints.md#init-routines) carries the same four values in t
 
 If either check fails, the server refuses: `run_begin` returns an error saying which check failed and that the factory needs `fabrica apply`, the run is recorded as `failed`, and `routine_get` won't serve that routine in that session.
 
-Both checks compare the latest home repo with the values inside the stub, never with state. So there's no gap while an apply is running, after one crashes, or while a handoff is pending. v0.1 refuses outdated stubs instead of serving the last compatible version: that's the stricter choice, and switching to holding back later wouldn't break anyone.
+Both checks compare the latest home repo with the values inside the stub, never with state. So there's no gap while an apply is running, after one crashes, or while a handoff is pending. Fabrica refuses outdated stubs instead of serving the last compatible version: that's the stricter choice, and switching to holding back later wouldn't break anyone.

@@ -6,10 +6,14 @@
 // their own.
 //
 // History can't be filled in after the fact, so Fabrica records from day
-// one. v0.1 has no built-in way to read it: you open the SQLite file with
-// any SQLite tool. That makes the schema below a public interface, so later
-// versions must migrate it carefully (PRAGMA user_version tracks the
-// version) or keep a compatible view.
+// one. The schema below is a public interface (Fabrica.app and people's own
+// scripts read it), so changes must migrate it carefully (PRAGMA
+// user_version tracks the version) and keep run_overview's columns in place.
+//
+// Agents write run history and only people read it. The read side (List,
+// Detail and Stats) is for the operator plane: `fabrica runs`, the admin API
+// and the dashboard. The MCP server must never call it, and no tool it
+// serves returns history. See manual/run-history.md.
 //
 // The remote server keeps its database on a persistent volume. The local
 // server uses ~/.fabrica/runs.db, which never leaves your machine.
@@ -25,21 +29,24 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite, so fabrica stays a static binary
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
 // see manual/run-history.md.
-const Schema = schemaV1 + schemaV2
+const Schema = schemaV1 + schemaV2 + schemaV3
 
 // migrations[i] takes a database from schema version i to i+1.
-var migrations = []string{schemaV1, schemaV2}
+var migrations = []string{schemaV1, schemaV2, schemaV3}
 
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
@@ -103,6 +110,74 @@ CREATE TABLE memories (
 );
 `
 
+// schemaV3 adds session pointers, loads of rules and routines (not just
+// skills), friction notes and a computed outcome for every run.
+const schemaV3 = `
+ALTER TABLE runs ADD COLUMN session TEXT;  -- where the transcript lives, if known
+
+-- Every skill, rule and routine a run loaded.
+CREATE TABLE loads (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id  TEXT NOT NULL REFERENCES runs(run_id),
+  at      TEXT NOT NULL,                 -- RFC 3339, UTC
+  kind    TEXT NOT NULL CHECK (kind IN ('skill', 'rule', 'routine')),
+  name    TEXT NOT NULL
+);
+CREATE INDEX loads_by_run ON loads(run_id, at);
+
+INSERT INTO loads (run_id, at, kind, name)
+  SELECT run_id, at, 'skill', skill FROM skill_loads ORDER BY id;
+
+DROP VIEW run_overview;                  -- it reads skill_loads, so it goes first
+DROP TABLE skill_loads;
+
+-- Old queries keep working.
+CREATE VIEW skill_loads AS
+  SELECT id, run_id, at, name AS skill FROM loads WHERE kind = 'skill';
+
+-- Short notes from agents about what slowed them down.
+CREATE TABLE friction (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id  TEXT NOT NULL REFERENCES runs(run_id),
+  at      TEXT NOT NULL,                 -- RFC 3339, UTC
+  kind    TEXT NOT NULL CHECK (kind IN ('navigation', 'checks', 'standards', 'tools', 'info', 'other')),
+  note    TEXT NOT NULL                  -- at most 20 words
+);
+CREATE INDEX friction_by_run ON friction(run_id);
+
+-- One row per run with its latest checkpoint and what we think happened to
+-- it, for quick looks. A run whose latest checkpoint is still progress (or
+-- that has none) and that has been quiet for 6 hours is stale.
+CREATE VIEW run_overview AS
+SELECT
+  -- v1 columns, same order as before
+  r.run_id, r.started_at, r.intent, r.routine, r.runtime, r.repo,
+  r.factory, r.blueprint_sha, r.served_by,
+  (SELECT c.status  FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_status,
+  (SELECT c.summary FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1) AS last_summary,
+  (SELECT COUNT(*)  FROM checkpoints c WHERE c.run_id = r.run_id) AS checkpoint_count,
+  (SELECT group_concat(name, ',') FROM (SELECT DISTINCT l.name FROM loads l WHERE l.run_id = r.run_id AND l.kind = 'skill' ORDER BY l.name)) AS skills_loaded,
+  -- new in v3
+  r.session,
+  COALESCE((SELECT MAX(c.at) FROM checkpoints c WHERE c.run_id = r.run_id), r.started_at) AS last_at,
+  CASE (SELECT c.status FROM checkpoints c WHERE c.run_id = r.run_id ORDER BY c.at DESC, c.id DESC LIMIT 1)
+    WHEN 'succeeded' THEN 'succeeded'
+    WHEN 'failed'    THEN 'failed'
+    ELSE CASE
+      WHEN COALESCE((SELECT MAX(c.at) FROM checkpoints c WHERE c.run_id = r.run_id), r.started_at)
+           < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-6 hours')
+      THEN 'stale'
+      ELSE 'in_progress'
+    END
+  END AS outcome,
+  (SELECT COUNT(*) FROM friction f WHERE f.run_id = r.run_id) AS friction_count,
+  (SELECT json_group_array(DISTINCT l.value)
+     FROM checkpoints c, json_each(c.links) l
+     WHERE c.run_id = r.run_id
+       AND (l.value LIKE '%/pull/%' OR l.value LIKE '%/merge_requests/%')) AS pr_links
+FROM runs r;
+`
+
 // DB is a run-history database.
 type DB struct {
 	db *sql.DB
@@ -129,30 +204,49 @@ func Open(path string) (*DB, error) {
 }
 
 func (d *DB) migrate() error {
-	var version int
-	if err := d.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		return err
-	}
-	switch {
-	case version == SchemaVersion:
-		return nil
-	case version > SchemaVersion:
-		return fmt.Errorf("this database uses schema version %d, made by a newer Fabrica; upgrade fabrica to use it", version)
-	}
-	tx, err := d.db.Begin()
+	ctx := context.Background()
+	conn, err := d.db.Conn(ctx) // BEGIN and COMMIT need to be on the same connection
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	// current is the database's schema version, or an error if it's one this
+	// Fabrica can't use.
+	current := func() (version int, err error) {
+		if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+			return 0, err
+		}
+		if version > SchemaVersion {
+			return 0, fmt.Errorf("this database uses schema version %d, made by a newer Fabrica; upgrade fabrica to use it", version)
+		}
+		return version, nil
+	}
+
+	version, err := current()
+	if err != nil || version == SchemaVersion {
+		return err
+	}
+	// Several Fabrica processes can start at once (a few editor sessions
+	// right after an upgrade). Taking the write lock before migrating makes
+	// the first one do it while the others wait, and then find nothing left
+	// to do.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, "ROLLBACK") // fails harmlessly once committed
+	if version, err = current(); err != nil || version == SchemaVersion {
+		return err
+	}
 	for _, step := range migrations[version:] {
-		if _, err := tx.Exec(step); err != nil {
+		if _, err := conn.ExecContext(ctx, step); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	_, err = conn.ExecContext(ctx, "COMMIT")
+	return err
 }
 
 // Close closes the database.
@@ -176,6 +270,9 @@ type Run struct {
 	BlueprintSHA string
 	Stub         string
 	ServedBy     string
+	// Session says where the run's transcript lives, if the agent said: a
+	// file path, a session ID or a session URL.
+	Session string
 }
 
 // Checkpoint statuses.
@@ -191,6 +288,16 @@ const (
 	ByFabrica = "fabrica"
 )
 
+// frictionKinds are the kinds of friction an agent can report.
+var frictionKinds = []string{"navigation", "checks", "standards", "tools", "info", "other"}
+
+// Friction is a short note from an agent about something that slowed it
+// down.
+type Friction struct {
+	Kind string // navigation, checks, standards, tools, info or other
+	Note string // at most 20 words
+}
+
 // Checkpoint is one progress report on a run.
 type Checkpoint struct {
 	At      time.Time
@@ -198,34 +305,56 @@ type Checkpoint struct {
 	Status  string
 	Summary string
 	Links   []string
+	// Friction is written in the same transaction as the checkpoint.
+	Friction []Friction
 }
 
 // Begin records the start of a run.
 func (d *DB) Begin(ctx context.Context, r Run) error {
 	_, err := d.db.ExecContext(ctx,
-		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO runs (run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by, session)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, stamp(r.StartedAt), r.Intent, null(r.Routine), null(r.Runtime), null(r.Repo),
-		null(r.Factory), null(r.BlueprintSHA), null(r.Stub), r.ServedBy)
+		null(r.Factory), null(r.BlueprintSHA), null(r.Stub), r.ServedBy, null(r.Session))
 	return err
 }
 
-// AddCheckpoint records a checkpoint.
+// AddCheckpoint records a checkpoint and its friction notes, all or none.
 func (d *DB) AddCheckpoint(ctx context.Context, runID string, c Checkpoint) error {
 	links := c.Links
 	if links == nil {
 		links = []string{}
 	}
 	data, _ := json.Marshal(links)
-	_, err := d.db.ExecContext(ctx,
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	at := stamp(c.At)
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO checkpoints (run_id, at, author, status, summary, links) VALUES (?, ?, ?, ?, ?, ?)`,
-		runID, stamp(c.At), c.Author, c.Status, c.Summary, string(data))
-	return err
+		runID, at, c.Author, c.Status, c.Summary, string(data)); err != nil {
+		return err
+	}
+	for _, f := range c.Friction {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO friction (run_id, at, kind, note) VALUES (?, ?, ?, ?)`, runID, at, f.Kind, f.Note); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-// SkillLoaded records that a run loaded a skill.
-func (d *DB) SkillLoaded(ctx context.Context, runID, skill string, at time.Time) error {
-	_, err := d.db.ExecContext(ctx, `INSERT INTO skill_loads (run_id, at, skill) VALUES (?, ?, ?)`, runID, stamp(at), skill)
+// Load kinds.
+const (
+	LoadSkill   = "skill"
+	LoadRule    = "rule"
+	LoadRoutine = "routine"
+)
+
+// Loaded records that a run loaded a skill, rule or routine.
+func (d *DB) Loaded(ctx context.Context, runID, kind, name string, at time.Time) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO loads (run_id, at, kind, name) VALUES (?, ?, ?, ?)`, runID, stamp(at), kind, name)
 	return err
 }
 
@@ -236,10 +365,10 @@ var ErrNoRun = errors.New("no such run")
 func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 	var r Run
 	var started string
-	var routine, runtime, repo, factory, sha, stub sql.NullString
+	var routine, runtime, repo, factory, sha, stub, session sql.NullString
 	err := d.db.QueryRowContext(ctx,
-		`SELECT run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by FROM runs WHERE run_id = ?`, runID).
-		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy)
+		`SELECT run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by, session FROM runs WHERE run_id = ?`, runID).
+		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy, &session)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoRun
 	}
@@ -247,7 +376,7 @@ func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
 		return nil, err
 	}
 	r.StartedAt, _ = time.Parse(time.RFC3339Nano, started)
-	r.Routine, r.Runtime, r.Repo, r.Factory, r.BlueprintSHA, r.Stub = routine.String, runtime.String, repo.String, factory.String, sha.String, stub.String
+	r.Routine, r.Runtime, r.Repo, r.Factory, r.BlueprintSHA, r.Stub, r.Session = routine.String, runtime.String, repo.String, factory.String, sha.String, stub.String, session.String
 	return &r, nil
 }
 
@@ -388,6 +517,50 @@ func CheckLinks(links []string) error {
 	}
 	return nil
 }
+
+// MaxSessionBytes is the longest session pointer Fabrica accepts.
+const MaxSessionBytes = 512
+
+// CheckSession checks a session pointer: at most 512 bytes on one line,
+// with no control characters. Empty is fine, because the agent may not know.
+func CheckSession(s string) error {
+	if len(s) > MaxSessionBytes {
+		return fmt.Errorf("session is %d bytes, but the limit is %d; send just a transcript file path, a session ID or a session URL", len(s), MaxSessionBytes)
+	}
+	if strings.ContainsFunc(s, unicode.IsControl) {
+		return errors.New("session must be on one line, without control characters; send just a transcript file path, a session ID or a session URL")
+	}
+	return nil
+}
+
+// MaxFriction is the most friction notes one checkpoint can carry.
+const MaxFriction = 5
+
+// CheckFriction checks friction notes: a few per report, each with a known
+// kind and a note of at most 20 words.
+func CheckFriction(notes []Friction) error {
+	if len(notes) > MaxFriction {
+		return fmt.Errorf("a report can carry at most %d friction notes, but this one has %d; keep the ones that matter most", MaxFriction, len(notes))
+	}
+	for i, f := range notes {
+		if !slices.Contains(frictionKinds, f.Kind) {
+			return fmt.Errorf("friction kind %q isn't one of navigation, checks, standards, tools, info or other", f.Kind)
+		}
+		if err := CheckWords(fmt.Sprintf("friction note %d", i+1), f.Note); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// idRe is what a run ID looks like: run_ and then lowercase letters and
+// digits, which is all NewID uses. (Tests make IDs of hex digits.)
+var idRe = regexp.MustCompile(`^run_[0-9a-z]+$`)
+
+// ValidID reports whether id looks like a run ID. Anything that reads run
+// IDs from a place it doesn't trust, like a server, checks them first when it
+// makes a file name or a path of one.
+func ValidID(id string) bool { return idRe.MatchString(id) }
 
 // NewID makes a new run ID. IDs sort by creation time, which keeps
 // `ORDER BY run_id` meaningful.

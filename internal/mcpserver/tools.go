@@ -37,13 +37,20 @@ type runBeginArgs struct {
 	Runtime string `json:"runtime,omitempty" jsonschema:"for a routine run, the runtime from your stub"`
 	Repo    string `json:"repo,omitempty" jsonschema:"for a routine run, the repo from your stub, like github.com/acme/app"`
 	Stub    string `json:"stub,omitempty" jsonschema:"for a routine run, the stub fingerprint from your stub"`
+	Session string `json:"session,omitempty" jsonschema:"where this session's transcript lives, if you know it: a transcript file path, a session ID or a session URL"`
 }
 
 type runReportArgs struct {
-	RunID   string   `json:"run_id" jsonschema:"the run_id from run_begin"`
-	Summary string   `json:"summary" jsonschema:"what happened, in at most 20 words of casual plain English"`
-	Status  string   `json:"status,omitempty" jsonschema:"progress (the default), succeeded or failed"`
-	Links   []string `json:"links,omitempty" jsonschema:"URLs of PRs, issues or commits this checkpoint is about"`
+	RunID    string        `json:"run_id" jsonschema:"the run_id from run_begin"`
+	Summary  string        `json:"summary" jsonschema:"what happened, in at most 20 words of casual plain English"`
+	Status   string        `json:"status,omitempty" jsonschema:"progress (the default), succeeded or failed"`
+	Links    []string      `json:"links,omitempty" jsonschema:"URLs of PRs, issues or commits this checkpoint is about"`
+	Friction []frictionArg `json:"friction,omitempty" jsonschema:"anything that slowed you down since your last report, at most 5: kind is navigation (hard to find code or docs), checks (a lint, type check or test that was missing or broken), standards (a rule that was unclear, wrong or missing), tools (a slow, failing or wasteful tool), info (information you needed but couldn't get) or other; note is at most 20 words"`
+}
+
+type frictionArg struct {
+	Kind string `json:"kind"`
+	Note string `json:"note"`
 }
 
 type memorySaveArgs struct {
@@ -152,7 +159,7 @@ func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in na
 			return nil, nil, fmt.Errorf("couldn't unpack skill %s: %v", in.Name, err)
 		}
 	}
-	s.recordSkillLoad(ctx, in.Name)
+	s.recordLoad(ctx, runs.LoadSkill, in.Name)
 	return textResult(skillText(sk, folder)), nil, nil
 }
 
@@ -200,6 +207,12 @@ func (s *session) rulesGet(ctx context.Context, req *mcp.CallToolRequest, _ noAr
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
+	// Every always-on rule counts as loaded, because rulesText hands them all over.
+	s.recordLoad(ctx, runs.LoadRule, productOnlyRuleName)
+	always, _ := splitRules(snap.Blueprint)
+	for _, r := range always {
+		s.recordLoad(ctx, runs.LoadRule, r.Ref.Name)
+	}
 	return textResult(rulesText(snap.Blueprint)), nil, nil
 }
 
@@ -212,6 +225,7 @@ func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nam
 	if r == nil {
 		return nil, nil, fmt.Errorf("there's no rule called %q; rules_get lists them", in.Name)
 	}
+	s.recordLoad(ctx, runs.LoadRule, in.Name)
 	return textResult(ruleText(r)), nil, nil
 }
 
@@ -248,6 +262,7 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 		}
 		mem = &m
 	}
+	s.recordLoad(ctx, runs.LoadRoutine, in.Name)
 	return textResult(routineText(snap, r, run, repo, runtime, mem)), nil, nil
 }
 
@@ -307,11 +322,15 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 	if err := runs.CheckWords("intent", in.Intent); err != nil {
 		return nil, runBeginOut{}, err // not recorded: the agent should just try again
 	}
+	session := strings.TrimSpace(in.Session)
+	if err := runs.CheckSession(session); err != nil {
+		return nil, runBeginOut{}, err // same here
+	}
 	now := s.core.now()
 	run := runs.Run{
 		ID: runs.NewID(now), StartedAt: now, Intent: strings.Join(strings.Fields(in.Intent), " "),
 		Routine: in.Routine, Stub: in.Stub, ServedBy: snap.Mode,
-		Factory: snap.factoryName(), BlueprintSHA: snap.BlueprintSHA(),
+		Factory: snap.factoryName(), BlueprintSHA: snap.BlueprintSHA(), Session: session,
 	}
 	refuse := func(err error) (*mcp.CallToolResult, runBeginOut, error) {
 		return nil, runBeginOut{}, s.recordRefusal(ctx, run, err)
@@ -479,30 +498,38 @@ func (s *session) runReport(ctx context.Context, req *mcp.CallToolRequest, in ru
 	if err := runs.CheckLinks(in.Links); err != nil {
 		return nil, runReportOut{}, err
 	}
-	run, err := s.core.Runs.Get(ctx, in.RunID)
-	if errors.Is(err, runs.ErrNoRun) {
-		return nil, runReportOut{}, fmt.Errorf("there's no run %q; use the run_id run_begin gave you", in.RunID)
+	var friction []runs.Friction
+	for _, f := range in.Friction {
+		friction = append(friction, runs.Friction{Kind: f.Kind, Note: strings.Join(strings.Fields(f.Note), " ")})
 	}
-	if err != nil {
+	if err := runs.CheckFriction(friction); err != nil {
 		return nil, runReportOut{}, err
 	}
-	if snap.remote() && run.Factory != snap.factoryName() {
-		return nil, runReportOut{}, fmt.Errorf("run %s doesn't belong to this factory", in.RunID)
+	// A run can be reported on from any session of its factory (and, locally,
+	// its repo), because connections drop and come back. Whatever is wrong,
+	// the answer is the same, so it can't be used to probe for run IDs.
+	run, err := s.core.Runs.Get(ctx, in.RunID)
+	if err != nil && !errors.Is(err, runs.ErrNoRun) {
+		return nil, runReportOut{}, err
+	}
+	if err != nil || run.Factory != snap.factoryName() || (!snap.remote() && run.Repo != snap.Repo) {
+		return nil, runReportOut{}, fmt.Errorf("run %s wasn't begun for this factory and repo; use the run_id run_begin gave you", in.RunID)
 	}
 	if err := s.core.Runs.AddCheckpoint(ctx, run.ID, runs.Checkpoint{
 		At: s.core.now(), Author: runs.ByAgent, Status: status,
-		Summary: strings.Join(strings.Fields(in.Summary), " "), Links: in.Links,
+		Summary: strings.Join(strings.Fields(in.Summary), " "), Links: in.Links, Friction: friction,
 	}); err != nil {
 		return nil, runReportOut{}, fmt.Errorf("couldn't record the checkpoint: %v", err)
 	}
 	return nil, runReportOut{Recorded: true, RunID: run.ID, Status: status}, nil
 }
 
-func (s *session) recordSkillLoad(ctx context.Context, skill string) {
+// recordLoad links a load to the session's run, if run_begin has been called.
+func (s *session) recordLoad(ctx context.Context, kind, name string) {
 	s.mu.Lock()
 	run := s.run
 	s.mu.Unlock()
 	if run != nil {
-		_ = s.core.Runs.SkillLoaded(ctx, run.ID, skill, s.core.now())
+		_ = s.core.Runs.Loaded(ctx, run.ID, kind, name, s.core.now())
 	}
 }

@@ -1,0 +1,6 @@
+STARTED       OUTCOME      ROUTINE    REPO      INTENT           RUN
+Jan 1 09:00   in_progress  —          acme/web  Draft the rele…  run_03pfb96c
+Oct 17 09:41  succeeded    pr-review  acme/app  Review PR 413 …  run_01m54cx6ng1
+Oct 17 09:41  succeeded    pr-review  acme/app  Review PR 412 …  run_01m54cx6ng0
+
+3 runs from factory acme. Show one with: fabrica runs show <run>

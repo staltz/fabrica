@@ -479,6 +479,193 @@ func TestUpgradeShowsDiffIncludingOverrides(t *testing.T) {
 	}
 }
 
+// newRefactorRepo makes a blueprint with two routines whose params an
+// importer might want to tune.
+func newRefactorRepo(host *testkit.Host) *testkit.Repo {
+	repo := host.Repo("github.com/acme/refactor")
+	repo.Write(map[string]string{
+		"fabrica.yaml":      "",
+		"routines/split.md": "---\ntrigger: { on: github.push }\nparams:\n  split_proceed_threshold: { default: 11 }\n  owner: { required: true }\n---\nSplit files over {{params.split_proceed_threshold}} and tell {{params.owner}}.\n",
+		"routines/cruft.md": "---\ntrigger: { on: github.push }\nparams:\n  cruft_proceed_threshold: { default: 5 }\n---\nClean up over {{params.cruft_proceed_threshold}}.\n",
+	}).Commit("v1")
+	return repo
+}
+
+func paramOf(t *testing.T, f *blueprint.Blueprint, routine, name string) blueprint.Param {
+	t.Helper()
+	r := f.Routines[routine]
+	if r == nil {
+		t.Fatalf("there's no routines/%s", routine)
+	}
+	p, ok := r.Param(name)
+	if !ok {
+		t.Fatalf("routines/%s has no param %s", routine, name)
+	}
+	return p
+}
+
+func TestImportParamsBecomeDefaults(t *testing.T) {
+	newRefactorRepo(testkit.NewHost(t))
+	l := newLoader(t)
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  refactor:\n    git: github.com/acme/refactor\n    ref: main\n    params:\n      split_proceed_threshold: 20\n      owner: \"@platform\"\n",
+	})
+	f, diags := lockAndLoad(t, l, dir)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if p := paramOf(t, f, "split", "split_proceed_threshold"); p.Default != "20" || !p.HasDefault {
+		t.Errorf("the import's value should be the new default, got %+v", p)
+	}
+	// A required param the import sets has a default now, so factories
+	// don't have to set it.
+	if p := paramOf(t, f, "split", "owner"); p.Required || p.Default != "@platform" {
+		t.Errorf("owner should be optional with the import's default, got %+v", p)
+	}
+	if p := paramOf(t, f, "cruft", "cruft_proceed_threshold"); p.Default != "5" {
+		t.Errorf("a param the import doesn't set keeps upstream's default, got %+v", p)
+	}
+	if len(f.Overrides) != 0 {
+		t.Errorf("setting a param isn't an override, got %+v", f.Overrides)
+	}
+
+	// The loader shares the imported blueprint with everyone who imports it,
+	// so another importer still sees upstream's defaults.
+	other := writeBlueprint(t, map[string]string{"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main }\n"})
+	g, diags := lockAndLoad(t, l, other)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if p := paramOf(t, g, "split", "split_proceed_threshold"); p.Default != "11" {
+		t.Errorf("another importer should see upstream's default, got %+v", p)
+	}
+	if p := paramOf(t, g, "split", "owner"); !p.Required || p.HasDefault {
+		t.Errorf("another importer should see owner as required, got %+v", p)
+	}
+}
+
+func TestImportParamErrors(t *testing.T) {
+	newRefactorRepo(testkit.NewHost(t))
+	cases := []struct {
+		name, imp, code, contains string
+	}{
+		{"typo", "params: { split_threshold: 20 }", "import.unknown-param",
+			`import "refactor" sets param "split_threshold", but none of the routines it brings declares it
+  hint: check the spelling; the routines this import brings declare cruft_proceed_threshold, owner, split_proceed_threshold`},
+		{"excluded routine", "exclude: [routines/split], params: { split_proceed_threshold: 20 }", "import.unknown-param",
+			"routines/split declares it, but exclude: leaves it out; if you replaced it with your own, set the default in your routines/split.md"},
+		{"routine outside only", "only: [routines/cruft], params: { split_proceed_threshold: 20 }", "import.unknown-param",
+			"routines/split declares it, but it isn't in the import's only: list"},
+		{"a list", "params: { split_proceed_threshold: [20, 30] }", "manifest.invalid",
+			"imports.refactor.params.split_proceed_threshold must be a single value"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := writeBlueprint(t, map[string]string{
+				"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main, " + c.imp + " }\n",
+			})
+			_, diags := lockAndLoad(t, newLoader(t), dir)
+			expectError(t, diags, c.code, c.contains)
+		})
+	}
+}
+
+func TestNestedImportParamsStack(t *testing.T) {
+	host := testkit.NewHost(t)
+	newRefactorRepo(host)
+	middle := host.Repo("github.com/acme/middle")
+	writeMiddle := func(params string) {
+		middle.Write(map[string]string{
+			"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main, params: " + params + " }\n",
+		})
+		lock, _, _, diags := newLoader(t).Lock(context.Background(), middle.Dir)
+		if diags.HasErrors() {
+			t.Fatal(diags)
+		}
+		if err := blueprint.WriteLock(middle.Dir, lock); err != nil {
+			t.Fatal(err)
+		}
+		middle.Commit("set params")
+	}
+	writeMiddle("{ split_proceed_threshold: 15, cruft_proceed_threshold: 4 }")
+
+	top := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  middle: { git: github.com/acme/middle, ref: main, params: { split_proceed_threshold: 20 } }\n",
+	})
+	l := newLoader(t)
+	f, diags := lockAndLoad(t, l, top)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if p := paramOf(t, f, "split", "split_proceed_threshold"); p.Default != "20" {
+		t.Errorf("the outermost import should win, got %+v", p)
+	}
+	if p := paramOf(t, f, "cruft", "cruft_proceed_threshold"); p.Default != "4" {
+		t.Errorf("middle's value should come through, got %+v", p)
+	}
+	if o := f.Routines["split"].Origin.String(); o != "import middle › refactor" {
+		t.Errorf("split's origin = %s", o)
+	}
+
+	// When middle changes a default, the routine it offers changed, so
+	// upgrading shows it; the routine whose params middle left alone didn't.
+	writeMiddle("{ split_proceed_threshold: 16, cruft_proceed_threshold: 4 }")
+	_, changes, _, diags := l.Upgrade(context.Background(), top, nil)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if len(changes) != 1 || !refsEqual(changes[0].Diff.Changed, "routines/split") {
+		t.Errorf("changes = %+v", changes)
+	}
+}
+
+func TestImportParamsDontNeedANewLock(t *testing.T) {
+	newRefactorRepo(testkit.NewHost(t))
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main, params: { split_proceed_threshold: 20 } }\n",
+	})
+	l := newLoader(t)
+	if _, diags := lockAndLoad(t, l, dir); diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	testkit.WriteFiles(t, dir, map[string]string{
+		"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main, params: { split_proceed_threshold: 30, cruft_proceed_threshold: 2 } }\n",
+	})
+	f := mustLoad(t, l, dir)
+	if p := paramOf(t, f, "split", "split_proceed_threshold"); p.Default != "30" {
+		t.Errorf("the new value should apply without a new lock, got %+v", p)
+	}
+}
+
+func TestUpgradeIgnoresImportParams(t *testing.T) {
+	repo := newRefactorRepo(testkit.NewHost(t))
+	dir := writeBlueprint(t, map[string]string{
+		"fabrica.yaml": "imports:\n  refactor: { git: github.com/acme/refactor, ref: main, params: { split_proceed_threshold: 20 } }\n",
+	})
+	l := newLoader(t)
+	if _, diags := lockAndLoad(t, l, dir); diags.HasErrors() {
+		t.Fatal(diags)
+	}
+
+	// Upstream changes something else; routines/split is as it was.
+	repo.Write(map[string]string{"routines/cruft.md": "---\ntrigger: { on: github.push }\n---\nClean up.\n"}).Commit("v2")
+	ctx := context.Background()
+	_, changes, _, diags := l.Upgrade(ctx, dir, nil)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("changes = %+v", changes)
+	}
+	if d := changes[0].Diff; !refsEqual(d.Changed, "routines/cruft") || len(d.Overridden) != 0 {
+		t.Errorf("only routines/cruft changed upstream, got %+v", d)
+	}
+	f := mustLoad(t, l, dir)
+	if drift, err := l.OverrideDrift(ctx, f); err != nil || len(drift) != 0 {
+		t.Errorf("a routine with a param set isn't an override, got %+v, %v", drift, err)
+	}
+}
+
 func TestLintMentions(t *testing.T) {
 	newImportWorld(t)
 	dir := writeBlueprint(t, map[string]string{

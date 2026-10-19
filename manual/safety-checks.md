@@ -11,6 +11,7 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | Two imports bring the same item | ❌ error | — | — | `import.collision` |
 | An item defined here is also brought by an import (without `exclude:`) | ❌ error, with a hint on how to override | — | — | `import.collision` |
 | `only:` or `exclude:` names an item the import doesn't have | ❌ error | — | — | `import.unknown-item` |
+| An import's `params:` sets a param that none of the routines it brings declares | ❌ error | — | — | `import.unknown-param` |
 | A routine's `skills:` entry doesn't exist | ❌ error | — | — | `routine.missing-skill` |
 | An item is taken with `only:` but what it needs isn't | ❌ error, says what to add | — | — | `routine.missing-skill`, `routine.missing-connector` |
 | `fabrica.lock` is missing or out of date | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `lock.missing`, `lock.stale` |

@@ -37,6 +37,8 @@ imports:
     git: github.com/acme/base-blueprint
     ref: v1.2
     exclude: [skills/pr-review]          # we ship our own pr-review
+    params:
+      slack_channel: "#eng"              # a new default for base's routines
   community:
     git: github.com/someone/skills       # a plain skills repo, not a blueprint
     ref: 3f2a1c9
@@ -63,6 +65,7 @@ Blueprints can import other blueprints, in whole or in part. They can also impor
 | `path` | no | A folder inside the repo. For a blueprint, the folder holding its `fabrica.yaml`. For a plain repo, the folder holding its skills (default `skills`). |
 | `only` | no | Take only these items. |
 | `exclude` | no | Take everything except these items. |
+| `params` | no | New defaults for the params of the routines it brings. See [Setting params on imports](#setting-params-on-imports). |
 
 `git` can be:
 
@@ -105,6 +108,34 @@ A broken item inside an import only matters if you use it. If an imported skill 
 
 To replace an imported item, `exclude:` it and define your own item with the **same name**. Everything that refers to it by name, imported items included, now uses yours. `fabrica upgrade` and `fabrica plan` still tell you when upstream changes something you've overridden, so you can decide whether your version needs the same change.
 
+### Setting params on imports
+
+If you like an imported routine and only want a different number, don't override it: set its params on the import.
+
+```yaml
+imports:
+  refactor:
+    git: github.com/staltz/fabrica-blueprint-refactor
+    ref: master
+    params:
+      split_proceed_threshold: 20
+      cruft_proceed_threshold: 3
+```
+
+These become the new defaults of those params, in every routine the import brings, including the ones it imports itself. Factories can still set them like any other default. From weakest to strongest, a param's value comes from:
+
+1. the routine's own `default:`
+2. the importing blueprint's `imports.<alias>.params` (when imports are nested, the outermost blueprint's wins)
+3. the factory's `params:`
+4. the target's own `params:`
+
+A few rules:
+
+- Each value is a single value (text, a number or a boolean), like a factory's params.
+- Every param has to be declared by a routine the import brings, after `only:` and `exclude:`, so a typo is an error. So is a param of a routine you excluded: if you replaced `routines/split` with your own, set the default in your own file.
+- A required param you set gets a default, so factories using your blueprint don't have to set it anymore.
+- The routine isn't an override, and `fabrica upgrade` compares upstream's own file, so the defaults you set never show up as a change.
+
 ### No renaming
 
 Skills and routines refer to each other by name *in prose* ("run the `test` skill"), and Fabrica can't safely rewrite prose. So you can't rename items on import: it would silently break those references.
@@ -136,7 +167,7 @@ imports:
 A few rules:
 
 - Locking never moves a pin that's already there. Only `fabrica upgrade` does, and it shows you a diff first.
-- If you change an import's `git`, `ref` or `path`, its old pin no longer counts, and `fabrica check` says to run `fabrica lock`. Changing only `only:` or `exclude:` doesn't need a new pin.
+- If you change an import's `git`, `ref` or `path`, its old pin no longer counts, and `fabrica check` says to run `fabrica lock`. Changing only `only:`, `exclude:` or `params:` doesn't need a new pin.
 - An imported blueprint's own imports come from **its** `fabrica.lock`, at the commit you pinned. So your lock alone pins the whole tree.
 - `lock` only writes the file when the blueprint has no errors with the new pins.
 
@@ -299,7 +330,7 @@ side_effects:
 
 ### Params
 
-Factories set params, and individual repos can override them (see [Home repos](home-repos.md#params)). Use `{{params.name}}` in the prompt and in side effect settings. Every placeholder must be declared under `params:`, and a factory setting a param that no routine declares is an error, which catches typos on both sides.
+Factories set params, and individual repos can override them (see [Home repos](home-repos.md#params)). Use `{{params.name}}` in the prompt and in side effect settings. Every placeholder must be declared under `params:`, and a factory setting a param that no routine declares is an error, which catches typos on both sides. A blueprint that imports your routine can change its defaults too (see [Setting params on imports](#setting-params-on-imports)).
 
 ### Memory
 

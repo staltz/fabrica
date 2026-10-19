@@ -100,6 +100,8 @@ targets: [github.com/acme/app]
 
 Params are set once at the top, and individual targets can override them. Every param must be declared by one of the factory's routines, and every required param must have a value for every target. Both are errors otherwise, which catches typos.
 
+A param you don't set takes the routine's default, which may come from the blueprint that imports the routine rather than from the routine itself (see [Setting params on imports](blueprints.md#setting-params-on-imports)).
+
 If two runtimes need different settings, write two factory files.
 
 ### Init

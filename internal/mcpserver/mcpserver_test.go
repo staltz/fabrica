@@ -551,6 +551,60 @@ func TestRemoteInitRun(t *testing.T) {
 	rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review")).fails("run_begin", args, "factory pr-review says init: false")
 }
 
+func TestRemoteRoutineParamsFromImports(t *testing.T) {
+	rw := newRemoteWorld(t)
+	ctx := context.Background()
+
+	// The blueprint imports someone else's routine and sets two of its
+	// params; the factory sets one of them again, and a target sets it once
+	// more.
+	rw.w.Host.Repo("github.com/acme/refactor").Write(map[string]string{
+		"fabrica.yaml":      "",
+		"routines/split.md": "---\ntrigger: { on: github.pull_request.opened }\nparams:\n  split_proceed_threshold: { default: 11 }\n  cruft_proceed_threshold: { default: 5 }\n---\nSplit files scoring over {{params.split_proceed_threshold}}, and clean up over {{params.cruft_proceed_threshold}}.\n",
+	}).Commit("init")
+	rw.w.Blueprint.Write(map[string]string{
+		"fabrica.yaml": "expects: [test?]\nimports:\n  refactor:\n    git: github.com/acme/refactor\n    ref: main\n    params: { split_proceed_threshold: 20, cruft_proceed_threshold: 3 }\n",
+	})
+	lock, _, _, diags := rw.loader.Lock(ctx, rw.w.Blueprint.Dir)
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if err := blueprint.WriteLock(rw.w.Blueprint.Dir, lock); err != nil {
+		t.Fatal(err)
+	}
+	rw.w.UpdateBlueprint(nil)
+	rw.w.Home.Write(map[string]string{"factories/refactor.yaml": `blueprint: { git: github.com/acme/blueprint, ref: stable }
+server: https://fabrica.acme.dev
+runtimes: [claude-code-cloud]
+routines: [split]
+targets:
+  - github.com/acme/app
+  - repo: github.com/acme/api
+    params: { cruft_proceed_threshold: 1 }
+params:
+  cruft_proceed_threshold: 2
+`}).CommitPush("add refactor")
+	if err := rw.srv.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, _ := rw.cache.Remote("https://github.com/acme/blueprint.git", gitx.Full).Resolve(ctx, "stable")
+	f, _ := rw.loader.LoadGit(ctx, "github.com/acme/blueprint", resolved.Commit, "")
+	p, _ := provider.Builtin("claude-code-cloud")
+	fp := stub.Evaluate(f, f.Routines["split"], stub.Target{Runtime: p, Endpoint: "https://fabrica.acme.dev/refactor"}).Stubs[0].Shape.Fingerprint()
+
+	for repo, want := range map[string]string{
+		"github.com/acme/app": "Split files scoring over 20, and clean up over 2.", // the import's value beats the routine's, the factory's beats the import's
+		"github.com/acme/api": "Split files scoring over 20, and clean up over 1.", // the target's beats the factory's
+	} {
+		c := rw.connect(t, "/refactor/t/"+token.For(testkit.Secret, "refactor"))
+		c.runID(c.ok("run_begin", map[string]any{"intent": "split big files", "routine": "split", "runtime": "claude-code-cloud", "repo": repo, "stub": fp}))
+		if routine := c.ok("routine_get", map[string]any{"name": "split"}); !strings.Contains(routine, want) {
+			t.Errorf("for %s, routine_get should say %q:\n%s", repo, want, routine)
+		}
+	}
+}
+
 // rawQuery runs a query on the run-history file, as any SQLite tool would,
 // and returns each row with its columns joined by colons.
 func rawQuery(t *testing.T, dbPath, query string, args ...any) []string {

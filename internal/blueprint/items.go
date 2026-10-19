@@ -187,6 +187,30 @@ type Routine struct {
 
 func (r *Routine) withOrigin(o Origin) item { c := *r; c.Origin = o; return &c }
 
+// withDefaults returns a copy of the routine where the params named in
+// values default to them, which also makes them optional. That's how an
+// import's params: reach the routines it brings. The copy's hash covers the
+// new defaults, so a blueprint importing this one sees when they change. A
+// routine that declares none of them comes back as it is.
+func (r *Routine) withDefaults(values map[string]string) *Routine {
+	params := make([]Param, len(r.Params))
+	var set []string
+	for i, p := range r.Params {
+		if v, ok := values[p.Name]; ok {
+			p.Default, p.HasDefault, p.Required = v, true, false
+			set = append(set, fmt.Sprintf("%s=%q", p.Name, v))
+		}
+		params[i] = p
+	}
+	if len(set) == 0 {
+		return r
+	}
+	c := *r
+	c.Params = params
+	c.Hash = hashBytes([]byte(r.Hash + "\n" + strings.Join(set, "\n")))
+	return &c
+}
+
 // InitTrigger is the trigger of an init routine. Fabrica fires it itself,
 // once per life of a factory: it starts a session for the routine when
 // `fabrica apply` creates the factory.

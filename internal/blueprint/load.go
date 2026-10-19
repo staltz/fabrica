@@ -268,8 +268,15 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 		keep := map[names.Ref]item{}
 		for ref, it := range sub.items {
 			if spec.keeps(ref) {
-				keep[ref] = it.withOrigin(it.info().Origin.Prepend(spec.Alias))
+				it = it.withOrigin(it.info().Origin.Prepend(spec.Alias))
+				if r, ok := it.(*Routine); ok {
+					it = r.withDefaults(spec.Params)
+				}
+				keep[ref] = it
 			}
+		}
+		if len(sub.diags.Only(diag.Error)) == 0 {
+			t.diags = append(t.diags, checkImportParams(spec, sub.items)...)
 		}
 		filtered[spec.Alias] = keep
 	}
@@ -307,6 +314,51 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 	}
 	sort.Slice(t.overrides, func(i, j int) bool { return t.overrides[i].Ref.String() < t.overrides[j].Ref.String() })
 	return t
+}
+
+// checkImportParams makes sure every param an import sets is declared by a
+// routine it brings, after only: and exclude:. A typo, or a param of a
+// routine you left out, would otherwise do nothing at all.
+func checkImportParams(spec ImportSpec, offered map[names.Ref]item) diag.List {
+	var diags diag.List
+	declared := map[string]bool{}
+	leftOut := map[string]names.Ref{} // param → a routine the filter leaves out that declares it
+	for _, ref := range sortedRefs(offered) {
+		r, ok := offered[ref].(*Routine)
+		if !ok {
+			continue
+		}
+		kept := spec.keeps(ref)
+		if kept && len(r.Problems) > 0 {
+			return nil // its params may be half-read, and its problems are errors anyway
+		}
+		for _, p := range r.Params {
+			if kept {
+				declared[p.Name] = true
+			} else if _, seen := leftOut[p.Name]; !seen {
+				leftOut[p.Name] = ref
+			}
+		}
+	}
+	for _, name := range sortedKeys(spec.Params) {
+		if declared[name] {
+			continue
+		}
+		var hint string
+		switch ref, ok := leftOut[name]; {
+		case ok && spec.Excludes(ref):
+			hint = fmt.Sprintf("%s declares it, but exclude: leaves it out; if you replaced it with your own, set the default in your %s", ref, fileFor(ref))
+		case ok:
+			hint = fmt.Sprintf("%s declares it, but it isn't in the import's only: list", ref)
+		case len(declared) == 0:
+			hint = "the routines this import brings declare no params; remove it"
+		default:
+			hint = "check the spelling; the routines this import brings declare " + listSome(sortedKeys(declared))
+		}
+		diags.Errorf("import.unknown-param", ManifestFile, "import %q sets param %q, but none of the routines it brings declares it", spec.Alias, name).
+			Hintf("%s", hint)
+	}
+	return diags
 }
 
 // loadImport reads one import at a pinned commit: a blueprint if its folder
@@ -548,13 +600,18 @@ func summarizeRefs(m map[names.Ref]item, kind names.Kind) string {
 			out = append(out, ref.String())
 		}
 	}
-	switch {
-	case len(out) == 0:
+	if len(out) == 0 {
 		return "no " + string(kind)
-	case len(out) > 8:
-		return strings.Join(out[:8], ", ") + fmt.Sprintf(" and %d more", len(out)-8)
 	}
-	return strings.Join(out, ", ")
+	return listSome(out)
+}
+
+// listSome joins up to 8 names, and says how many more there are.
+func listSome(list []string) string {
+	if len(list) > 8 {
+		return strings.Join(list[:8], ", ") + fmt.Sprintf(" and %d more", len(list)-8)
+	}
+	return strings.Join(list, ", ")
 }
 
 func quoteAll(list []string) []string {

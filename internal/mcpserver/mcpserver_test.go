@@ -372,7 +372,9 @@ func TestRemoteAuth(t *testing.T) {
 // TestRemoteOffersToolsAsJSON is the cloud-client handshake: initialize with
 // Accept: */* (what Claude's broker sends), then tools/list on the session.
 // A text/event-stream initialize is how those clients end up with Fabrica's
-// instructions and no tools.
+// instructions and no tools. The listed tools must also be bare name /
+// description / inputSchema: outputSchema and annotations make Claude Code
+// drop the whole list.
 func TestRemoteOffersToolsAsJSON(t *testing.T) {
 	rw := newRemoteWorld(t)
 	endpoint := rw.ts.URL + "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
@@ -460,9 +462,7 @@ func TestRemoteOffersToolsAsJSON(t *testing.T) {
 			Message string `json:"message"`
 		} `json:"error"`
 		Result struct {
-			Tools []struct {
-				Name string `json:"name"`
-			} `json:"tools"`
+			Tools []map[string]any `json:"tools"`
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(listRes.Body).Decode(&listed); err != nil {
@@ -473,7 +473,19 @@ func TestRemoteOffersToolsAsJSON(t *testing.T) {
 	}
 	var names []string
 	for _, tool := range listed.Result.Tools {
-		names = append(names, tool.Name)
+		name, _ := tool["name"].(string)
+		names = append(names, name)
+		// Claude Code drops every tool from a server whose listing includes
+		// these 2025-11-25 fields (anthropics/claude-code#25081).
+		for _, extra := range []string{"outputSchema", "annotations", "title", "execution"} {
+			if _, ok := tool[extra]; ok {
+				t.Errorf("tool %s has %s; Claude cloud will drop the whole list", name, extra)
+			}
+		}
+		schema, _ := tool["inputSchema"].(map[string]any)
+		if _, ok := schema["$schema"]; ok {
+			t.Errorf("tool %s inputSchema has $schema; Claude cloud will drop the whole list", name)
+		}
 	}
 	slices.Sort(names)
 	want := []string{"memory_save", "routine_get", "rule_load", "rules_get", "run_begin", "run_report", "skill_file", "skill_load", "skills_list"}

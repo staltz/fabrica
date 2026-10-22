@@ -18,6 +18,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -143,61 +144,47 @@ func (s *session) snapshot(ctx context.Context, ss *mcp.ServerSession) *Snapshot
 	return s.snap
 }
 
-func readOnly() *mcp.ToolAnnotations {
-	f := false
-	return &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &f}
-}
-
-func writes() *mcp.ToolAnnotations {
-	f := false
-	return &mcp.ToolAnnotations{DestructiveHint: &f, OpenWorldHint: &f}
-}
-
 func (s *session) register(srv *mcp.Server) {
+	// Tools are listed as name, description, and inputSchema only.
+	// Claude Code (and claude.ai routines) silently drop every tool from a
+	// server whose tools/list includes outputSchema, annotations, or title
+	// (anthropics/claude-code#25081). Handlers that return a struct still
+	// put that JSON in the call result; they just don't advertise a schema.
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "skills_list",
 		Description: "List the names and descriptions of all skills in this repo's blueprint. Load the relevant ones with skill_load.",
-		Annotations: readOnly(),
 	}, s.skillsList)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "skill_load",
 		Description: "Load one skill: its SKILL.md and the list of its files. Relative paths in a skill resolve against the skill's folder.",
-		Annotations: readOnly(),
 	}, s.skillLoad)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "skill_file",
 		Description: "Read one text file from a skill, by its path inside the skill's folder.",
-		Annotations: readOnly(),
 	}, s.skillFile)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "rules_get",
 		Description: "Get every always-on working rule in full, plus an index of the other rules. Follow them for the whole session.",
-		Annotations: readOnly(),
 	}, s.rulesGet)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "rule_load",
 		Description: "Load one rule by name, when it applies (see the index from rules_get).",
-		Annotations: readOnly(),
 	}, s.ruleLoad)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "routine_get",
 		Description: "Get a routine's full definition: its instructions, skills, allowed side effects, params and the working rules. Routine stubs call this right after run_begin.",
-		Annotations: readOnly(),
 	}, s.routineGet)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "memory_save",
 		Description: "Replace a routine's memory: the notes it keeps for its own next runs on this repo, which routine_get shows. Only for routines whose routine_get says Fabrica keeps their memory.",
-		Annotations: writes(),
 	}, s.memorySave)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_begin",
 		Description: "Start a run and get its run_id. Call it first, in every session. For a routine run, pass routine, runtime, repo and stub exactly as your stub says. If you know where this session's transcript lives, pass it as session.",
-		Annotations: writes(),
 	}, s.runBegin)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_report",
 		Description: "Record a checkpoint for a run: what you did (at most 20 words), its status (progress, succeeded or failed) and any links (PRs, issues, commits). Add friction for anything that slowed you down.",
-		Annotations: writes(),
 	}, s.runReport)
 }
 
@@ -233,4 +220,12 @@ func runtimeProvider(f *blueprint.Blueprint, name string) (*provider.Provider, b
 
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+func jsonResult(v any) (*mcp.CallToolResult, any, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, nil, err
+	}
+	return textResult(string(b)), nil, nil
 }

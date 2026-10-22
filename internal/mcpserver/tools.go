@@ -96,10 +96,10 @@ type runReportOut struct {
 	Status   string `json:"status"`
 }
 
-func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, skillsListOut, error) {
+func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
 	if err := refusal(snap); err != nil {
-		return nil, skillsListOut{}, err
+		return nil, nil, err
 	}
 	out := skillsListOut{HowTo: "Load the skills that are relevant to your task with skill_load. "}
 	if snap.remote() {
@@ -134,7 +134,7 @@ func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ no
 		}
 		out.Expected = append(out.Expected, ex)
 	}
-	return nil, out, nil
+	return jsonResult(out)
 }
 
 func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in nameArgs) (*mcp.CallToolResult, any, error) {
@@ -274,10 +274,10 @@ func memorySupport(f *blueprint.Blueprint, runtime string) provider.Support {
 	return provider.Unsupported
 }
 
-func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in memorySaveArgs) (*mcp.CallToolResult, memorySaveOut, error) {
+func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in memorySaveArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
 	if err := refusal(snap); err != nil {
-		return nil, memorySaveOut{}, err
+		return nil, nil, err
 	}
 	// Only a routine run begun in this session can write its routine's
 	// memory, so one run can't overwrite another routine's notes.
@@ -290,41 +290,41 @@ func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in m
 	}
 	s.mu.Unlock()
 	if run == nil {
-		return nil, memorySaveOut{}, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
+		return nil, nil, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
 	}
 	r := snap.Blueprint.Routines[run.Routine]
 	if r == nil || !r.Memory {
-		return nil, memorySaveOut{}, fmt.Errorf("routine %s doesn't use memory (its routine file has no `memory: true`), so it shouldn't keep notes between runs", run.Routine)
+		return nil, nil, fmt.Errorf("routine %s doesn't use memory (its routine file has no `memory: true`), so it shouldn't keep notes between runs", run.Routine)
 	}
 	switch memorySupport(snap.Blueprint, run.Runtime) {
 	case provider.Emulated:
 	case provider.Native:
-		return nil, memorySaveOut{}, fmt.Errorf("runtime %s has its own memory feature, and routine %s keeps its notes there; use that instead of memory_save", run.Runtime, run.Routine)
+		return nil, nil, fmt.Errorf("runtime %s has its own memory feature, and routine %s keeps its notes there; use that instead of memory_save", run.Runtime, run.Routine)
 	default:
-		return nil, memorySaveOut{}, fmt.Errorf("runtime %s can't keep memory for routines", run.Runtime)
+		return nil, nil, fmt.Errorf("runtime %s can't keep memory for routines", run.Runtime)
 	}
 	content := strings.TrimSpace(in.Content)
 	if !utf8.ValidString(content) {
-		return nil, memorySaveOut{}, errors.New("the memory must be UTF-8 text")
+		return nil, nil, errors.New("the memory must be UTF-8 text")
 	}
 	if err := s.core.Runs.SaveMemory(ctx, run.Factory, run.Routine, run.Repo, content, run.ID, s.core.now()); err != nil {
-		return nil, memorySaveOut{}, fmt.Errorf("couldn't save the memory: %v", err)
+		return nil, nil, fmt.Errorf("couldn't save the memory: %v", err)
 	}
 	note := "Saved. The next run of " + run.Routine + " on " + run.Repo + " gets it with routine_get."
 	if content == "" {
 		note = "Forgotten. The next run of " + run.Routine + " on " + run.Repo + " starts with an empty memory."
 	}
-	return nil, memorySaveOut{Saved: true, Bytes: len(content), Note: note}, nil
+	return jsonResult(memorySaveOut{Saved: true, Bytes: len(content), Note: note})
 }
 
-func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in runBeginArgs) (*mcp.CallToolResult, runBeginOut, error) {
+func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in runBeginArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
 	if err := runs.CheckWords("intent", in.Intent); err != nil {
-		return nil, runBeginOut{}, err // not recorded: the agent should just try again
+		return nil, nil, err // not recorded: the agent should just try again
 	}
 	session := strings.TrimSpace(in.Session)
 	if err := runs.CheckSession(session); err != nil {
-		return nil, runBeginOut{}, err // same here
+		return nil, nil, err // same here
 	}
 	now := s.core.now()
 	run := runs.Run{
@@ -332,8 +332,8 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 		Routine: in.Routine, Stub: in.Stub, ServedBy: snap.Mode,
 		Factory: snap.factoryName(), BlueprintSHA: snap.BlueprintSHA(), Session: session,
 	}
-	refuse := func(err error) (*mcp.CallToolResult, runBeginOut, error) {
-		return nil, runBeginOut{}, s.recordRefusal(ctx, run, err)
+	refuse := func(err error) (*mcp.CallToolResult, any, error) {
+		return nil, nil, s.recordRefusal(ctx, run, err)
 	}
 
 	// Who and where. Locally Fabrica knows both; remotely they come from
@@ -381,7 +381,7 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 	}
 
 	if err := s.core.Runs.Begin(ctx, run); err != nil {
-		return nil, runBeginOut{}, fmt.Errorf("couldn't record the run: %v", err)
+		return nil, nil, fmt.Errorf("couldn't record the run: %v", err)
 	}
 	s.mu.Lock()
 	s.run = &run
@@ -395,7 +395,7 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 	if in.Routine != "" {
 		next = fmt.Sprintf("Call routine_get with name %q and follow it. Record progress with run_report.", in.Routine)
 	}
-	return nil, runBeginOut{RunID: run.ID, Next: next}, nil
+	return jsonResult(runBeginOut{RunID: run.ID, Next: next})
 }
 
 // checkStub runs the two stale-stub checks, in order: the stub is still
@@ -486,42 +486,42 @@ func (s *session) recordRefusal(ctx context.Context, run runs.Run, cause error) 
 	return fmt.Errorf("%v (recorded as failed run %s; tell the user)", cause, run.ID)
 }
 
-func (s *session) runReport(ctx context.Context, req *mcp.CallToolRequest, in runReportArgs) (*mcp.CallToolResult, runReportOut, error) {
+func (s *session) runReport(ctx context.Context, req *mcp.CallToolRequest, in runReportArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
 	if err := runs.CheckWords("summary", in.Summary); err != nil {
-		return nil, runReportOut{}, err
+		return nil, nil, err
 	}
 	status, err := runs.CheckStatus(in.Status)
 	if err != nil {
-		return nil, runReportOut{}, err
+		return nil, nil, err
 	}
 	if err := runs.CheckLinks(in.Links); err != nil {
-		return nil, runReportOut{}, err
+		return nil, nil, err
 	}
 	var friction []runs.Friction
 	for _, f := range in.Friction {
 		friction = append(friction, runs.Friction{Kind: f.Kind, Note: strings.Join(strings.Fields(f.Note), " ")})
 	}
 	if err := runs.CheckFriction(friction); err != nil {
-		return nil, runReportOut{}, err
+		return nil, nil, err
 	}
 	// A run can be reported on from any session of its factory (and, locally,
 	// its repo), because connections drop and come back. Whatever is wrong,
 	// the answer is the same, so it can't be used to probe for run IDs.
 	run, err := s.core.Runs.Get(ctx, in.RunID)
 	if err != nil && !errors.Is(err, runs.ErrNoRun) {
-		return nil, runReportOut{}, err
+		return nil, nil, err
 	}
 	if err != nil || run.Factory != snap.factoryName() || (!snap.remote() && run.Repo != snap.Repo) {
-		return nil, runReportOut{}, fmt.Errorf("run %s wasn't begun for this factory and repo; use the run_id run_begin gave you", in.RunID)
+		return nil, nil, fmt.Errorf("run %s wasn't begun for this factory and repo; use the run_id run_begin gave you", in.RunID)
 	}
 	if err := s.core.Runs.AddCheckpoint(ctx, run.ID, runs.Checkpoint{
 		At: s.core.now(), Author: runs.ByAgent, Status: status,
 		Summary: strings.Join(strings.Fields(in.Summary), " "), Links: in.Links, Friction: friction,
 	}); err != nil {
-		return nil, runReportOut{}, fmt.Errorf("couldn't record the checkpoint: %v", err)
+		return nil, nil, fmt.Errorf("couldn't record the checkpoint: %v", err)
 	}
-	return nil, runReportOut{Recorded: true, RunID: run.ID, Status: status}, nil
+	return jsonResult(runReportOut{Recorded: true, RunID: run.ID, Status: status})
 }
 
 // recordLoad links a load to the session's run, if run_begin has been called.

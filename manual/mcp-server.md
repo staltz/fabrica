@@ -118,7 +118,7 @@ The image keeps its database and git cache in `/data`.
 
 Put it behind HTTPS (a reverse proxy like Caddy or nginx, or your platform's load balancer) at the URL your factories use as `server:`. The server checks a token on every request, so it works fine behind a proxy that connects over localhost.
 
-The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. POST responses are JSON, not SSE, so cloud clients that only parse JSON still get `tools/list` after initialize. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. POST responses are JSON, not SSE, so cloud clients that only parse JSON still get `tools/list` after initialize. Tools are listed as name, description and inputSchema only: `outputSchema` and annotations make Claude's cloud broker drop the whole list. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
 
 ### The admin API
 

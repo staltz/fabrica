@@ -70,6 +70,48 @@ func TestRecordAndRead(t *testing.T) {
 	db2.Close()
 }
 
+func TestLatestOpen(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "runs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	openID := NewID(now)
+	doneID := NewID(now.Add(time.Minute))
+	laterID := NewID(now.Add(2 * time.Minute))
+	for _, r := range []Run{
+		{ID: openID, StartedAt: now, Intent: "review", Routine: "pr-review", Factory: "pr-review", ServedBy: ServedRemote},
+		{ID: doneID, StartedAt: now.Add(time.Minute), Intent: "done", Routine: "pr-review", Factory: "pr-review", ServedBy: ServedRemote},
+		{ID: laterID, StartedAt: now.Add(2 * time.Minute), Intent: "grind", Routine: "grind", Factory: "pr-review", ServedBy: ServedRemote},
+	} {
+		if err := db.Begin(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.AddCheckpoint(ctx, doneID, Checkpoint{At: now.Add(90 * time.Second), Author: ByAgent, Status: Succeeded, Summary: "shipped"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.LatestOpen(ctx, "pr-review", "pr-review")
+	if err != nil || got == nil || got.ID != openID {
+		t.Fatalf("LatestOpen pr-review = %+v, %v, want %s", got, err, openID)
+	}
+	got, err = db.LatestOpen(ctx, "pr-review", "")
+	if err != nil || got == nil || got.ID != laterID {
+		t.Fatalf("LatestOpen any = %+v, %v, want %s", got, err, laterID)
+	}
+	got, err = db.LatestOpen(ctx, "pr-review", "missing")
+	if err != nil || got != nil {
+		t.Fatalf("LatestOpen missing = %+v, %v", got, err)
+	}
+	got, err = db.LatestOpen(ctx, "", "pr-review")
+	if err != nil || got != nil {
+		t.Fatalf("LatestOpen empty factory = %+v, %v", got, err)
+	}
+}
+
 func TestMemories(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "runs.db"))
 	if err != nil {

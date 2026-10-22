@@ -361,14 +361,45 @@ func (d *DB) Loaded(ctx context.Context, runID, kind, name string, at time.Time)
 // ErrNoRun means there's no run with that ID.
 var ErrNoRun = errors.New("no such run")
 
+const runColumns = `run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by, session`
+
 // Get reads one run.
 func (d *DB) Get(ctx context.Context, runID string) (*Run, error) {
+	return d.scanRun(d.db.QueryRowContext(ctx, `SELECT `+runColumns+` FROM runs WHERE run_id = ?`, runID))
+}
+
+// LatestOpen is the newest run of this factory (and of this routine, if
+// set) that hasn't succeeded or failed yet. The remote MCP server uses it
+// when sessionless HTTP makes each POST a new session, so routine_get can
+// still find the run_begin that landed on the previous request.
+func (d *DB) LatestOpen(ctx context.Context, factory, routine string) (*Run, error) {
+	if factory == "" {
+		return nil, nil
+	}
+	q := `SELECT ` + runColumns + ` FROM runs
+		WHERE factory = ?
+		AND NOT EXISTS (
+			SELECT 1 FROM checkpoints c
+			WHERE c.run_id = runs.run_id AND c.status IN ('succeeded', 'failed')
+		)`
+	args := []any{factory}
+	if routine != "" {
+		q += ` AND routine = ?`
+		args = append(args, routine)
+	}
+	q += ` ORDER BY started_at DESC LIMIT 1`
+	r, err := d.scanRun(d.db.QueryRowContext(ctx, q, args...))
+	if errors.Is(err, ErrNoRun) {
+		return nil, nil
+	}
+	return r, err
+}
+
+func (d *DB) scanRun(row *sql.Row) (*Run, error) {
 	var r Run
 	var started string
 	var routine, runtime, repo, factory, sha, stub, session sql.NullString
-	err := d.db.QueryRowContext(ctx,
-		`SELECT run_id, started_at, intent, routine, runtime, repo, factory, blueprint_sha, stub, served_by, session FROM runs WHERE run_id = ?`, runID).
-		Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy, &session)
+	err := row.Scan(&r.ID, &started, &r.Intent, &routine, &runtime, &repo, &factory, &sha, &stub, &r.ServedBy, &session)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoRun
 	}

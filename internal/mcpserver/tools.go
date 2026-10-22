@@ -159,6 +159,7 @@ func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in na
 			return nil, nil, fmt.Errorf("couldn't unpack skill %s: %v", in.Name, err)
 		}
 	}
+	s.bindOpenRun(ctx, snap, "")
 	s.recordLoad(ctx, runs.LoadSkill, in.Name)
 	return textResult(skillText(sk, folder)), nil, nil
 }
@@ -207,6 +208,7 @@ func (s *session) rulesGet(ctx context.Context, req *mcp.CallToolRequest, _ noAr
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
+	s.bindOpenRun(ctx, snap, "")
 	// Every always-on rule counts as loaded, because rulesText hands them all over.
 	s.recordLoad(ctx, runs.LoadRule, productOnlyRuleName)
 	always, _ := splitRules(snap.Blueprint)
@@ -225,6 +227,7 @@ func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nam
 	if r == nil {
 		return nil, nil, fmt.Errorf("there's no rule called %q; rules_get lists them", in.Name)
 	}
+	s.bindOpenRun(ctx, snap, "")
 	s.recordLoad(ctx, runs.LoadRule, in.Name)
 	return textResult(ruleText(r)), nil, nil
 }
@@ -240,11 +243,11 @@ func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in n
 	}
 	s.mu.Lock()
 	reason, refused := s.refused[in.Name]
-	run := s.began[in.Name]
 	s.mu.Unlock()
 	if refused {
 		return nil, nil, fmt.Errorf("Fabrica refused to start routine %s in this session (%s), so it won't serve it", in.Name, reason)
 	}
+	run := s.bindOpenRun(ctx, snap, in.Name)
 	if snap.remote() && run == nil {
 		return nil, nil, fmt.Errorf("on the Fabrica server, routines only run from stubs: call run_begin with routine, runtime, repo and stub (exactly as your stub says) before routine_get")
 	}
@@ -279,21 +282,19 @@ func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in m
 	if err := refusal(snap); err != nil {
 		return nil, nil, err
 	}
-	// Only a routine run begun in this session can write its routine's
-	// memory, so one run can't overwrite another routine's notes.
-	var run *runs.Run
-	s.mu.Lock()
-	for _, r := range s.began {
-		if r.ID == in.RunID {
-			run = r
-		}
-	}
-	s.mu.Unlock()
+	// Locally, only a routine run begun in this session can write its
+	// memory. Remotely, sessionless HTTP has no session, so the run_id
+	// is the handle, the way run_report already works.
+	run := s.lookupRoutineRun(ctx, snap, in.RunID)
 	if run == nil {
 		return nil, nil, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
 	}
 	r := snap.Blueprint.Routines[run.Routine]
-	if r == nil || !r.Memory {
+	if r == nil {
+		// Don't echo a routine name that only exists in history.
+		return nil, nil, fmt.Errorf("run %q isn't a routine run begun in this session; memory_save needs the run_id run_begin gave you for your routine", in.RunID)
+	}
+	if !r.Memory {
 		return nil, nil, fmt.Errorf("routine %s doesn't use memory (its routine file has no `memory: true`), so it shouldn't keep notes between runs", run.Routine)
 	}
 	switch memorySupport(snap.Blueprint, run.Runtime) {
@@ -522,6 +523,62 @@ func (s *session) runReport(ctx context.Context, req *mcp.CallToolRequest, in ru
 		return nil, nil, fmt.Errorf("couldn't record the checkpoint: %v", err)
 	}
 	return jsonResult(runReportOut{Recorded: true, RunID: run.ID, Status: status})
+}
+
+// bindOpenRun is the run this session should attach loads to, and the run
+// routine_get should serve. Locally that's only a run_begin in this MCP
+// session. Remotely, sessionless HTTP (one Server per POST) looks up the
+// newest unfinished run of this factory (and routine, if set) in history.
+func (s *session) bindOpenRun(ctx context.Context, snap *Snapshot, routine string) *runs.Run {
+	s.mu.Lock()
+	if routine != "" {
+		if r := s.began[routine]; r != nil {
+			s.mu.Unlock()
+			return r
+		}
+	}
+	if s.run != nil && (routine == "" || s.run.Routine == routine) {
+		r := s.run
+		s.mu.Unlock()
+		return r
+	}
+	s.mu.Unlock()
+	if !snap.remote() || s.core.Runs == nil {
+		return nil
+	}
+	r, err := s.core.Runs.LatestOpen(ctx, snap.factoryName(), routine)
+	if err != nil || r == nil {
+		return nil
+	}
+	s.mu.Lock()
+	s.run = r
+	if r.Routine != "" {
+		s.began[r.Routine] = r
+	}
+	s.mu.Unlock()
+	return r
+}
+
+// lookupRoutineRun finds a routine run by id. Locally it must have been
+// begun in this MCP session. Remotely the run_id is enough, as long as it
+// belongs to this factory.
+func (s *session) lookupRoutineRun(ctx context.Context, snap *Snapshot, runID string) *runs.Run {
+	s.mu.Lock()
+	for _, r := range s.began {
+		if r.ID == runID {
+			s.mu.Unlock()
+			return r
+		}
+	}
+	s.mu.Unlock()
+	if !snap.remote() || s.core.Runs == nil {
+		return nil
+	}
+	r, err := s.core.Runs.Get(ctx, runID)
+	if err != nil || r.Factory != snap.factoryName() || r.Routine == "" {
+		return nil
+	}
+	return r
 }
 
 // recordLoad links a load to the session's run, if run_begin has been called.

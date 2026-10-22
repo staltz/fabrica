@@ -23,7 +23,7 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 | `skill_load(name)` | A skill's `SKILL.md` and its file list. Locally, also the folder where the skill was unpacked. |
 | `skill_file(name, path)` | One text file from a skill. |
 | `routine_get(name)` | A routine's full definition: its prompt with params filled in, its skills and connectors, its allowed side effects (and how to do each on this runtime), its memory, and the rules. |
-| `memory_save(run_id, content)` | Replaces the memory of the run's routine, for its next runs on the same repo (at most 16 KiB of Markdown; empty forgets everything). Only for routines with `memory: true`, on runtimes where Fabrica keeps the memory, and only from the session that began the run. |
+| `memory_save(run_id, content)` | Replaces the memory of the run's routine, for its next runs on the same repo (at most 16 KiB of Markdown; empty forgets everything). Only for routines with `memory: true`, on runtimes where Fabrica keeps the memory. Locally, only from the session that began the run. Remotely, any connection to that factory with the `run_id` can save, because sessionless HTTP has no session. |
 
 Skills over MCP aren't a standard yet, so Fabrica emulates them with these plain tools. The server's MCP instructions, the stub and the Fabrica line all tell the agent to list and load what's relevant, and how relative paths in a skill work. When native skills over MCP arrive, the emulation can go away.
 
@@ -118,7 +118,11 @@ The image keeps its database and git cache in `/data`.
 
 Put it behind HTTPS (a reverse proxy like Caddy or nginx, or your platform's load balancer) at the URL your factories use as `server:`. The server checks a token on every request, so it works fine behind a proxy that connects over localhost.
 
-The server uses MCP's streamable HTTP transport with sessions, because each session is pinned to one blueprint commit and links its loads to its run. POST responses are JSON, not SSE, so cloud clients that only parse JSON still get `tools/list` after initialize. Tools are listed as name, description and inputSchema only: `outputSchema` and annotations make Claude's cloud broker drop the whole list. Clients that ask for the newer, sessionless protocol (2026-07-28) are told which versions it speaks and fall back to one of those.
+The server uses MCP's streamable HTTP transport. POST responses are JSON, not SSE, so cloud clients that only parse JSON still get `tools/list` after initialize. Tools are listed as name, description and inputSchema only: `outputSchema` and annotations make Claude's cloud broker drop the whole list.
+
+Clients on the sessioned protocol (2025-11-25 and earlier), like Cursor automations, get a `Mcp-Session-Id` and can open a GET SSE stream. Each of those sessions is pinned to one blueprint commit and links its loads to its run.
+
+Clients on the sessionless protocol (2026-07-28, SEP-2575), like Claude cloud routines since Claude Code ~2.1.304, send `Mcp-Protocol-Version: 2026-07-28` on every request. The go-sdk only accepts that version on a Stateless handler (no session id, GET is 405). Fabrica routes those requests there, and finds the run `run_begin` recorded in history so `routine_get` still works on a later POST. Claude's broker does not fall back to 2025-11-25 when `tools/list` at 2026-07-28 fails: it shows the initialize/`server/discover` instructions and an empty tool list.
 
 ### The admin API
 

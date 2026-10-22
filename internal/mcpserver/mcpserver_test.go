@@ -369,6 +369,119 @@ func TestRemoteAuth(t *testing.T) {
 	cs.Close()
 }
 
+// TestRemoteOffersToolsAsJSON is the cloud-client handshake: initialize with
+// Accept: */* (what Claude's broker sends), then tools/list on the session.
+// A text/event-stream initialize is how those clients end up with Fabrica's
+// instructions and no tools.
+func TestRemoteOffersToolsAsJSON(t *testing.T) {
+	rw := newRemoteWorld(t)
+	endpoint := rw.ts.URL + "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
+
+	initReq, err := http.NewRequest("POST", endpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"Anthropic","version":"1.0.0"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initReq.Header.Set("Content-Type", "application/json")
+	initReq.Header.Set("Accept", "*/*")
+	initRes, err := http.DefaultClient.Do(initReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer initRes.Body.Close()
+	if initRes.StatusCode != 200 {
+		t.Fatalf("initialize status %d", initRes.StatusCode)
+	}
+	if ct := initRes.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("initialize Content-Type = %q, want application/json", ct)
+	}
+	sid := initRes.Header.Get("Mcp-Session-Id")
+	if sid == "" {
+		t.Fatal("initialize should set Mcp-Session-Id")
+	}
+	var init struct {
+		Result struct {
+			Instructions string `json:"instructions"`
+			Capabilities struct {
+				Tools *struct {
+					ListChanged bool `json:"listChanged"`
+				} `json:"tools"`
+			} `json:"capabilities"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(initRes.Body).Decode(&init); err != nil {
+		t.Fatalf("initialize body: %v", err)
+	}
+	if !strings.Contains(init.Result.Instructions, "Call run_begin first") {
+		t.Errorf("instructions = %s", init.Result.Instructions)
+	}
+	if init.Result.Capabilities.Tools == nil {
+		t.Fatal("initialize should advertise tools")
+	}
+	if init.Result.Capabilities.Tools.ListChanged {
+		t.Error("tools.listChanged should be off: cloud clients wait for a GET SSE stream when it's on")
+	}
+
+	notify, err := http.NewRequest("POST", endpoint, strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	notify.Header.Set("Content-Type", "application/json")
+	notify.Header.Set("Accept", "application/json, text/event-stream")
+	notify.Header.Set("Mcp-Session-Id", sid)
+	notifyRes, err := http.DefaultClient.Do(notify)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifyRes.Body.Close()
+	if notifyRes.StatusCode != http.StatusAccepted {
+		t.Fatalf("initialized status %d, want 202", notifyRes.StatusCode)
+	}
+
+	listReq, err := http.NewRequest("POST", endpoint, strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Accept", "application/json, text/event-stream")
+	listReq.Header.Set("Mcp-Session-Id", sid)
+	listRes, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listRes.Body.Close()
+	if listRes.StatusCode != 200 {
+		t.Fatalf("tools/list status %d", listRes.StatusCode)
+	}
+	if ct := listRes.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("tools/list Content-Type = %q, want application/json", ct)
+	}
+	var listed struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(listRes.Body).Decode(&listed); err != nil {
+		t.Fatalf("tools/list body: %v", err)
+	}
+	if listed.Error != nil {
+		t.Fatalf("tools/list error: %s", listed.Error.Message)
+	}
+	var names []string
+	for _, tool := range listed.Result.Tools {
+		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	want := []string{"memory_save", "routine_get", "rule_load", "rules_get", "run_begin", "run_report", "skill_file", "skill_load", "skills_list"}
+	if !slices.Equal(names, want) {
+		t.Errorf("tools = %v, want %v", names, want)
+	}
+}
+
 type headerTransport struct{ auth string }
 
 func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {

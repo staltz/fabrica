@@ -125,8 +125,12 @@ type session struct {
 func (c *Core) NewServer(instructions string) *mcp.Server {
 	s := &session{core: c, began: map[string]*runs.Run{}, refused: map[string]string{}}
 	srv := mcp.NewServer(&mcp.Implementation{Name: "fabrica", Title: "Fabrica", Version: Version}, &mcp.ServerOptions{
-		Instructions:              instructions,
-		Capabilities:              &mcp.ServerCapabilities{},
+		Instructions: instructions,
+		// Empty capabilities turn logging off. Tools is set so the server
+		// advertises them; ListChanged stays false because the tool list
+		// never changes mid-session. Advertising listChanged makes some
+		// cloud clients wait for a GET SSE stream instead of calling tools/list.
+		Capabilities:              &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
 		SupportedProtocolVersions: c.ProtocolVersions,
 	})
 	s.register(srv)

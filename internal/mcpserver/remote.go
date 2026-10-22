@@ -311,6 +311,11 @@ func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.newSession(name) }, &mcp.StreamableHTTPOptions{
 		SessionTimeout: time.Hour,
 		Logger:         s.opts.Logger,
+		// Cloud clients (Claude routines especially) often parse initialize
+		// well enough to show the MCP instructions, then fail to read an SSE
+		// tools/list. JSON responses are in the spec and Cursor's client
+		// accepts them too.
+		JSONResponse: true,
 		// Every request already needs the factory's secret token, which
 		// DNS rebinding can't get at, and Fabrica usually runs behind a
 		// reverse proxy that connects over localhost.

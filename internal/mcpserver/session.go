@@ -112,7 +112,8 @@ type session struct {
 
 	mu sync.Mutex
 	// run is the session's current run, set by run_begin. Loads of skills,
-	// rules and routines are linked to it.
+	// rules and routines are linked to it. On remote sessionless HTTP it
+	// is rebound from run history when a later POST has a new Server.
 	run *runs.Run
 	// began are routines whose run_begin passed in this session.
 	began map[string]*runs.Run

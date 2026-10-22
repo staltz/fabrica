@@ -1,9 +1,11 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -494,6 +496,204 @@ func TestRemoteOffersToolsAsJSON(t *testing.T) {
 	}
 }
 
+// TestRemoteSessionlessListsTools is Claude cloud since ~2.1.304: it
+// negotiates MCP 2026-07-28, calls server/discover (instructions), then
+// tools/list with Mcp-Protocol-Version: 2026-07-28. A stateful handler
+// answers discover and rejects tools/list, which looks like "connected,
+// sent instructions, offered no tools".
+func TestRemoteSessionlessListsTools(t *testing.T) {
+	rw := newRemoteWorld(t)
+	endpoint := rw.ts.URL + "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
+
+	status, _, discovered := sessionlessRPC(t, endpoint, "server/discover", "", nil)
+	if status != 200 {
+		t.Fatalf("discover status %d, body %v", status, discovered)
+	}
+	result, _ := discovered["result"].(map[string]any)
+	if result["resultType"] != "complete" {
+		t.Errorf("discover resultType = %v, want complete", result["resultType"])
+	}
+	if _, ok := result["ttlMs"]; !ok {
+		t.Error("discover missing ttlMs")
+	}
+	if _, ok := result["cacheScope"]; !ok {
+		t.Error("discover missing cacheScope")
+	}
+	instr, _ := result["instructions"].(string)
+	if !strings.Contains(instr, "Call run_begin first") {
+		t.Errorf("discover instructions = %s", instr)
+	}
+	var versions []string
+	for _, v := range result["supportedVersions"].([]any) {
+		s, _ := v.(string)
+		versions = append(versions, s)
+	}
+	if !slices.Contains(versions, sessionlessProtocol) {
+		t.Errorf("supportedVersions = %v, want %s", versions, sessionlessProtocol)
+	}
+	caps, _ := result["capabilities"].(map[string]any)
+	if _, ok := caps["tools"]; !ok {
+		t.Error("discover should advertise tools")
+	}
+
+	status, hdr, listed := sessionlessRPC(t, endpoint, "tools/list", "", nil)
+	if status != 200 {
+		t.Fatalf("tools/list status %d, body %v", status, listed)
+	}
+	if sid := hdr.Get("Mcp-Session-Id"); sid != "" {
+		t.Errorf("sessionless tools/list set Mcp-Session-Id %s", sid)
+	}
+	listedResult, _ := listed["result"].(map[string]any)
+	if errObj, _ := listed["error"].(map[string]any); errObj != nil {
+		t.Fatalf("tools/list error: %v", errObj["message"])
+	}
+	if listedResult["resultType"] != "complete" {
+		t.Errorf("tools/list resultType = %v, want complete", listedResult["resultType"])
+	}
+	var names []string
+	tools, _ := listedResult["tools"].([]any)
+	for _, raw := range tools {
+		tool, _ := raw.(map[string]any)
+		name, _ := tool["name"].(string)
+		names = append(names, name)
+		for _, extra := range []string{"outputSchema", "annotations", "title", "execution"} {
+			if _, ok := tool[extra]; ok {
+				t.Errorf("tool %s has %s; Claude cloud will drop the whole list", name, extra)
+			}
+		}
+	}
+	slices.Sort(names)
+	want := []string{"memory_save", "routine_get", "rule_load", "rules_get", "run_begin", "run_report", "skill_file", "skill_load", "skills_list"}
+	if !slices.Equal(names, want) {
+		t.Errorf("tools = %v, want %v", names, want)
+	}
+}
+
+// TestRemoteSessionlessRoutineGet is a Claude grind: run_begin and
+// routine_get arrive on separate POSTs with no Mcp-Session-Id.
+func TestRemoteSessionlessRoutineGet(t *testing.T) {
+	rw := newRemoteWorld(t)
+	endpoint := rw.ts.URL + "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
+	fp := rw.remoteStub(t)
+
+	status, _, body := sessionlessRPC(t, endpoint, "tools/call", "routine_get", map[string]any{
+		"name":      "routine_get",
+		"arguments": map[string]any{"name": "pr-review"},
+	})
+	text, isErr := sessionlessToolText(t, body)
+	if status != 200 || !isErr || !strings.Contains(text, "only run from stubs") {
+		t.Fatalf("routine_get before run_begin: status %d isErr %v %s", status, isErr, text)
+	}
+
+	status, _, body = sessionlessRPC(t, endpoint, "tools/call", "run_begin", map[string]any{
+		"name": "run_begin",
+		"arguments": map[string]any{
+			"intent":  "review PR 7 on the app",
+			"routine": "pr-review",
+			"runtime": "claude-code-cloud",
+			"repo":    "github.com/acme/api",
+			"stub":    fp,
+		},
+	})
+	text, isErr = sessionlessToolText(t, body)
+	if status != 200 || isErr {
+		t.Fatalf("run_begin: status %d %s", status, text)
+	}
+	var began runBeginOut
+	if err := json.Unmarshal([]byte(text), &began); err != nil || began.RunID == "" {
+		t.Fatalf("run_begin body: %s", text)
+	}
+
+	status, _, body = sessionlessRPC(t, endpoint, "tools/call", "routine_get", map[string]any{
+		"name":      "routine_get",
+		"arguments": map[string]any{"name": "pr-review"},
+	})
+	text, isErr = sessionlessToolText(t, body)
+	if status != 200 || isErr {
+		t.Fatalf("routine_get after run_begin: status %d %s", status, text)
+	}
+	if !strings.Contains(text, "for repo github.com/acme/api") {
+		t.Errorf("routine_get is missing the stub's repo:\n%s", text)
+	}
+
+	status, _, body = sessionlessRPC(t, endpoint, "tools/call", "run_report", map[string]any{
+		"name": "run_report",
+		"arguments": map[string]any{
+			"run_id":  began.RunID,
+			"summary": "left a review comment",
+			"status":  "succeeded",
+		},
+	})
+	text, isErr = sessionlessToolText(t, body)
+	if status != 200 || isErr {
+		t.Fatalf("run_report: status %d %s", status, text)
+	}
+}
+
+func sessionlessRPC(t *testing.T, endpoint, method, name string, params map[string]any) (int, http.Header, map[string]any) {
+	t.Helper()
+	if params == nil {
+		params = map[string]any{}
+	}
+	if _, ok := params["_meta"]; !ok {
+		params["_meta"] = map[string]any{
+			"io.modelcontextprotocol/protocolVersion":    sessionlessProtocol,
+			"io.modelcontextprotocol/clientInfo":         map[string]any{"name": "Anthropic", "version": "1.0.0"},
+			"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Mcp-Protocol-Version", sessionlessProtocol)
+	req.Header.Set("Mcp-Method", method)
+	if name != "" {
+		req.Header.Set("Mcp-Name", name)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("body %s: %v", raw, err)
+		}
+	}
+	return res.StatusCode, res.Header.Clone(), body
+}
+
+func sessionlessToolText(t *testing.T, body map[string]any) (string, bool) {
+	t.Helper()
+	if errObj, ok := body["error"].(map[string]any); ok {
+		msg, _ := errObj["message"].(string)
+		t.Fatalf("jsonrpc error: %s (%v)", msg, errObj)
+	}
+	result, _ := body["result"].(map[string]any)
+	isErr, _ := result["isError"].(bool)
+	var b strings.Builder
+	for _, item := range result["content"].([]any) {
+		m, _ := item.(map[string]any)
+		if m["type"] == "text" {
+			s, _ := m["text"].(string)
+			b.WriteString(s)
+		}
+	}
+	return b.String(), isErr
+}
+
 type headerTransport struct{ auth string }
 
 func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -595,9 +795,13 @@ func TestRemoteRoutineMemory(t *testing.T) {
 	c.fails("memory_save", map[string]any{"run_id": runID, "content": strings.Repeat("x", runs.MaxMemoryBytes+1)}, "the limit is")
 	c.ok("memory_save", map[string]any{"run_id": runID, "content": "- The app's tests live in `spec/`."})
 
+	// Sessionless HTTP has no MCP session, so a later connection can still
+	// save with the run_id, the way run_report already works.
+	dropped := rw.connect(t, path)
+	dropped.ok("memory_save", map[string]any{"run_id": runID, "content": "- The app's tests live in `spec/`."})
+
 	// The next run on the same repo sees it; another repo doesn't.
 	next := rw.connect(t, path)
-	next.fails("memory_save", map[string]any{"run_id": runID, "content": "overwritten"}, "isn't a routine run begun in this session")
 	next.ok("run_begin", args)
 	if r := next.ok("routine_get", map[string]any{"name": "pr-review"}); !strings.Contains(r, "-----BEGIN MEMORY-----\n- The app's tests live in `spec/`.\n-----END MEMORY-----") || !strings.Contains(r, "saved on") {
 		t.Errorf("the next run should get the memory:\n%s", r)

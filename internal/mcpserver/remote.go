@@ -66,7 +66,7 @@ type Remote struct {
 	state       *remoteState
 	lastRefresh time.Time
 	lastErr     error
-	handlers    map[string]*mcp.StreamableHTTPHandler
+	handlers    map[string]http.Handler
 }
 
 // remoteState is one reading of the home repo.
@@ -97,7 +97,7 @@ func NewRemote(opts RemoteOptions) (*Remote, error) {
 	if opts.RefreshEvery == 0 {
 		opts.RefreshEvery = time.Minute
 	}
-	s := &Remote{opts: opts, admin: admin.New(opts.Runs, opts.Secret), handlers: map[string]*mcp.StreamableHTTPHandler{}, state: &remoteState{factories: map[string]*remoteFactory{}, routes: map[string]string{}}}
+	s := &Remote{opts: opts, admin: admin.New(opts.Runs, opts.Secret), handlers: map[string]http.Handler{}, state: &remoteState{factories: map[string]*remoteFactory{}, routes: map[string]string{}}}
 	s.dashboard = dashboard.New(opts.Runs, dashboard.Options{Secret: opts.Secret, Subject: s.blueprintSubject, Now: opts.Now, Logger: opts.Logger})
 	return s, nil
 }
@@ -299,18 +299,39 @@ func splitToken(p string) (string, string) {
 	return p[:i], tok
 }
 
+// sessionlessProtocol is MCP 2026-07-28 (SEP-2575): no initialize handshake
+// and no Mcp-Session-Id. The go-sdk streamable transport only accepts it
+// when StreamableHTTPOptions.Stateless is true.
+const sessionlessProtocol = "2026-07-28"
+
+// mcpHTTP sends sessionless MCP (2026-07-28, what Claude cloud speaks
+// since ~2.1.304) to a Stateless handler, and everything else to a
+// stateful one. Cursor still uses 2025-11-25 with GET SSE; a fully
+// Stateless server would 405 those GETs.
+type mcpHTTP struct {
+	legacy, sessionless http.Handler
+}
+
+func (h mcpHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Mcp-Protocol-Version") >= sessionlessProtocol {
+		h.sessionless.ServeHTTP(w, r)
+		return
+	}
+	h.legacy.ServeHTTP(w, r)
+}
+
 // handlerFor returns the MCP handler of one factory. Each factory
 // gets its own handler, so sessions of one factory can never be used
 // through another factory's endpoint.
-func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
+func (s *Remote) handlerFor(name string) http.Handler {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if h, ok := s.handlers[name]; ok {
 		return h
 	}
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s.newSession(name) }, &mcp.StreamableHTTPOptions{
-		SessionTimeout: time.Hour,
-		Logger:         s.opts.Logger,
+	get := func(*http.Request) *mcp.Server { return s.newSession(name) }
+	opts := mcp.StreamableHTTPOptions{
+		Logger: s.opts.Logger,
 		// Cloud clients (Claude routines especially) often parse initialize
 		// well enough to show the MCP instructions, then fail to read an SSE
 		// tools/list. JSON responses are in the spec and Cursor's client
@@ -320,7 +341,15 @@ func (s *Remote) handlerFor(name string) *mcp.StreamableHTTPHandler {
 		// DNS rebinding can't get at, and Fabrica usually runs behind a
 		// reverse proxy that connects over localhost.
 		DisableLocalhostProtection: true,
-	})
+	}
+	legacy := opts
+	legacy.SessionTimeout = time.Hour
+	sessionless := opts
+	sessionless.Stateless = true
+	h := mcpHTTP{
+		legacy:      mcp.NewStreamableHTTPHandler(get, &legacy),
+		sessionless: mcp.NewStreamableHTTPHandler(get, &sessionless),
+	}
 	s.handlers[name] = h
 	return h
 }

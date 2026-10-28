@@ -93,6 +93,8 @@ func TestCursorWorkflowJSON(t *testing.T) {
 		{Name: "grok-4.7", Fast: "off"}:                   `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"false"},{"id":"reasoning_effort","value":"high"}]}`,
 		{Name: "grok-4.7"}:                                `{"modelId":"grok-4.7","parameters":[{"id":"context","value":"500k"},{"id":"fast","value":"false"},{"id":"reasoning_effort","value":"high"}]}`,
 		{Name: "composer-2.5", Fast: "on"}:                `{"modelId":"composer-2.5","parameters":[{"id":"fast","value":"true"}]}`,
+		{Name: "deepseek-v41-flash-1017", Effort: "high"}: `{"modelId":"deepseek-v41-flash-1017","parameters":[{"id":"reasoning_effort","value":"high"}]}`,
+		{Name: "deepseek-v41-flash-1017"}:                 `{"modelId":"deepseek-v41-flash-1017","parameters":[{"id":"reasoning_effort","value":"max"}]}`,
 		{Name: "claude-opus-5-5", Fast: "on"}:             `{"modelId":"claude-opus-5-5","parameters":[{"id":"context","value":"1m"},{"id":"effort","value":"medium"},{"id":"fast","value":"true"}]}`,
 		{Name: "gpt-5.5", Effort: "high", Fast: "on"}:     `{"modelId":"gpt-5.5","parameters":[{"id":"context","value":"272k"},{"id":"fast","value":"true"},{"id":"reasoning","value":"high"}]}`,
 		{Name: "gemini-3.1-pro"}:                          `{"modelId":"gemini-3.1-pro"}`,

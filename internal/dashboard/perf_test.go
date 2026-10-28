@@ -39,6 +39,9 @@ func TestOverviewIsFastWith50kRuns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("seeding 50,000 runs takes a few seconds")
 	}
+	if raceEnabled {
+		t.Skip("the race detector makes seeding 50,000 runs too slow for CI")
+	}
 	h, cookies := manyRuns(t)
 	for _, target := range []string{"/_dashboard", "/_dashboard?days=90"} {
 		best := time.Hour

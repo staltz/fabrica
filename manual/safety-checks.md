@@ -43,6 +43,10 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | The credentials file can be read by other users | ❌ Fabrica won't use it until you `chmod 600` it | — | — | — |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses | `capability.skill` |
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |
+| An agent's folder isn't an Agent SDK project Cursor can build (no `package.json` that depends on `@grok/agent-sdk`, no `bot/` instructions, no lockfile, a committed `node_modules/`) | ❌ error | — | — | `agent.invalid` |
+| A factory names an agent the blueprint doesn't have, deploys agents from a blueprint with none, or lists `agents:` without a runtime that deploys them | ❌ error | — | — | `factory.unknown-agent`, `factory.idle-runtime`, `factory.invalid` |
+| An agent's repo isn't one Cursor can clone over `https://`, a target isn't on GitHub, GitLab or Bitbucket, or the deployment's slug is over 64 characters | ❌ error | — | — | `agent.source`, `agent.target`, `agent.slug` |
+| Apply would delete an agent's deployment, and its hosted sessions, KV store, files and eval runs with it | ⚠️ warning in `plan`; `destroy` asks first | — | — | `agent.data-loss` |
 | Another apply holds the factory's lock | ❌ `apply` stops, names the holder | — | — | `factory.locked` |
 | Two remote resources share one identity | ❌ error in `plan` | — | — | `refresh.duplicate` |
 | A resource was deleted, renamed or had its prompt edited by hand in a runtime that can't list resources (like Cursor) | 🔧 create or update in `plan`, with a note | — | — | — |

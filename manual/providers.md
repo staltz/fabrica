@@ -79,6 +79,15 @@ Two things work differently from runtimes whose API can list resources:
 
 Copilot reads MCP servers from the repository's settings (**Settings → Copilot → MCP servers**), not from each automation, so every Copilot automation in a repository shares one `fabrica` server, and only one factory can deploy to a repository on `copilot-cloud` (`fabrica check` says so when two do). The handoff puts the Fabrica token in an Agents secret called `COPILOT_MCP_FABRICA_AUTHORIZATION`, so it never shows in the configuration. Copilot automations only run in private and internal repositories for now, and their schedules recur hourly, daily or weekly, so the handoff asks you to pick the one closest to the routine's cron.
 
+### Cursor's hosted agents (`cursor-agents`)
+
+`cursor-agents` is a different kind of runtime: it runs no routines. It deploys a blueprint's [agents](agents.md), Agent SDK projects that bring their own triggers, tools and model, so its matrix says `agents: true` and lists no triggers, connectors, side effects, memory or models. Each agent becomes one deployment per factory, watching all of the factory's repos.
+
+- **Apply mode:** api, with a Cursor team service-account key and the `agent-sdk` command line; handoff without them. Cursor doesn't document the HTTP API behind `agent-sdk`, so Fabrica drives the command line, with `--json`.
+- **Finding deployments:** a slug like `acme_pr-reviewer` is the factory's tag and the agent's name, and neither has an underscore, so `agent-sdk deployment list` tells Fabrica which deployments are its own (`find_by_identity: true`). A failed deploy, or one an apply never recorded, is adopted, not duplicated.
+- **Fingerprint:** the agent's repo, folder, files and watched repos, but not the commit, so a merge that doesn't touch the agent doesn't redeploy it.
+- **Folder providers can't deploy agents** for now: `agents: true` is only for built-in providers.
+
 **Local runtimes**
 
 | | `claude-code-local` | `cursor-local` | `codex-cli` | `copilot-local` |

@@ -40,9 +40,10 @@ params:
 | `server` | for cloud | The URL of your self-hosted Fabrica server. Must be `https` (plain `http` only for localhost). |
 | `alias` | no | For cloud factories: a name, like `review`, that runtimes show in front of each routine's name instead of the factory's [tag](concepts.md#identities), a short hash. Lowercase letters, digits and hyphens. No two factories in a home repo may share a tag or alias. |
 | `runtimes` | yes | Where to run: built-in runtimes, or ones from the blueprint's [folder providers](providers.md#folder-providers). A factory is either all cloud or all local. |
-| `routines` | for cloud | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. `"*"` stands for all of them, see [below](#all-routines). |
+| `routines` | for cloud, unless it only deploys agents | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. `"*"` stands for all of them, see [below](#all-routines). |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
+| `agents` | no | Which of the blueprint's [agents](agents.md) to deploy, on a runtime that deploys agents (`cursor-agents`). `"*"` stands for all of them, and so does leaving it out. No routine runs on `cursor-agents`, so a factory of only agents needs no `routines:`. |
 | `init` | no | `false` never runs the blueprint's [init routine](blueprints.md#init-routines) for this factory. See [Init](#init). |
 
 - **The file name is the factory's ID.** `factories/pr-review.yaml` is the factory `pr-review`.

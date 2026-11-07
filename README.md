@@ -60,7 +60,7 @@ There are three kinds of repositories:
 
 | Repo | What's in it |
 |---|---|
-| 🗺️ **Blueprint repo** | Skills, routines, rules and connectors: your process. It doesn't know who uses it, or what software it is specifically building. |
+| 🗺️ **Blueprint repo** | Skills, routines, rules, connectors and agents: your process. It doesn't know who uses it, or what software it is specifically building. |
 | 🏠 **Home repo** | A local (or team) repository that defines the factories: "run *this* blueprint on *these* targets in *these* tools". Targets are product repos. This is the only place blueprints and product repos meet. |
 | 🚀 **Product repo** | Your software's code. The only Fabrica thing in it is one sentence at the top of its `AGENTS.md`. |
 
@@ -186,6 +186,7 @@ Every command has `--help`. The full reference is in [manual/cli.md](manual/cli.
 - [Getting started](manual/getting-started.md): a hands-on tutorial, solo and team.
 - [Concepts](manual/concepts.md): blueprints, home repos, stubs, shapes and runs, explained.
 - [Writing a blueprint](manual/blueprints.md): the blueprint format in full (skills, routines, init routines, rules, connectors, imports, expects).
+- [Agents](manual/agents.md): Cursor Agent SDK projects in a blueprint, deployed to Cursor's hosting for each factory.
 - [Home repos](manual/home-repos.md): factories, state, the apply lock, handoffs and CI.
 - [Product repos](manual/product-repos.md): the Fabrica line, repo skills and what stays out of product repos.
 - [The MCP server](manual/mcp-server.md): the tools agents use, and how to run the remote server.
@@ -201,6 +202,7 @@ Examples live in [examples/](examples/): a [starter blueprint](examples/starter-
 ## Limitations
 
 - **Most built-in cloud providers use handoffs.** As of October 2026, Claude routines, Codex and Copilot automations have no API for creating triggered automations. So for those, `fabrica apply` writes step-by-step instructions (a **handoff**) for you, or an AI with computer use, to follow, and `fabrica confirm` records the result. Cursor automations are the exception: with a Cursor API key (`fabrica auth login cursor-cloud` sets one up), Fabrica manages them through Cursor's API (the one its Terraform provider uses), apart from a one-time setup of their MCP servers. If you write your own provider with an API, Fabrica drives it directly. See [manual/providers.md](manual/providers.md).
+- **Hosted agents need a Cursor team.** Fabrica deploys a blueprint's [agents](manual/agents.md) to Cursor's agent hosting, which needs a Cursor team with agent hosting turned on and a team service-account key. A personal Cursor plan can't deploy them, and there's no runtime for self-hosting them yet.
 - **Cloud routines can only use text-only skills.** A skill with scripts or binary files needs its folder on disk, which only works locally for now.
 - **A local agent with a shell can read local run history.** `~/.fabrica/runs.db` is a file on your disk. Fabrica's own tools never hand it to agents, but nothing can stop a shell from opening a file. See [Who can read it](manual/run-history.md#who-can-read-it).
 

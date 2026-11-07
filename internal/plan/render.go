@@ -11,18 +11,17 @@ import (
 	"github.com/staltz/fabrica/internal/gitx"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
+	"github.com/staltz/fabrica/internal/style"
 )
 
-// Render writes the plan for people to read.
+// Render writes the plan for people to read: what apply would change, and
+// what stops it. How each factory is set up is for RenderShow.
 func (p *Plan) Render(w io.Writer) {
+	st := style.For(w)
 	for _, n := range p.Notes {
-		fmt.Fprintf(w, "· %s\n", n)
+		fmt.Fprintf(w, "%s %s\n", st.Dim("·"), n)
 	}
-	if home := p.Diags.Sorted(); len(home) > 0 {
-		fmt.Fprintf(w, "Home repo %s\n", p.Home.Dir)
-		renderDiags(w, "  ", home)
-		fmt.Fprintln(w)
-	}
+	p.renderHomeDiags(w, st)
 	for _, d := range p.Factories {
 		d.Render(w)
 		fmt.Fprintln(w)
@@ -31,7 +30,40 @@ func (p *Plan) Render(w io.Writer) {
 		p.Local.Render(w)
 		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w, p.Summary())
+	line := p.Summary()
+	switch p.ExitCode() {
+	case 0:
+		line = st.Green(line)
+	case 2:
+		line = st.Yellow(line)
+	default:
+		line = st.Red(line)
+	}
+	fmt.Fprintln(w, line)
+}
+
+// RenderShow writes how each factory is set up: its blueprint, endpoint
+// and tag, and how each runtime handles each routine. It's `fabrica show`.
+func (p *Plan) RenderShow(w io.Writer) {
+	st := style.For(w)
+	p.renderHomeDiags(w, st)
+	for i, d := range p.Factories {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
+		d.RenderShow(w)
+	}
+	if len(p.Factories) == 0 {
+		fmt.Fprintln(w, "No factories.")
+	}
+}
+
+func (p *Plan) renderHomeDiags(w io.Writer, st style.Style) {
+	if home := p.Diags.Sorted(); len(home) > 0 {
+		fmt.Fprintf(w, "%s %s\n", st.Bold("Home repo"), p.Home.Dir)
+		renderDiags(w, st, "  ", home)
+		fmt.Fprintln(w)
+	}
 }
 
 // Summary is the last line of the plan.
@@ -88,8 +120,8 @@ func (p *Plan) destroySummary(parts []string, pending int) string {
 	return "Destroy plan: " + strings.Join(parts, ", ") + ". Fix the errors first; destroy skips any factory that has them."
 }
 
-// Render writes one factory's plan.
-func (d *Factory) Render(w io.Writer) {
+// header writes the factory's first line, like "Factory acme (cloud)".
+func (d *Factory) header(w io.Writer, st style.Style) {
 	kind := "cloud"
 	switch {
 	case d.Spec == nil:
@@ -99,38 +131,33 @@ func (d *Factory) Render(w io.Writer) {
 	case d.Destroy:
 		kind = "cloud, destroying"
 	}
-	fmt.Fprintf(w, "Factory %s (%s)\n", d.Name, kind)
-	if d.Spec != nil && d.Spec.Endpoint() != "" {
-		fmt.Fprintf(w, "  endpoint %s\n", d.Spec.Endpoint())
-		fmt.Fprintf(w, "  tag %s (runtimes name its routines like %s)\n", d.Spec.Tag(), stub.Identity(d.Spec.Tag(), "<routine>", "<repo>"))
-	}
+	fmt.Fprintf(w, "%s %s\n", st.Bold("Factory "+d.Name), st.Dim("("+kind+")"))
+}
+
+// Render writes one factory's plan.
+func (d *Factory) Render(w io.Writer) {
+	st := style.For(w)
+	d.header(w, st)
 	for _, n := range d.Notes {
-		fmt.Fprintf(w, "  · %s\n", n)
+		fmt.Fprintf(w, "  %s %s\n", st.Dim("·"), n)
 	}
-	for _, rt := range d.Runtimes {
-		fmt.Fprintf(w, "  %s: %s\n", rt.Name, describeRuntime(rt))
-		for _, name := range sortedEvalNames(rt.Evaluations) {
-			fmt.Fprintf(w, "    routine %s: %s\n", name, describeEvaluation(rt.Evaluations[name]))
-		}
-	}
-	d.Init.render(w)
 	if d.HasWork() {
 		fmt.Fprintln(w, "  Changes:")
 		for _, c := range d.Changes {
-			fmt.Fprintf(w, "    %s\n", c.Describe())
+			fmt.Fprintf(w, "    %s\n", c.styled(st))
 		}
 		if d.Init.Start() {
-			fmt.Fprintf(w, "    %s\n", d.Init.Describe())
+			fmt.Fprintf(w, "    %s\n", st.Mark(d.Init.Describe()))
 		}
 	}
 	if len(d.Pending) > 0 || d.Init != nil && d.Init.Waiting != nil {
 		fmt.Fprintln(w, "  Waiting for `fabrica confirm`:")
 		for _, p := range d.Pending {
-			fmt.Fprintf(w, "    … %s: %s %s @ %s on %s, issued %s\n", p.ID, p.Action, stubName(p.Resource, p.Routine), p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
+			fmt.Fprintf(w, "    %s %s: %s %s @ %s on %s, issued %s\n", st.Cyan("…"), p.ID, p.Action, stubName(p.Resource, p.Routine), p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
 		}
 		if d.Init != nil && d.Init.Waiting != nil {
-			st := d.Init.Waiting
-			fmt.Fprintf(w, "    … %s: start init %s @ %s on %s, issued %s\n", st.ID, st.Routine, st.Repo, st.Runtime, st.At.Format("2006-01-02"))
+			in := d.Init.Waiting
+			fmt.Fprintf(w, "    %s %s: start init %s @ %s on %s, issued %s\n", st.Cyan("…"), in.ID, in.Routine, in.Repo, in.Runtime, in.At.Format("2006-01-02"))
 		}
 	}
 	if d.State != nil {
@@ -143,31 +170,55 @@ func (d *Factory) Render(w io.Writer) {
 		if len(unverifiable) > 0 {
 			fmt.Fprintln(w, "  Unverifiable (confirmed without a remote ID, so no drift detection and no automatic deletion):")
 			for _, u := range unverifiable {
-				fmt.Fprintf(w, "    ? %s\n", u)
+				fmt.Fprintf(w, "    %s %s\n", st.Yellow("?"), u)
 			}
 		}
 	}
-	renderDiags(w, "  ", d.Diags.Sorted())
-	if !d.HasWork() && len(d.Pending) == 0 && d.Init == nil && !d.Diags.HasErrors() && !d.Local() {
-		if d.Destroy {
-			fmt.Fprintln(w, "  Nothing to destroy.")
-		} else {
-			fmt.Fprintln(w, "  In sync.")
+	renderDiags(w, st, "  ", d.Diags.Sorted())
+	switch {
+	case d.HasWork() || len(d.Pending) > 0 || d.Init != nil || d.Diags.HasErrors():
+	case d.Local():
+		// Its changes are under the local tools, at the end.
+		fmt.Fprintln(w, "  "+st.Dim("Set up through the local tools on this machine."))
+	case d.Destroy:
+		fmt.Fprintln(w, "  "+st.Green("Nothing to destroy."))
+	default:
+		fmt.Fprintln(w, "  "+st.Green("In sync."))
+	}
+}
+
+// RenderShow writes how one factory is set up.
+func (d *Factory) RenderShow(w io.Writer) {
+	st := style.For(w)
+	d.header(w, st)
+	for _, n := range d.Details {
+		fmt.Fprintf(w, "  %s %s\n", st.Dim("·"), n)
+	}
+	if d.Spec != nil && d.Spec.Endpoint() != "" {
+		fmt.Fprintf(w, "  %s %s\n", st.Dim("endpoint"), d.Spec.Endpoint())
+		fmt.Fprintf(w, "  %s %s %s\n", st.Dim("tag"), d.Spec.Tag(), st.Dim("(runtimes name its routines like "+stub.Identity(d.Spec.Tag(), "<routine>", "<repo>")+")"))
+	}
+	for _, rt := range d.Runtimes {
+		fmt.Fprintf(w, "  %s %s\n", st.Bold(rt.Name+":"), describeRuntime(rt))
+		for _, name := range sortedEvalNames(rt.Evaluations) {
+			fmt.Fprintf(w, "    routine %s %s\n", st.Bold(name+":"), describeEvaluation(st, rt.Evaluations[name]))
 		}
 	}
+	d.Init.render(w, st)
+	renderDiags(w, st, "  ", d.Diags.Sorted())
 }
 
 // render writes how the init would start: each runtime it would like, and
 // what that runtime can do.
-func (i *Init) render(w io.Writer) {
+func (i *Init) render(w io.Writer, st style.Style) {
 	if i == nil || len(i.Candidates) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "  init routine %s (once, on the first of its runtimes Fabrica can start a session on):\n", i.Routine.Ref.Name)
+	fmt.Fprintf(w, "  init routine %s (once, on the first of its runtimes Fabrica can start a session on):\n", st.Bold(i.Routine.Ref.Name))
 	for _, c := range i.Candidates {
 		mark := "  "
 		if c == i.Chosen {
-			mark = "→ "
+			mark = st.Cyan("→") + " "
 		}
 		switch c.Mode {
 		case provider.API:
@@ -175,15 +226,18 @@ func (i *Init) render(w io.Writer) {
 		case provider.Handoff:
 			fmt.Fprintf(w, "    %s%s: a person starts it, from a handoff (Fabrica can't by itself: %s)\n", mark, c.Runtime, c.Why)
 		default:
-			fmt.Fprintf(w, "    %s%s: can't start it (%s)\n", mark, c.Runtime, c.Why)
+			fmt.Fprintf(w, "    %s%s: %s (%s)\n", mark, c.Runtime, st.Red("can't start it"), c.Why)
 		}
 	}
 }
 
 // Describe is a one-line summary of a change.
-func (c *Change) Describe() string {
+func (c *Change) Describe() string { return c.styled(style.Style{}) }
+
+func (c *Change) styled(st style.Style) string {
 	sym := map[Action]string{Create: "+", Update: "~", Delete: "-", Adopt: "="}[c.Action]
-	line := fmt.Sprintf("%s %-6s %s @ %s on %s (%s)", sym, c.Action, stubName(c.Key.ID, c.Routine), c.Repo, c.Key.Runtime, c.Mode)
+	line := st.Mark(fmt.Sprintf("%s %-6s %s @ %s on %s", sym, c.Action, stubName(c.Key.ID, c.Routine), c.Repo, c.Key.Runtime))
+	line += " " + st.Dim("("+string(c.Mode)+")")
 	if len(c.Reasons) > 0 {
 		line += ": " + strings.Join(c.Reasons, "; ")
 	}
@@ -195,21 +249,22 @@ func (c *Change) Describe() string {
 
 // Render writes the local part of the plan.
 func (l *LocalPlan) Render(w io.Writer) {
-	fmt.Fprintln(w, "Local tools on this machine")
+	st := style.For(w)
+	fmt.Fprintln(w, st.Bold("Local tools on this machine"))
 	for _, rt := range l.Runtimes {
 		var files []string
 		for _, f := range rt.Tool.Files() {
 			files = append(files, Tildify(f))
 		}
-		fmt.Fprintf(w, "  %s (%s)\n", rt.Name, strings.Join(files, ", "))
+		fmt.Fprintf(w, "  %s %s\n", st.Bold(rt.Name), st.Dim("("+strings.Join(files, ", ")+")"))
 		if len(rt.Changes) == 0 {
-			fmt.Fprintln(w, "    In sync.")
+			fmt.Fprintln(w, "    "+st.Green("In sync."))
 		}
 		for _, c := range rt.Changes {
-			fmt.Fprintf(w, "    %s\n", c)
+			fmt.Fprintf(w, "    %s\n", st.Mark(c))
 		}
 	}
-	renderDiags(w, "  ", l.Diags.Sorted())
+	renderDiags(w, st, "  ", l.Diags.Sorted())
 }
 
 // Tildify shortens a path inside your home folder to ~/…, which is easier
@@ -242,30 +297,30 @@ func describeRuntime(rt *Runtime) string {
 	return strings.Join(parts, ", ")
 }
 
-func describeEvaluation(ev *stub.Evaluation) string {
+func describeEvaluation(st style.Style, ev *stub.Evaluation) string {
 	var parts []string
 	word := "trigger"
 	if len(ev.Triggers) > 1 {
 		word = "triggers"
 	}
-	parts = append(parts, word+" "+describeUses(ev.Triggers))
+	parts = append(parts, word+" "+describeUses(st, ev.Triggers))
 	if len(ev.Connectors) > 0 {
-		parts = append(parts, "connectors "+describeUses(ev.Connectors))
+		parts = append(parts, "connectors "+describeUses(st, ev.Connectors))
 	}
 	if len(ev.SideEffects) > 0 {
-		parts = append(parts, "side effects "+describeUses(ev.SideEffects))
+		parts = append(parts, "side effects "+describeUses(st, ev.SideEffects))
 	}
 	if ev.Memory.Support != "" {
-		parts = append(parts, fmt.Sprintf("memory [%s]", ev.Memory.Support))
+		parts = append(parts, "memory "+support(st, ev.Memory.Support))
 	}
 	// Stubs that run in a session have none of these settings.
-	for _, st := range ev.Stubs {
-		if len(st.Shape.SideEffects) == 0 {
+	for _, s := range ev.Stubs {
+		if len(s.Shape.SideEffects) == 0 {
 			continue
 		}
 		var settings []string
-		for _, name := range sortedSettings(st.Shape.SideEffects) {
-			settings = append(settings, name+" "+st.Shape.SideEffects[name])
+		for _, name := range sortedSettings(s.Shape.SideEffects) {
+			settings = append(settings, name+" "+s.Shape.SideEffects[name])
 		}
 		parts = append(parts, "runtime's own "+strings.Join(settings, ", "))
 		break
@@ -274,15 +329,28 @@ func describeEvaluation(ev *stub.Evaluation) string {
 		parts = append(parts, "model "+ev.Model.String())
 	}
 	if len(ev.Stubs) == 1 {
-		parts = append(parts, "stub "+ev.Stubs[0].Shape.Fingerprint())
+		parts = append(parts, st.Dim("stub "+ev.Stubs[0].Shape.Fingerprint()))
 	} else {
 		var stubs []string
-		for _, st := range ev.Stubs {
-			stubs = append(stubs, st.Trigger+" "+st.Shape.Fingerprint())
+		for _, s := range ev.Stubs {
+			stubs = append(stubs, s.Trigger+" "+s.Shape.Fingerprint())
 		}
-		parts = append(parts, "a stub per trigger ("+strings.Join(stubs, ", ")+")")
+		parts = append(parts, st.Dim("a stub per trigger ("+strings.Join(stubs, ", ")+")"))
 	}
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, st.Dim(" · "))
+}
+
+// support writes how a runtime supports something, like "[native]":
+// native green, emulated yellow, anything else red.
+func support(st style.Style, s provider.Support) string {
+	label := "[" + string(s) + "]"
+	switch s {
+	case provider.Native:
+		return st.Green(label)
+	case provider.Emulated:
+		return st.Yellow(label)
+	}
+	return st.Red(label)
 }
 
 // stubName names a stub by its routine, plus its trigger when the routine
@@ -292,24 +360,24 @@ func stubName(id, routine string) string {
 	return stub.StubName(routine, trigger)
 }
 
-func describeUses(uses []stub.Use) string {
+func describeUses(st style.Style, uses []stub.Use) string {
 	var out []string
 	for _, u := range uses {
-		s := fmt.Sprintf("%s [%s]", u.Name, u.Support)
+		s := u.Name + " " + support(st, u.Support)
 		if u.Dropped {
-			s = fmt.Sprintf("%s [optional, not available here]", u.Name)
+			s = u.Name + " " + st.Dim("[optional, not available here]")
 		}
 		out = append(out, s)
 	}
 	return strings.Join(out, ", ")
 }
 
-func renderDiags(w io.Writer, indent string, diags diag.List) {
+func renderDiags(w io.Writer, st style.Style, indent string, diags diag.List) {
 	for _, d := range diags {
 		if d.Severity == diag.Note {
 			continue
 		}
-		for i, line := range strings.Split(d.String(), "\n") {
+		for i, line := range strings.Split(st.Diag(d), "\n") {
 			if i > 0 {
 				line = "  " + strings.TrimLeft(line, " ")
 			}
@@ -354,6 +422,7 @@ type FactoryJSON struct {
 	Init            *InitJSON    `json:"init,omitempty"`
 	Diags           diag.List    `json:"diagnostics,omitempty"`
 	Notes           []string     `json:"notes,omitempty"`
+	Details         []string     `json:"details,omitempty"`
 }
 
 // ChangeJSON is one change in JSON output.
@@ -392,7 +461,7 @@ type LocalJSON struct {
 func (p *Plan) ToJSON() JSON {
 	out := JSON{ExitCode: p.ExitCode(), Destroy: p.Destroy, Diags: p.Diags}
 	for _, d := range p.Factories {
-		dj := FactoryJSON{Name: d.Name, Scope: "cloud", Diags: d.Diags, Notes: d.Notes, Changes: []ChangeJSON{}}
+		dj := FactoryJSON{Name: d.Name, Scope: "cloud", Diags: d.Diags, Notes: d.Notes, Details: d.Details, Changes: []ChangeJSON{}}
 		if d.Local() {
 			dj.Scope = "local"
 		}

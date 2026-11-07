@@ -105,7 +105,7 @@ Every remote resource has a stable identity, built from its factory's tag, routi
 └tag┘└routine┘ └────── repo ──────┘
 ```
 
-The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#cloud-factories), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica plan` prints each cloud factory's tag.
+The **tag** stands for one factory on one Fabrica server. It's a short hash of the server's address and the factory's name, so the names runtimes show never reveal your server's address, and two factories on the same server get different tags. To get a readable name instead, give the factory an [`alias:`](home-repos.md#cloud-factories), and it becomes the tag: `review#pr-review@github.com/acme/app`. `fabrica show` prints each cloud factory's tag.
 
 When a routine has [several triggers](blueprints.md#several-triggers) and the runtime takes one per stub, each trigger gets a stub of its own, and the trigger goes in after the routine: `4ckr#pr-review:github.push@github.com/acme/app`.
 

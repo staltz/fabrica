@@ -168,6 +168,7 @@ The full walkthrough, including a team setup with a cloud PR reviewer, is in [ma
 | `fabrica lock` | Pins a blueprint's imports to exact commits, in `fabrica.lock`. |
 | `fabrica upgrade [alias…]` | Moves imports to newer commits, showing a diff first. |
 | `fabrica auth` | Shows the credentials `apply` needs (server secrets, runtime API keys, git access) and checks that each one works. `fabrica auth login` sets up what's missing, and saves it in your keychain. |
+| `fabrica show` | Shows how each factory is set up: its blueprint commit, endpoint and tag, and how each runtime handles each routine. |
 | `fabrica plan` | Shows what `apply` would do and what's blocking it. Exits `0` when in sync, `2` with changes, `1` with errors. |
 | `fabrica apply` | Installs and updates stubs in runtimes, and sets up your local tools. |
 | `fabrica destroy [factory…]` | The opposite of `apply`: removes everything it installed, and leaves your factory files alone. Asks first. |

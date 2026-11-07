@@ -72,10 +72,7 @@ fabrica plan
 
 ```
 Factory my-default (local)
-  · blueprint github.com/you/my-blueprint@main → 72ef761 (branch main; follows the branch: merges take effect on the next run, no apply needed)
-  · targets: ["*"] matches every repo not covered by another local factory; each repo still needs the Fabrica line, which is checked when a session starts
-  claude-code-local: api mode, skills unpacked on disk
-  cursor-local: api mode, skills unpacked on disk
+  Set up through the local tools on this machine.
 
 Local tools on this machine
   claude-code-local (~/.claude.json, ~/.claude/settings.json)
@@ -237,13 +234,7 @@ cd home && fabrica plan
 
 ```
 Factory pr-review (cloud)
-  endpoint https://fabrica.acme.dev/pr-review
-  · blueprint github.com/acme/blueprint@stable → 72ef761 (branch stable; follows the branch: merges take effect on the next run, no apply needed)
   · cursor-cloud uses handoff mode because CURSOR_API_KEY isn't set; run `fabrica auth login` to set it up, and Fabrica manages cursor-cloud through its API instead
-  claude-code-cloud: handoff mode, text-only skills, token in the url
-    routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub e128f7aa2995
-  cursor-cloud: handoff mode, text-only skills, token in the header
-    routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub f1b3f4b57a0a
   Changes:
     + create pr-review @ github.com/acme/app on claude-code-cloud (handoff): it isn't installed yet
     + create pr-review @ github.com/acme/app on cursor-cloud (handoff): it isn't installed yet
@@ -251,9 +242,22 @@ Factory pr-review (cloud)
 Plan: 2 changes, 0 errors. Run `fabrica apply` to make these changes.
 ```
 
-The plan shows how each runtime handles each part of the routine. **Native** means the runtime has it built in, **emulated** means Fabrica turns it into prompt instructions plus the connector that carries it out, and **unsupported** would be an error.
+To see how the factory is set up, rather than what apply would change, run `fabrica show`:
 
-It also reads `github.com/acme/app`'s default branch to check the Fabrica line and look for skill name clashes. Cloud runs can't look at the workspace themselves, so this is where those problems get caught.
+```
+Factory pr-review (cloud)
+  · blueprint github.com/acme/blueprint@stable → 72ef761 (branch stable; follows the branch: merges take effect on the next run, no apply needed)
+  endpoint https://fabrica.acme.dev/pr-review
+  tag 4ckr (runtimes name its routines like 4ckr#<routine>@<repo>)
+  claude-code-cloud: handoff mode, text-only skills, token in the url
+    routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub e128f7aa2995
+  cursor-cloud: handoff mode, text-only skills, token in the header
+    routine pr-review: trigger github.pull_request.opened [native] · connectors github [native], slack [native] · side effects github.pr_comment [emulated], slack.notify [emulated] · stub f1b3f4b57a0a
+```
+
+It shows how each runtime handles each part of the routine. **Native** means the runtime has it built in, **emulated** means Fabrica turns it into prompt instructions plus the connector that carries it out, and **unsupported** would be an error.
+
+`plan` also reads `github.com/acme/app`'s default branch to check the Fabrica line and look for skill name clashes. Cloud runs can't look at the workspace themselves, so this is where those problems get caught.
 
 ### 5. Apply, then follow the handoffs
 

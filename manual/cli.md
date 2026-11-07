@@ -6,7 +6,7 @@ Every command has `--help`.
 
 ## Choosing the home repo
 
-`auth`, `plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
+`auth`, `show`, `plan`, `apply`, `destroy`, `confirm`, `unlock` and `check` (on a home or product repo) work on one home repo. They pick it like this:
 
 1. the `--home <folder>` flag, if you give one,
 2. otherwise the current folder (or the git repo it's in), if it has `factories/` or `state/`,
@@ -27,7 +27,9 @@ Every command has `--help`.
 | `CURSOR_AGENTS_ENDPOINT` | The address of Cursor's Cloud Agents API, which starts [init sessions](providers.md#init-sessions) on `cursor-cloud`. Default `https://api.cursor.com`. |
 | `FABRICA_CLAUDE_BIN` | The `claude` command that starts [init sessions](providers.md#init-sessions) on `claude-code-local`. Default `claude`, from your `PATH`. |
 | `FABRICA_BIN` | The path local tools should run as `fabrica`. By default Fabrica uses the `fabrica` on your `PATH` if it's the same program, otherwise its own path. |
-| `CI` | When set, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
+| `CI` | When set, `show`, `plan`, `apply` and `destroy` skip local factories, since CI has nothing local to set up. |
+| `NO_COLOR` | When set (to anything), output has no colors. Fabrica only colors output that goes to a terminal, and never when `TERM` is `dumb`. |
+| `FORCE_COLOR` | When set (to anything but `0`), output has colors even when it doesn't go to a terminal, like through a pager: `FORCE_COLOR=1 fabrica plan \| less -R`. |
 
 An environment variable that holds a credential always wins over one `fabrica auth login` saved, even when it's set to nothing: `CURSOR_API_KEY= fabrica plan` shows what happens without your saved key.
 
@@ -116,9 +118,15 @@ fabrica auth admin-token | pbcopy
 
 Without a URL, it uses the only server your home repo's cloud factories use. With several, it lists them and asks you to name one. Give the token to people who should read run history, and never to agents. They can set it as `FABRICA_ADMIN_TOKEN`. See [Credentials](auth.md#the-admin-token).
 
+## `fabrica show [factory…]`
+
+Shows how every factory (or the ones you name) is set up, as the home repo and its blueprints describe it: the commit its blueprint resolves to, follow versus frozen, a cloud factory's endpoint and [tag](concepts.md), each runtime's apply mode, and how each runtime handles each routine's triggers, connectors and side effects (native, emulated or unsupported), memory and model, with its stub's fingerprint. Before a factory's [init routine](blueprints.md#init-routines) has run, it also shows which runtime it would start on, and why not the others. It shows errors that stop a factory from loading too.
+
+It doesn't compare anything with what's installed, so it never asks runtime APIs, and it never changes anything. To see what `apply` would change, use [`plan`](#fabrica-plan-factory).
+
 ## `fabrica plan [factory…]`
 
-Shows what `apply` would do for every factory (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, how each runtime handles each trigger, connector and side effect, each runtime's apply mode, follow versus frozen, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes.
+Shows what `apply` would do for every factory (or the ones you name), and what's blocking it: creates, updates and deletes with reasons, pending handoffs, unverifiable resources, and errors. For your personal home repo, it also shows the local tool changes. How each factory is set up is for [`show`](#fabrica-show-factory).
 
 It reads the home repo as it is on disk, and never changes anything.
 

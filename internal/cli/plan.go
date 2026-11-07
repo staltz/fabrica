@@ -52,11 +52,11 @@ func newPlan(g *globals) *cobra.Command {
 installed, for every factory (or the ones you name), and shows:
 
   - creates, updates and deletes, with the reason for each
-  - how each runtime handles each trigger, connector and side effect
-    (native, emulated or unsupported), and its apply mode
-  - whether each factory follows a branch or is frozen
   - pending handoffs, and resources Fabrica can't verify
   - errors that block apply
+
+To see how each factory is set up (its blueprint commit, and how each
+runtime handles each routine), run ` + "`fabrica show`" + `.
 
 It reads the home repo as it is on disk, so you can plan your changes
 before you push them. Exit codes: 0 when everything is in sync, 2 when

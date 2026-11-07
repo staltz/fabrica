@@ -19,6 +19,7 @@ import (
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
+	"github.com/staltz/fabrica/internal/style"
 	"github.com/staltz/fabrica/internal/token"
 )
 
@@ -117,14 +118,14 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 	for _, dp := range p.Factories {
 		if dp.Local() {
 			if dp.Diags.HasErrors() {
-				fmt.Fprintf(out, "Factory %s has errors, so its local routines weren't changed:\n", dp.Name)
+				fmt.Fprintf(out, "%s has errors, so its local routines weren't changed:\n", style.For(out).Bold("Factory "+dp.Name))
 				printErrors(out, dp.Diags)
 				res.Failed = append(res.Failed, dp.Name)
 			}
 			continue
 		}
 		if dp.Diags.HasErrors() {
-			fmt.Fprintf(out, "Factory %s has errors, so it was skipped:\n", dp.Name)
+			fmt.Fprintf(out, "%s has errors, so it was skipped:\n", style.For(out).Bold("Factory "+dp.Name))
 			printErrors(out, dp.Diags)
 			res.Failed = append(res.Failed, dp.Name)
 			continue
@@ -140,22 +141,22 @@ func Run(ctx context.Context, opts Options, homeDir string) (*Result, error) {
 		res.Handoffs = append(res.Handoffs, files...)
 		res.Setups = append(res.Setups, setups...)
 		if err != nil {
-			fmt.Fprintf(out, "Factory %s: %v\n", dp.Name, err)
+			fmt.Fprintf(out, "%s %s\n", style.For(out).Bold("Factory "+dp.Name+":"), style.For(out).Red(err.Error()))
 			res.Failed = append(res.Failed, dp.Name)
 		}
 	}
 
 	if p.Local != nil {
 		if err := applyLocal(out, p.Local); err != nil {
-			fmt.Fprintf(out, "Local tools: %v\n", err)
+			fmt.Fprintf(out, "%s %s\n", style.For(out).Bold("Local tools:"), style.For(out).Red(err.Error()))
 			res.Failed = append(res.Failed, "local tools")
 		}
 	}
 	if len(res.Failed) == 0 && !p.HasChanges() {
 		if env.Destroy {
-			fmt.Fprintln(out, "Nothing to destroy.")
+			fmt.Fprintln(out, style.For(out).Green("Nothing to destroy."))
 		} else {
-			fmt.Fprintln(out, "Everything is already in sync. Nothing to do.")
+			fmt.Fprintln(out, style.For(out).Green("Everything is already in sync. Nothing to do."))
 		}
 	}
 	return res, nil
@@ -189,11 +190,24 @@ func needsGit(h *home.Home) bool {
 }
 
 func printErrors(out io.Writer, diags diag.List) {
+	st := style.For(out)
 	for _, d := range diags.Sorted().Only(diag.Error) {
-		for _, line := range strings.Split(d.String(), "\n") {
+		for _, line := range strings.Split(st.Diag(d), "\n") {
 			fmt.Fprintf(out, "  %s\n", line)
 		}
 	}
+}
+
+// succeeded reports one change that went through, and how.
+func succeeded(out io.Writer, change, how string) {
+	st := style.For(out)
+	fmt.Fprintf(out, "  %s %s %s\n", st.Green("✓"), change, st.Dim("("+how+")"))
+}
+
+// failed reports one change that didn't, and why.
+func failed(out io.Writer, change string, err error) {
+	st := style.For(out)
+	fmt.Fprintf(out, "  %s %s\n    %s\n", st.Red("✗"), change, st.Red(err.Error()))
 }
 
 // applyCloud applies one cloud factory, following the steps in the
@@ -233,7 +247,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		}
 		return nil, nil, fmt.Errorf("couldn't take the lock: %w", err)
 	}
-	fmt.Fprintf(out, "Factory %s: took the lock.\n", name)
+	fmt.Fprintf(out, "%s took the lock.\n", style.For(out).Bold("Factory "+name+":"))
 
 	// 2 and 3. Refresh and re-plan against the home repo as it is now.
 	locked := *env
@@ -271,7 +285,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 			id, err := beginUncertainCreate(ctx, repo, env, dp, state, c, now)
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s: %v", c.Describe(), err))
-				fmt.Fprintf(out, "  ✗ %s\n    %v\n", c.Describe(), err)
+				failed(out, c.Describe(), err)
 				continue
 			}
 			guardID = id
@@ -290,14 +304,14 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 				err = fmt.Errorf("%w. This may have created it anyway, and %s can't list its resources, so apply will not try again: %s", err, c.Key.Runtime, plan.UncertainCreateHint(c.Key.ID, guardID))
 			}
 			failures = append(failures, fmt.Sprintf("%s: %v", c.Describe(), err))
-			fmt.Fprintf(out, "  ✗ %s\n    %v\n", c.Describe(), err)
+			failed(out, c.Describe(), err)
 			continue
 		}
 		done := "done"
 		if file != "" {
 			done = "handoff written to " + file
 		}
-		fmt.Fprintf(out, "  ✓ %s (%s)\n", c.Describe(), done)
+		succeeded(out, c.Describe(), done)
 		// The ID is known now, so the attempt record can go, and state
 		// should say so before the next change. If this checkpoint fails,
 		// the final record below still has the ID.
@@ -319,12 +333,12 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 		switch {
 		case err != nil:
 			failures = append(failures, fmt.Sprintf("%s: %v", describeInit(dp.Init), err))
-			fmt.Fprintf(out, "  ✗ %s\n    %v\n", describeInit(dp.Init), err)
+			failed(out, describeInit(dp.Init), err)
 		case file != "":
 			handoffs = append(handoffs, file)
-			fmt.Fprintf(out, "  ✓ %s (handoff written to %s)\n", describeInit(dp.Init), file)
+			succeeded(out, describeInit(dp.Init), "handoff written to "+file)
 		default:
-			fmt.Fprintf(out, "  ✓ %s (started%s)\n", describeInit(dp.Init), startedWhere(state.Init))
+			succeeded(out, describeInit(dp.Init), "started"+startedWhere(state.Init))
 		}
 		if err == nil {
 			done++
@@ -345,7 +359,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if err := repo.Release(ctx, name, msg, state); err != nil {
 		return handoffs, setups, err
 	}
-	fmt.Fprintf(out, "Factory %s: recorded the results and released the lock.\n", name)
+	fmt.Fprintf(out, "%s recorded the results and released the lock.\n", style.For(out).Bold("Factory "+name+":"))
 	if len(failures) > 0 {
 		return handoffs, setups, fmt.Errorf("%s failed:\n  %s", plural(len(failures), "change"), strings.Join(failures, "\n  "))
 	}
@@ -726,9 +740,9 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 		for _, f := range rt.Tool.Files() {
 			files = append(files, plan.Tildify(f))
 		}
-		fmt.Fprintf(out, "Local %s: updated %s\n", rt.Name, strings.Join(files, ", "))
+		fmt.Fprintf(out, "%s updated %s\n", style.For(out).Bold("Local "+rt.Name+":"), strings.Join(files, ", "))
 		for _, c := range rt.Changes {
-			fmt.Fprintf(out, "  ✓ %s\n", c)
+			fmt.Fprintf(out, "  %s %s\n", style.For(out).Green("✓"), c)
 		}
 		if rt.Name == "codex-cli" && hasHookChanges(rt.Changes) {
 			fmt.Fprintln(out, "  Codex skips new or changed hooks until you trust them: open Codex and approve them in /hooks.")

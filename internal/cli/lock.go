@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/staltz/fabrica/internal/blueprint"
+	"github.com/staltz/fabrica/internal/style"
 )
 
 func newLock() *cobra.Command {
@@ -39,7 +40,7 @@ imports bringing the same item.`,
 			}
 			errs, warns := printDiags(out, diags, false)
 			if errs > 0 {
-				fmt.Fprintln(out, countSummary(errs, warns))
+				fmt.Fprintln(out, countSummary(style.For(out), errs, warns))
 				fmt.Fprintf(out, "%s wasn't written.\n", blueprint.LockFile)
 				return &ExitError{Code: 1}
 			}
@@ -80,7 +81,7 @@ It asks before writing fabrica.lock, unless you pass --yes.`,
 			fmt.Fprint(out, blueprint.FormatChanges(changes))
 			errs, warns := printDiags(out, diags, false)
 			if errs > 0 {
-				fmt.Fprintln(out, countSummary(errs, warns))
+				fmt.Fprintln(out, countSummary(style.For(out), errs, warns))
 				fmt.Fprintf(out, "%s wasn't written: the upgraded blueprint has errors. Fix them (often with only: or exclude:), then upgrade again.\n", blueprint.LockFile)
 				return &ExitError{Code: 1}
 			}

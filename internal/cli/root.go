@@ -24,6 +24,7 @@ import (
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/mcpserver"
 	"github.com/staltz/fabrica/internal/paths"
+	"github.com/staltz/fabrica/internal/style"
 )
 
 // ExitError carries a specific exit code out of a command. `fabrica plan`
@@ -135,6 +136,7 @@ Run fabrica -u to update Fabrica itself to the latest release.`,
 		newLock(),
 		newUpgrade(),
 		newAuth(g),
+		newShow(g),
 		newPlan(g),
 		newApply(g),
 		newDestroy(g),
@@ -225,11 +227,22 @@ func sameFile(a, b string) bool {
 // printDiags prints diagnostics, errors first, and returns the number of
 // errors and warnings.
 func printDiags(w io.Writer, diags diag.List, withNotes bool) (errs, warns int) {
+	return printDiagsIndented(w, "", diags, withNotes)
+}
+
+// printDiagsIndented is printDiags with every line indented.
+func printDiagsIndented(w io.Writer, indent string, diags diag.List, withNotes bool) (errs, warns int) {
+	st := style.For(w)
 	for _, d := range diags.Dedup().Sorted() {
 		if d.Severity == diag.Note && !withNotes {
 			continue
 		}
-		fmt.Fprintln(w, indentContinuation(d.String()))
+		for i, line := range strings.Split(st.Diag(d), "\n") {
+			if i > 0 {
+				line = "  " + line
+			}
+			fmt.Fprintln(w, indent+line)
+		}
 		switch d.Severity {
 		case diag.Error:
 			errs++
@@ -240,18 +253,15 @@ func printDiags(w io.Writer, diags diag.List, withNotes bool) (errs, warns int) 
 	return errs, warns
 }
 
-func indentContinuation(s string) string {
-	return strings.ReplaceAll(s, "\n", "\n  ")
-}
-
-func countSummary(errs, warns int) string {
+// countSummary is the last line of a check, colored for st.
+func countSummary(st style.Style, errs, warns int) string {
 	switch {
 	case errs == 0 && warns == 0:
-		return "✓ No problems found."
+		return st.Green("✓ No problems found.")
 	case errs == 0:
-		return fmt.Sprintf("✓ No errors (%s).", plural(warns, "warning"))
+		return st.Green("✓") + fmt.Sprintf(" No errors (%s).", st.Yellow(plural(warns, "warning")))
 	}
-	return fmt.Sprintf("✗ %s, %s.", plural(errs, "error"), plural(warns, "warning"))
+	return st.Red(fmt.Sprintf("✗ %s", plural(errs, "error"))) + fmt.Sprintf(", %s.", plural(warns, "warning"))
 }
 
 func plural(n int, word string) string {

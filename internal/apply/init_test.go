@@ -32,7 +32,7 @@ func TestInitStartsOnceWhenTheFactoryIsFirstApplied(t *testing.T) {
 	if !in.Start() || in.Chosen.Runtime != "toy" || in.Chosen.Mode != provider.API || in.Repo != "github.com/acme/app" {
 		t.Fatalf("the plan should start the init on toy, by itself:\n%s", render(p))
 	}
-	text := render(p)
+	text := render(p) + show(p)
 	for _, want := range []string{"init routine onboard", "→ toy: Fabrica starts it", "! init   onboard @ github.com/acme/app on toy (api; Fabrica starts it): the factory is being applied for the first time", "5 changes"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("plan output is missing %q:\n%s", want, text)
@@ -74,8 +74,8 @@ func TestInitStartsOnceWhenTheFactoryIsFirstApplied(t *testing.T) {
 	if p.ExitCode() != 0 || p.Factory("pr-review").Init != nil {
 		t.Fatalf("the init already ran, so there's nothing to do:\n%s", render(p))
 	}
-	if !strings.Contains(render(p), "init onboard started on toy on ") {
-		t.Errorf("the plan should say when the init ran:\n%s", render(p))
+	if !strings.Contains(show(p), "init onboard started on toy on ") {
+		t.Errorf("show should say when the init ran:\n%s", show(p))
 	}
 
 	// Destroying the factory ends its life, and the apply that recreates
@@ -127,7 +127,7 @@ func TestInitStartsOnTheFirstAvailableRuntime(t *testing.T) {
 	if !in.Start() || in.Chosen.Runtime != "toy" {
 		t.Fatalf("toy should win:\n%s", render(p))
 	}
-	text := render(p)
+	text := show(p)
 	for _, want := range []string{
 		"cursor-cloud: a person starts it, from a handoff (Fabrica can't by itself: CURSOR_API_KEY isn't set)",
 		"claude-code-local: can't start it (it can't run the routine: runtime claude-code-local can't provide connector github)",
@@ -245,8 +245,8 @@ func TestInitOnlyRunsForNewFactories(t *testing.T) {
 	if p.ExitCode() != 0 || p.Factory("pr-review").Init != nil {
 		t.Fatalf("an existing factory doesn't run a new init:\n%s", render(p))
 	}
-	if !strings.Contains(render(p), "init routine onboard doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it") {
-		t.Errorf("the plan should say why the init doesn't run:\n%s", render(p))
+	if !strings.Contains(show(p), "init routine onboard doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it") {
+		t.Errorf("show should say why the init doesn't run:\n%s", show(p))
 	}
 
 	// Recreating it after a destroy runs it, like for any new factory.
@@ -263,8 +263,8 @@ func TestInitCanBeTurnedOff(t *testing.T) {
 	h.w.UpdateBlueprint(map[string]string{"routines/onboard.md": onboardRoutine("[toy]")})
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory + "init: false\n"}).CommitPush("add pr-review")
 	p := h.plan()
-	if p.Factory("pr-review").Init != nil || !strings.Contains(render(p), "init routine onboard never runs here: the factory says init: false") {
-		t.Fatalf("init: false turns the init off:\n%s", render(p))
+	if p.Factory("pr-review").Init != nil || !strings.Contains(show(p), "init routine onboard never runs here: the factory says init: false") {
+		t.Fatalf("init: false turns the init off:\n%s", show(p))
 	}
 	if res := h.apply(); res.ExitCode() != 0 || len(h.w.Toy.Sessions()) != 0 {
 		t.Fatalf("apply shouldn't start the init:\n%s", h.out.String())

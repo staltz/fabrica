@@ -65,7 +65,7 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
 	if init := f.Init(); init != nil {
-		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s doesn't run here: only cloud factories run their blueprint's init, since they keep state to remember they did", init.Ref.Name))
+		dp.Details = append(dp.Details, fmt.Sprintf("init routine %s doesn't run here: only cloud factories run their blueprint's init, since they keep state to remember they did", init.Ref.Name))
 	}
 	if d.IsWildcard() {
 		for _, r := range routines {
@@ -87,7 +87,7 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 	}
 	e.checkProductRepos(ctx, dp, d, f)
 	if d.IsWildcard() {
-		dp.Notes = append(dp.Notes, `targets: ["*"] matches every repo not covered by another local factory; each repo still needs the Fabrica line, which is checked when a session starts`)
+		dp.Details = append(dp.Details, `targets: ["*"] matches every repo not covered by another local factory; each repo still needs the Fabrica line, which is checked when a session starts`)
 	}
 	return dp
 }

@@ -54,7 +54,7 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 		planInitReset(dp)
 	}
 	providers := e.providersForCleanup(ctx, dp)
-	current := e.refresh(ctx, dp, providers)
+	current := e.refresh(ctx, dp, h.Dir, providers)
 	e.diff(dp, current, providers)
 	return dp
 }
@@ -252,7 +252,7 @@ func (e *Env) providersForCleanup(ctx context.Context, dp *Factory) map[string]*
 // refresh returns what's installed. It starts from state and, for
 // runtimes whose API can find resources, asks the runtime: by listing
 // what it has, or else by looking up each remote ID that state records.
-func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*provider.Provider) map[home.Key]home.Resource {
+func (e *Env) refresh(ctx context.Context, dp *Factory, homeDir string, providers map[string]*provider.Provider) map[home.Key]home.Resource {
 	current := map[home.Key]home.Resource{}
 	if dp.State != nil {
 		for _, r := range dp.State.Resources {
@@ -267,7 +267,7 @@ func (e *Env) refresh(ctx context.Context, dp *Factory, providers map[string]*pr
 		if mode, _ := p.Mode(); mode != provider.API || p.IsLocal() {
 			continue
 		}
-		api, err := p.API()
+		api, err := p.APIFor(homeDir)
 		if err != nil {
 			continue
 		}

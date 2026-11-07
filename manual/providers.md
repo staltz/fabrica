@@ -2,7 +2,7 @@
 
 A **provider** maps Fabrica's ideas onto one runtime. Blueprints describe *what* should happen, and providers translate that for each specific tool.
 
-- **Built-in providers** are compiled into the `fabrica` binary. Fabrica has four cloud ones (Claude routines, Cursor automations, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
+- **Built-in providers** are compiled into the `fabrica` binary. Fabrica has five cloud ones (Claude routines, Cursor automations, Cursor Agent SDK deployments, Codex and Copilot automations) and four local ones (Claude Code, Cursor IDE, Codex CLI and Copilot CLI).
 - **Folder providers** ship inside any blueprint, in `providers/<name>/`, and are imported like everything else. They're for runtimes Fabrica doesn't support out of the box.
 
 ## Capability matrices
@@ -27,33 +27,33 @@ These matrices are our best reading of each runtime's docs as of October 2026. T
 
 **Cloud runtimes**
 
-| | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `codex` (Codex cloud) | `copilot-cloud` (Copilot automations) |
-|---|---|---|---|---|
-| Apply mode | handoff | api, with a Cursor API key ([below](#cursor-automations-through-cursors-api)); handoff without | handoff | handoff |
-| Skills | text-only | text-only | text-only | text-only |
-| Fabrica token | in the URL | in a header | in the URL | in a header, from an Agents secret |
-| `schedule` | native | native | native | native (hourly, daily or weekly) |
-| `github.pull_request.opened` | native | native | native | native |
-| `github.pull_request.synchronize` | native | native | — | native |
-| `github.pull_request.reopened` | native | — | — | — |
-| `github.pull_request.ready_for_review` | native | — | — | — |
-| `github.pull_request.closed` | native | — | — | — |
-| `github.pull_request.labeled` | — | native | — | — |
-| `github.issues.opened` | — | — | — | native |
-| `github.push` | — | native | — | — |
-| `github.release.published` | native | — | — | — |
-| Built-in connectors | github, slack, linear, notion | github, slack (linear through its fallback) | github | github |
-| MCP servers | http, sse | http | http | http, sse, stdio |
-| Side effects | `github.pr_autofix` native (*Auto-fix pull requests*), the rest emulated | all emulated | all emulated | all emulated |
-| Memory | emulated | native (the automation's memory tool) | emulated | emulated |
-| Models | Claude's: Fable, Opus, Sonnet and Haiku, at `low` to `max` | Cursor's whole cloud agent catalog, Auto for `default` | OpenAI's GPT models, at `low` to `xhigh` | — (always Auto) |
-| Init sessions | handoff (a Claude Code session on the web) | api, as a cloud agent, with a Cursor API key; handoff without | handoff (a Codex cloud task) | — |
+| | `claude-code-cloud` (Claude routines) | `cursor-cloud` (Cursor automations) | `cursor-agent-sdk` (Cursor Agent SDK) | `codex` (Codex cloud) | `copilot-cloud` (Copilot automations) |
+|---|---|---|---|---|---|
+| Apply mode | handoff | api, with a Cursor API key ([below](#cursor-automations-through-cursors-api)); handoff without | api, with a Cursor API key and the `agent-sdk` command ([below](#cursor-agent-sdk-deployments)); no handoff | handoff | handoff |
+| Skills | text-only | text-only | text-only | text-only | text-only |
+| Fabrica token | in the URL | in a header | in a header, from a deployment secret | in the URL | in a header, from an Agents secret |
+| `schedule` | native | native | native | native | native (hourly, daily or weekly) |
+| `github.pull_request.opened` | native | native | native | native | native |
+| `github.pull_request.synchronize` | native | native | native | — | native |
+| `github.pull_request.reopened` | native | — | native | — | — |
+| `github.pull_request.ready_for_review` | native | — | native | — | — |
+| `github.pull_request.closed` | native | — | native | — | — |
+| `github.pull_request.labeled` | — | native | native | — | — |
+| `github.issues.opened` | — | — | — | — | native |
+| `github.push` | — | native | — | — | — |
+| `github.release.published` | native | — | — | — | — |
+| Built-in connectors | github, slack, linear, notion | github, slack (linear through its fallback) | — (github, slack and linear through their fallbacks) | github | github |
+| MCP servers | http, sse | http | http, sse | http | http, sse, stdio |
+| Side effects | `github.pr_autofix` native (*Auto-fix pull requests*), the rest emulated | all emulated | all emulated | all emulated | all emulated |
+| Memory | emulated | native (the automation's memory tool) | emulated | emulated | emulated |
+| Models | Claude's: Fable, Opus, Sonnet and Haiku, at `low` to `max` | Cursor's whole cloud agent catalog, Auto for `default` | Cursor's catalog, like `cursor-cloud`; the Agent SDK's default (Grok) for `default` | OpenAI's GPT models, at `low` to `xhigh` | — (always Auto) |
+| Init sessions | handoff (a Claude Code session on the web) | api, as a cloud agent, with a Cursor API key; handoff without | — | handoff (a Codex cloud task) | — |
 
 Cursor's memory tool is on by default, so every Cursor automation gets it turned on or off: on only for routines with `memory: true`. Claude routines have no documented memory setting, and the memories of Codex and Copilot work per project or repository rather than per task, so routines with `memory: true` get their memory from Fabrica there, and the handoffs say to leave any memory of the runtime's own off.
 
 Claude routines auto-fix the pull requests a run opens when their *Auto-fix pull requests* toggle is on (under **Advanced settings**, on the **Behavior** tab), so every Claude routine gets it turned on or off: on only for routines that list the `github.pr_autofix` side effect. The others have no such setting for their automations, so routines that list it can't run there.
 
-Three of these four have no API for creating triggered automations yet, so they use **handoff** mode: Claude routines can only be fired through their API; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. Cursor's automations do have one, the API behind Cursor's [Terraform provider](https://github.com/cursor/terraform-provider-cursor), so `cursor-cloud` uses `api` mode whenever it has a Cursor API key. A Claude routine's handoff can also be followed from the Claude Code CLI, whose `/schedule` command creates and edits routines.
+The Agent SDK deploys agents with its own command line, so `cursor-agent-sdk` is `api` only. Of the other four, three have no API for creating triggered automations yet, so they use **handoff** mode: Claude routines can only be fired through their API; Codex has no automation API; GitHub's Agent Tasks API can start Copilot sessions but not create automations. Cursor's automations do have one, the API behind Cursor's [Terraform provider](https://github.com/cursor/terraform-provider-cursor), so `cursor-cloud` uses `api` mode whenever it has a Cursor API key. A Claude routine's handoff can also be followed from the Claude Code CLI, whose `/schedule` command creates and edits routines.
 
 ### Cursor automations through Cursor's API
 
@@ -78,6 +78,28 @@ Two things work differently from runtimes whose API can list resources:
 - **Cursor's API can't set up MCP servers.** An automation only *names* its MCP servers, and Cursor looks them up in the MCP settings of the automation's owner. So each factory's Fabrica server is named `fabrica-<factory>` (each factory has its own address and token), and when an apply creates or updates Cursor automations, it writes `~/.cache/fabrica/handoffs/<factory>/cursor-cloud-setup.md`, listing each MCP server to have in Cursor's settings, with its URL and the `Authorization` header that carries the factory's token. You set them up once, and again when the file changes, like after the server secret is rotated. The file holds the token, so it's readable only by you, like a handoff.
 
 Copilot reads MCP servers from the repository's settings (**Settings → Copilot → MCP servers**), not from each automation, so every Copilot automation in a repository shares one `fabrica` server, and only one factory can deploy to a repository on `copilot-cloud` (`fabrica check` says so when two do). The handoff puts the Fabrica token in an Agents secret called `COPILOT_MCP_FABRICA_AUTHORIZATION`, so it never shows in the configuration. Copilot automations only run in private and internal repositories for now, and their schedules recur hourly, daily or weekly, so the handoff asks you to pick the one closest to the routine's cron.
+
+### Cursor Agent SDK deployments
+
+Cursor's [Agent SDK](https://cursor.com/docs/agent-sdk) (the `@grok/agent-sdk` package, formerly `@cursor/bdk`) defines agents as code, a folder of TypeScript and Markdown, and deploys them to Cursor-managed hosting with its `agent-sdk` command line. On `cursor-agent-sdk`, each stub becomes one such deployment, which Fabrica writes, pushes and deploys itself. It needs three things wherever you run `fabrica apply`:
+
+- **A Cursor API key**, the same one `cursor-cloud` uses (`fabrica auth login cursor-agent-sdk`, or `CURSOR_API_KEY` in CI), from a team with agent hosting turned on.
+- **The `agent-sdk` command**: `npm install --global @grok/agent-sdk@0.6.0` (it needs Node 22.13 or newer). `FABRICA_AGENT_SDK_BIN` says which one to run.
+- **A git repo Cursor can read.** The Agent SDK only deploys code that's pushed to git, so Fabrica pushes the projects to a branch of their own, `fabrica/agent-sdk`, of your home repo's remote, which Cursor reads through its GitHub connection. Fabrica writes nothing else there, and your home repo's own branch never sees it. `FABRICA_AGENT_SDK_REPO` names another repo to use instead (Fabrica must be able to push to it).
+
+There's no handoff mode: without the key or the command, `plan` says which one is missing.
+
+Each stub's project is small, since everything else is served live:
+
+- **`package.json`** pins the Agent SDK release the project was written for, and **`bot/agent.ts`** names the agent after the stub's identity, picks the routine's model (as one of the variants of Cursor's catalog, like `cursor-cloud`; without one, the Agent SDK picks), and declares its egress hosts (the Fabrica server's and each MCP connector's) and secret names.
+- **`bot/instructions.md`** is the stub prompt.
+- **`bot/mcp-connections/fabrica.ts`** is the factory's Fabrica server. Its `Authorization` header is `Bearer ${FABRICA_TOKEN}`, and apply sets the `FABRICA_TOKEN` deployment secret, so the token never lands in git. Every MCP connector gets a connection of its own the same way, with its bearer secret read from `fabrica apply`'s environment by name. The model has no built-in GitHub, Slack or Linear tools, so those connectors need their `fallback:` MCP servers, and OAuth and stdio servers can't be used.
+- **Triggers:** each `schedule` is a schedule (`bot/schedules/fabrica-<n>.md`, cron in UTC), and the pull request triggers are a GitHub channel (`bot/channels/github.ts`) on the stub's repo, through the Cursor account's GitHub connection, that wakes the agent on exactly those actions and never on comments. That connection carries pull request and comment events only, so there's no `github.push` or `github.issues.opened`.
+- **`bot/extensions/cloud.ts`** mounts Cursor's cloud agents extension, scoped to the stub's repo. A hosted agent has no checkout of its own, so this is how it does coding work there: it hands it to a Cursor cloud agent on that repo.
+
+A deployment's slug is `fab-<routine>-<hash of its identity>`, so a create that's tried again deploys the same deployment again, never a second one. Once a deploy succeeds, apply records it on the branch, in `deployed/<slug>.json` (the stub's identity and fingerprint), which is how `plan` lists what's deployed (so the matrix says `find_by_identity: true`), along with `agent-sdk deployment list`, which drops ones deleted by hand. A deploy that fails isn't recorded, so the next apply deploys it again. Deleting a stub deletes its deployment and its folder.
+
+Deployments belong to whoever owns the API key, and Cursor's default limits are 20 deployments and 100 deploys a day per owner, so a factory with many routines and targets can run out. If your team restricts egress, the Fabrica server's host and each MCP connector's host must be on its allowlist, or the deploy fails and names the host.
 
 **Local runtimes**
 

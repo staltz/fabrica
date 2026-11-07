@@ -76,7 +76,7 @@ struct Factory: Equatable, Sendable {
 /// The built-in runtimes, so the editor can offer them as checkboxes.
 enum Runtime {
     static let local = ["claude-code-local", "cursor-local", "codex-cli", "copilot-local"]
-    static let cloud = ["claude-code-cloud", "cursor-cloud", "codex", "copilot-cloud"]
+    static let cloud = ["claude-code-cloud", "cursor-cloud", "cursor-agent-sdk", "codex", "copilot-cloud"]
 
     static func title(_ name: String) -> String {
         switch name {
@@ -86,6 +86,7 @@ enum Runtime {
         case "copilot-local": "Copilot CLI"
         case "claude-code-cloud": "Claude routines"
         case "cursor-cloud": "Cursor automations"
+        case "cursor-agent-sdk": "Cursor Agent SDK"
         case "codex": "Codex cloud"
         case "copilot-cloud": "Copilot automations"
         default: name

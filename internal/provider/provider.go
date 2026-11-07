@@ -55,7 +55,8 @@ var builtinFS embed.FS
 // builtinAPIs are the built-in cloud runtimes Fabrica can drive through
 // their own API, when the API's credentials are set.
 var builtinAPIs = map[string]func() (RuntimeAPI, error){
-	"cursor-cloud": newCursorAPI,
+	"cursor-cloud":     newCursorAPI,
+	"cursor-agent-sdk": newAgentSDKAPI,
 }
 
 var builtins = mustLoadBuiltins()

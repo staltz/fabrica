@@ -16,7 +16,8 @@ import (
 var ErrPushRejected = errors.New("the push was rejected because the remote has newer commits")
 
 // Worktree is a normal checked-out git repo, like your home repo. It's the
-// only place Fabrica ever commits to.
+// only repo of yours Fabrica commits to; the other place it pushes to is a
+// BranchCheckout's branch, which only Fabrica writes.
 type Worktree struct {
 	Dir string
 }

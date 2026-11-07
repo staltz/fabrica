@@ -307,13 +307,26 @@ func Standalone(name string) []*Need {
 		}
 		return out
 	}
+	// Several built-in runtimes can share one credential, like a Cursor API
+	// key.
+	var shared *Need
 	for _, rt := range provider.BuiltinNames() {
 		p, _ := provider.Builtin(rt)
 		for _, c := range p.Matrix.Credentials {
-			if contains(c.Names(), name) {
-				return []*Need{{Kind: RuntimeCredential, Name: c.Env, Credential: c, Provider: p, Runtimes: []string{rt}, Fallback: fallback(p)}}
+			switch {
+			case !contains(c.Names(), name):
+			case shared == nil:
+				shared = &Need{Kind: RuntimeCredential, Name: c.Env, Credential: c, Provider: p, Runtimes: []string{rt}, Fallback: fallback(p)}
+			default:
+				shared.Runtimes = append(shared.Runtimes, rt)
+				if fallback(p) == "" {
+					shared.Fallback = ""
+				}
 			}
 		}
+	}
+	if shared != nil {
+		return []*Need{shared}
 	}
 	if envNameRe.MatchString(name) && !strings.HasPrefix(name, "FABRICA_") {
 		return []*Need{{Kind: RuntimeCredential, Name: name, Credential: provider.Credential{Env: name}}}

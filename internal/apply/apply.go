@@ -272,7 +272,7 @@ func applyCloud(ctx context.Context, opts Options, env *plan.Env, repo *Repo, na
 	if secret != "" {
 		tok = token.For(secret, name)
 	}
-	apis := apiClients{}
+	apis := &apiClients{home: repo.Dir, clients: map[*provider.Provider]provider.RuntimeAPI{}}
 	touched := map[*provider.Provider]bool{} // runtimes with creates or updates through their API
 	var failures []string
 	for _, c := range dp.Changes {
@@ -390,18 +390,22 @@ func releaseAfter(ctx context.Context, repo *Repo, name, verb string, cause erro
 }
 
 // apiClients holds one API client per runtime during an apply, so a
-// client that has to log in does it once.
-type apiClients map[*provider.Provider]provider.RuntimeAPI
+// client that has to log in does it once. home is the home repo, for APIs
+// that keep files next to it.
+type apiClients struct {
+	home    string
+	clients map[*provider.Provider]provider.RuntimeAPI
+}
 
-func (a apiClients) get(p *provider.Provider) (provider.RuntimeAPI, error) {
-	if api, ok := a[p]; ok {
+func (a *apiClients) get(p *provider.Provider) (provider.RuntimeAPI, error) {
+	if api, ok := a.clients[p]; ok {
 		return api, nil
 	}
-	api, err := p.API()
+	api, err := p.APIFor(a.home)
 	if err != nil {
 		return nil, err
 	}
-	a[p] = api
+	a.clients[p] = api
 	return api, nil
 }
 
@@ -410,10 +414,10 @@ func (a apiClients) get(p *provider.Provider) (provider.RuntimeAPI, error) {
 // ones this apply touched, so the file is always complete. It's written
 // even when the API calls failed, since a missing setup can be why. The
 // files hold the factory's token, so they're private, like handoffs.
-func writeSetups(out io.Writer, opts Options, dp *plan.Factory, tok string, touched map[*provider.Provider]bool, apis apiClients) []string {
+func writeSetups(out io.Writer, opts Options, dp *plan.Factory, tok string, touched map[*provider.Provider]bool, apis *apiClients) []string {
 	var files []string
 	for p := range touched {
-		ms, ok := apis[p].(provider.ManualSetup)
+		ms, ok := apis.clients[p].(provider.ManualSetup)
 		if !ok {
 			continue
 		}
@@ -494,7 +498,7 @@ func dropPendingForKey(state *home.State, key home.Key) {
 }
 
 // applyChange carries out one change and updates state to match.
-func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time, apis apiClients) (string, error) {
+func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *home.State, c *plan.Change, tok string, now time.Time, apis *apiClients) (string, error) {
 	switch c.Action {
 	case plan.Adopt:
 		upsertResource(state, *c.Current)

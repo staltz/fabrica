@@ -1,0 +1,142 @@
+# Cursor's Agent SDK (@grok/agent-sdk, formerly @cursor/bdk): agents as
+# code, deployed to Cursor-managed hosting.
+#
+# Each stub becomes one Agent SDK project, which Fabrica writes, pushes to a
+# branch of its own (the Agent SDK only deploys code that's pushed to git)
+# and deploys with the `agent-sdk` command line, under a slug derived from
+# the stub's identity. The project is small: the stub prompt as its
+# instructions, the factory's Fabrica server as an MCP connection whose
+# token is a deployment secret, the routine's triggers as schedules and a
+# GitHub channel, and Cursor's cloud agents extension, so the agent can
+# hand coding work on the stub's repo to a Cursor cloud agent (a hosted
+# agent has no checkout of its own).
+#
+# It needs a Cursor API key (CURSOR_API_KEY, or saved by `fabrica auth
+# login`), the `agent-sdk` command (Node 22.13 or newer), and a team with
+# agent hosting turned on. Without the key or the command there's no other
+# apply mode, so `plan` says what's missing.
+kind: cloud
+description: Cursor Agent SDK (agents as code, on Cursor-managed hosting)
+apply_modes: [api]
+# The deployments can be listed, and the branch Fabrica deploys from says
+# which stub each one is.
+find_by_identity: true
+skill_transport: text
+# The token is a deployment secret that the MCP connection's Authorization
+# header names, so it never lands in git. A URL can't name a secret.
+mcp_auth:
+  header: native
+# A deployment has any number of schedules next to its GitHub channel.
+multiple_triggers: true
+triggers:
+  schedule: native                          # bot/schedules/*.md, cron in UTC
+  # The GitHub channel, through the Cursor account's GitHub connection
+  # (cursorAccount), which carries pull request and comment events. Push,
+  # issue and CI events need a GitHub App or webhook, so they're not here.
+  github.pull_request.opened: native
+  github.pull_request.reopened: native
+  github.pull_request.synchronize: native
+  github.pull_request.ready_for_review: native
+  github.pull_request.closed: native
+  github.pull_request.labeled: native
+connectors:
+  mcp.http: native
+  mcp.sse: native
+  # A hosted agent would need the command installed in its image.
+  mcp.stdio: unsupported
+  # The model has no built-in GitHub, Slack or Linear tools, so these need
+  # their fallback: MCP servers.
+  github: emulated
+  slack: emulated
+  linear: emulated
+side_effects:
+  "*": emulated
+# The Agent SDK's memory hook keeps a journal of every turn, shared by all
+# of a deployment's sessions, rather than notes a routine decides to keep,
+# so routines that need memory get it from Fabrica.
+memory: emulated
+# The models an agent can run on (the same catalog as cursor-cloud's
+# automations, as of October 2026), with the efforts each one has. Cursor names
+# the effort parameter differently for different models (effort, reasoning
+# or reasoning_effort), some say extra-high for xhigh, and every model needs
+# a whole variant (context, fast and so on); the API client translates.
+# A routine's `default` entry gets the Agent SDK's default (grok-4.7, as of
+# its 0.6.0 release).
+models:
+  claude-fable-5-1: [low, medium, high, xhigh, max]
+  claude-fable-5: [low, medium, high, xhigh, max]
+  claude-haiku-4-5: []
+  claude-haiku-5-5: [low, medium, high, xhigh, max]
+  claude-opus-4-5: []
+  claude-opus-4-6: [low, medium, high, max]
+  claude-opus-4-7: [low, medium, high, xhigh, max]
+  claude-opus-4-8: [low, medium, high, xhigh, max]
+  claude-opus-5-5: [low, medium, high, xhigh, max]
+  claude-opus-5: [low, medium, high, xhigh, max]
+  claude-sonnet-4-5: []
+  claude-sonnet-4-6: [low, medium, high, max]
+  claude-sonnet-4: []
+  claude-sonnet-5-5: [low, medium, high, xhigh, max]
+  claude-sonnet-5: [low, medium, high, xhigh, max]
+  composer-2.5: []
+  deepseek-v4.1-flash-1017: [none, low, medium, high, max]
+  gemini-2.5-flash: []
+  gemini-3-flash: []
+  gemini-3.1-pro: []
+  gemini-3.5-flash: []
+  gemini-3.6-flash: [minimal, low, medium, high]
+  gemini-3.7-flash: [low, medium, high]
+  gemini-3.8-flash: [low, medium, high]
+  gemini-4-argon: [low, medium, high]
+  glm-5.2: [high, max]
+  glm-5.3-flash: [low, high, max]
+  glm-5.3: [low, high, max]
+  gpt-5-mini: []
+  gpt-5.1: [low, medium, high]
+  gpt-5.2: [low, medium, high, xhigh]
+  gpt-5.3-codex: [low, medium, high, xhigh]
+  gpt-5.4-mini: [none, low, medium, high, xhigh]
+  gpt-5.4-nano: [none, low, medium, high, xhigh]
+  gpt-5.4: [none, low, medium, high, xhigh]
+  gpt-5.5: [none, low, medium, high, xhigh]
+  gpt-5.6-luna: [none, low, medium, high, xhigh, max]
+  gpt-5.6-sol: [none, low, medium, high, xhigh, max]
+  gpt-5.6-terra: [none, low, medium, high, xhigh, max]
+  grok-4.5: [low, medium, high]
+  grok-4.6: [low, medium, high, xhigh]
+  grok-4.7: [low, medium, high, xhigh]
+  kimi-k2.7-code: []
+  kimi-k3: [low, high, max]
+  muse-spark-1.3: [minimal, low, medium, high, xhigh, max]
+# The models with a fast mode in Cursor's catalog. Some of them run fast by
+# default (Grok, Composer, GPT-5.2 and GPT-5.3 Codex), so the stub always
+# sets it: on for entries that say fast: true, off for the rest.
+fast_models:
+  - claude-opus-4-7
+  - claude-opus-4-8
+  - claude-opus-5
+  - claude-opus-5-5
+  - composer-2.5
+  - gpt-5.2
+  - gpt-5.3-codex
+  - gpt-5.4
+  - gpt-5.5
+  - gpt-5.6-luna
+  - gpt-5.6-sol
+  - gpt-5.6-terra
+  - grok-4.5
+  - grok-4.6
+  - grok-4.7
+# What Cursor calls the models it doesn't call by their makers' names.
+model_ids:
+  deepseek-v4.1-flash-1017: deepseek-v41-flash-1017
+  glm-5.3: glm-5p3
+  glm-5.3-flash: glm-5p3-flash
+# The same API key as cursor-cloud's. The `agent-sdk` command gets it in
+# its environment, as CURSOR_API_KEY.
+credentials:
+  CURSOR_API_KEY:
+    description: a Cursor API key
+    url: https://cursor.com/dashboard/api
+    instructions: Create a new API key, call it fabrica, and copy it. Your team needs agent hosting turned on to deploy.
+    aliases: [CURSOR_TOKEN]

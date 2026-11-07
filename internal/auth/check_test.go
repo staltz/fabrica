@@ -96,7 +96,7 @@ func TestNeedWords(t *testing.T) {
 		t.Errorf("Title = %q", got)
 	}
 	std := Standalone("CURSOR_TOKEN")
-	if len(std) != 1 || std[0].Name != "CURSOR_API_KEY" || std[0].Required() || std[0].Without() != "cursor-cloud uses handoffs instead of its API" {
+	if len(std) != 1 || std[0].Name != "CURSOR_API_KEY" || !std[0].Required() || strings.Join(std[0].Runtimes, ",") != "cursor-agent-sdk,cursor-cloud" {
 		t.Errorf("Standalone(CURSOR_TOKEN) = %+v", std)
 	}
 	if got := Standalone("https://Fabrica.acme.dev/"); len(got) != 1 || got[0].Server != "https://fabrica.acme.dev" || got[0].Key() != "FABRICA_SERVER_SECRET@https://fabrica.acme.dev" {

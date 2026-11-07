@@ -11,7 +11,7 @@ import (
 func TestBuiltinsLoad(t *testing.T) {
 	t.Setenv(CursorKeyEnv, "") // without its key, cursor-cloud uses handoffs too
 	t.Setenv(CursorTokenEnv, "")
-	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-cloud", "cursor-local"}
+	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-agent-sdk", "cursor-cloud", "cursor-local"}
 	got := BuiltinNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("BuiltinNames = %v, want %v", got, want)
@@ -19,6 +19,13 @@ func TestBuiltinsLoad(t *testing.T) {
 	for _, name := range got {
 		p, _ := Builtin(name)
 		mode, err := p.Mode()
+		if name == "cursor-agent-sdk" {
+			// It has no handoff mode: deploying needs its command line.
+			if err == nil || !strings.Contains(err.Error(), "CURSOR_API_KEY isn't set") {
+				t.Errorf("%s without its key: mode %s, %v; want an error saying the key isn't set", name, mode, err)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 		}

@@ -133,10 +133,14 @@ It never commits for you either. Look the files over, then commit them.`,
 }
 
 // itemCounts sums up what's in a blueprint, like "5 skills, 3 routines, 4
-// rules, 2 connectors, 0 providers".
+// rules, 2 connectors, 0 providers", and its agents, if it has any.
 func itemCounts(f *blueprint.Blueprint) string {
-	return strings.Join([]string{
+	counts := []string{
 		plural(len(f.Skills), "skill"), plural(len(f.Routines), "routine"), plural(len(f.Rules), "rule"),
 		plural(len(f.Connectors), "connector"), plural(len(f.Providers), "provider"),
-	}, ", ")
+	}
+	if len(f.Agents) > 0 {
+		counts = append(counts, plural(len(f.Agents), "agent"))
+	}
+	return strings.Join(counts, ", ")
 }

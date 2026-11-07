@@ -43,7 +43,7 @@ type Init struct {
 	// attempt, so a retry finds the session an earlier one started. It's
 	// also what `fabrica confirm` takes for a handoff.
 	ID      string `yaml:"id"`
-	Routine string `yaml:"routine"`
+	Routine string `yaml:"routine,omitempty"`
 	Runtime string `yaml:"runtime"`
 	// Repo is the repo the session started in.
 	Repo string `yaml:"repo"`
@@ -115,7 +115,28 @@ type Shape struct {
 	Model       string            `yaml:"model,omitempty"`
 	Effort      string            `yaml:"effort,omitempty"`
 	Fast        string            `yaml:"fast,omitempty"`
-	Fingerprint string            `yaml:"fingerprint"`
+	// Agent is what's deployed, for an agent's deployment (whose shape
+	// has none of the above but its fingerprint).
+	Agent       *AgentShape `yaml:"agent,omitempty"`
+	Fingerprint string      `yaml:"fingerprint"`
+}
+
+// AgentShape is what state records about an agent's deployment.
+type AgentShape struct {
+	// Git, Commit and Path are what Cursor built: the repo, the exact
+	// commit, and the agent's folder in the repo.
+	Git    string `yaml:"git"`
+	Commit string `yaml:"commit"`
+	Path   string `yaml:"path,omitempty"`
+	// Hash fingerprints the agent's files, so a commit that doesn't touch
+	// them doesn't redeploy it.
+	Hash string `yaml:"hash"`
+	// EventRepos are the repos the deployment watches.
+	EventRepos []string `yaml:"event_repos"`
+	// Secrets are the secret names the agent declared when it was last
+	// deployed, and UnsetSecrets those apply couldn't set.
+	Secrets      []string `yaml:"secrets,omitempty"`
+	UnsetSecrets []string `yaml:"unset_secrets,omitempty"`
 }
 
 // ShapeTrigger is one of the triggers of a stub that has several.
@@ -128,8 +149,11 @@ type ShapeTrigger struct {
 type Resource struct {
 	ID      string `yaml:"id"`
 	Runtime string `yaml:"runtime"`
-	Routine string `yaml:"routine"`
-	Repo    string `yaml:"repo"`
+	Routine string `yaml:"routine,omitempty"`
+	Repo    string `yaml:"repo,omitempty"`
+	// Agent is the blueprint agent the resource deploys, on a runtime that
+	// deploys agents; Routine and Repo are empty then.
+	Agent string `yaml:"agent,omitempty"`
 	// FormerID is the identity the resource still has in the runtime, when
 	// the factory's tag changed since it was installed (a new alias: or
 	// server:, or an identity from before tags). Apply renames it, which
@@ -161,8 +185,9 @@ type Pending struct {
 	Action   string `yaml:"action"`
 	Resource string `yaml:"resource"`
 	Runtime  string `yaml:"runtime"`
-	Routine  string `yaml:"routine"`
-	Repo     string `yaml:"repo"`
+	Routine  string `yaml:"routine,omitempty"`
+	Repo     string `yaml:"repo,omitempty"`
+	Agent    string `yaml:"agent,omitempty"`
 	// Uncertain means this isn't a handoff. An API create on a runtime
 	// that can't list resources was started, and Fabrica never learned
 	// whether it happened. Apply will not try it again until confirm says.

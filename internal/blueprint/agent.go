@@ -32,6 +32,9 @@ type Agent struct {
 	ItemInfo
 	// Dir is the project's folder on disk.
 	Dir string
+	// InstallDir is the folder with the project's lockfile: Dir, or a
+	// parent of it in an npm workspace.
+	InstallDir string
 	// Source is where the project lives in git, which is where Cursor
 	// builds it from. Its Git is empty for a blueprint read straight from a
 	// folder, which can be checked but not deployed.
@@ -168,7 +171,7 @@ func parseAgent(dir, name, file, repoRoot string, src AgentSource) *Agent {
 		return hint(fail("node_modules/ is committed; Cursor installs dependencies from the lockfile when it builds the agent"),
 			"remove it from git and add node_modules/ to .gitignore")
 	}
-	if !hasLockfile(dir, repoRoot) {
+	if a.InstallDir = lockfileDir(dir, repoRoot); a.InstallDir == "" {
 		return hint(fail("there's no lockfile (%s) here or in a parent folder of the repo; Cursor installs the agent's dependencies from it", strings.Join(agentLockfiles, ", ")),
 			"run `npm install` and commit package-lock.json")
 	}
@@ -191,26 +194,27 @@ func hasInstructions(botDir string) bool {
 	return err == nil && info.IsDir()
 }
 
-// hasLockfile looks for a lockfile in dir and each parent folder up to
-// repoRoot. Without a repoRoot, it goes up until it finds a .git.
-func hasLockfile(dir, repoRoot string) bool {
+// lockfileDir looks for a lockfile in dir and each parent folder up to
+// repoRoot, and returns the folder it's in, or "" when there's none.
+// Without a repoRoot, it goes up until it finds a .git.
+func lockfileDir(dir, repoRoot string) string {
 	for d := filepath.Clean(dir); ; {
 		for _, f := range agentLockfiles {
 			if _, err := os.Stat(filepath.Join(d, f)); err == nil {
-				return true
+				return d
 			}
 		}
 		if repoRoot != "" && d == filepath.Clean(repoRoot) {
-			return false
+			return ""
 		}
 		if repoRoot == "" {
 			if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
-				return false
+				return ""
 			}
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
-			return false
+			return ""
 		}
 		d = parent
 	}

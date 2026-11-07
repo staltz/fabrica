@@ -24,6 +24,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	testkit.MaybeRunFakeAgentSDK()
 	testkit.MaybeRunToyProvider()
 	cleanup := testkit.IsolateCredentials()
 	code := m.Run()

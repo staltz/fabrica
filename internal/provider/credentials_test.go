@@ -13,6 +13,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	testkit.MaybeRunFakeAgentSDK()
 	cleanup := testkit.IsolateCredentials()
 	code := m.Run()
 	cleanup()

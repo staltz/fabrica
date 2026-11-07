@@ -88,7 +88,7 @@ func authStatus(cmd *cobra.Command, g *globals, noCheck bool) error {
 		return err
 	}
 	fmt.Fprintf(out, "Home repo %s (%s)\n", reqs.Home.Dir, homeKind(reqs.Home))
-	if len(reqs.Needs) == 0 && len(reqs.Repos) == 0 && len(reqs.Problems) == 0 {
+	if len(reqs.Needs) == 0 && len(reqs.Repos) == 0 && len(reqs.Problems) == 0 && len(reqs.AgentSecrets) == 0 {
 		fmt.Fprintln(out, "\nIt has no factories yet, so apply needs nothing.")
 		return nil
 	}
@@ -133,6 +133,21 @@ func authStatus(cmd *cobra.Command, g *globals, noCheck bool) error {
 			if a.Err != nil {
 				fmt.Fprintf(out, "    git can't read it: %s\n", auth.GitProblem(a.Err))
 			}
+		}
+	}
+	if len(reqs.AgentSecrets) > 0 {
+		// Apply sets these on an agent's next deploy, from its environment.
+		// An agent deploys without them, so they're never problems.
+		fmt.Fprintln(out, "\nAgent secrets (what each agent declared when it was last deployed)")
+		for _, s := range reqs.AgentSecrets {
+			mark, detail := "✓", "set on the deployment"
+			switch {
+			case s.Unset && s.InEnv():
+				mark, detail = "-", "not set on the deployment yet; apply sets it from its environment on the agent's next deploy, or set it now with `agent-sdk secret set "+s.Slug+" "+s.Name+"`"
+			case s.Unset:
+				mark, detail = "-", "not set on the deployment, and not in apply's environment; set it with `agent-sdk secret set "+s.Slug+" "+s.Name+"`"
+			}
+			fmt.Fprintf(out, "  %s %s: for agent %s (factory %s)\n    %s\n", mark, s.Name, s.Agent, s.Factory, detail)
 		}
 	}
 	if len(reqs.Problems) > 0 {

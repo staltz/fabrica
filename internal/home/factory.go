@@ -79,6 +79,12 @@ type Factory struct {
 	RoutineRuntimes map[string][]string
 	Targets         []Target
 	Params          map[string]string
+	// Agents are the blueprint agents the factory names under agents:.
+	Agents []string
+	// AllAgents is a "*" entry under agents:, or no agents: at all on a
+	// factory with a runtime that deploys agents: it deploys every agent of
+	// the blueprint.
+	AllAgents bool
 	// NoInit is `init: false`: the factory never runs its blueprint's init
 	// routine.
 	NoInit bool
@@ -129,6 +135,30 @@ func (d *Factory) target(repo string) (Target, bool) {
 // HasRuntime reports whether the factory runs on a runtime.
 func (d *Factory) HasRuntime(rt string) bool { return contains(d.Runtimes, rt) }
 
+// AgentsRuntime reports whether a runtime deploys agents rather than
+// running routines.
+func AgentsRuntime(rt string) bool {
+	p, ok := provider.Builtin(rt)
+	return ok && p.Matrix.Agents
+}
+
+// AgentRuntimes lists the factory's runtimes that deploy agents.
+func (d *Factory) AgentRuntimes() []string {
+	var out []string
+	for _, rt := range d.Runtimes {
+		if AgentsRuntime(rt) {
+			out = append(out, rt)
+		}
+	}
+	return out
+}
+
+// HasAgent reports whether the factory deploys an agent, by name or
+// through the wildcard. It doesn't know whether the blueprint has it.
+func (d *Factory) HasAgent(a string) bool {
+	return len(d.AgentRuntimes()) > 0 && (d.AllAgents || contains(d.Agents, a))
+}
+
 // HasRoutine reports whether the factory includes a routine, by name or
 // through the wildcard. It doesn't know whether the blueprint has it.
 func (d *Factory) HasRoutine(r string) bool { return d.Names(r) || d.AllRoutines }
@@ -139,9 +169,9 @@ func (d *Factory) Names(r string) bool { return contains(d.Routines, r) }
 // Runs reports whether the factory runs a routine on a runtime: both are
 // in the factory, and the routine isn't narrowed to other runtimes. A
 // routine the factory names follows its own entry; any other follows the
-// wildcard's.
+// wildcard's. No routine runs on a runtime that deploys agents.
 func (d *Factory) Runs(routine, runtime string) bool {
-	if !d.HasRoutine(routine) || !d.HasRuntime(runtime) {
+	if !d.HasRoutine(routine) || !d.HasRuntime(runtime) || AgentsRuntime(runtime) {
 		return false
 	}
 	entry := routine
@@ -197,6 +227,7 @@ type factoryFile struct {
 	Alias     string               `yaml:"alias"`
 	Runtimes  []string             `yaml:"runtimes"`
 	Routines  []yaml.Node          `yaml:"routines"`
+	Agents    []string             `yaml:"agents"`
 	Targets   []yaml.Node          `yaml:"targets"`
 	Params    map[string]yaml.Node `yaml:"params"`
 	Init      *bool                `yaml:"init"`
@@ -305,6 +336,10 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		}
 	}
 
+	if err := parseAgents(d, f.Agents, f.Agents != nil); err != nil {
+		return fail("agents: %v", err)
+	}
+
 	var err error
 	if d.Params, err = scalarMap(f.Params); err != nil {
 		return fail("params: %v", err)
@@ -343,13 +378,20 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 		if seen[Wildcard] {
 			return fail(`targets: the wildcard "*" is only allowed for local runtimes; cloud factories must name each repo`)
 		}
-		if len(d.Routines) == 0 && !d.AllRoutines {
-			return fail(`routines: is empty; a cloud factory exists to run routines, so list at least one, or ["*"] for all of them`)
+		agentRuntimes := d.AgentRuntimes()
+		if len(d.Routines) == 0 && !d.AllRoutines && len(agentRuntimes) == 0 {
+			return fail(`routines: is empty; a cloud factory exists to run routines (or deploy agents), so list at least one, or ["*"] for all of them`)
 		}
 		for _, rt := range d.Runtimes {
+			if AgentsRuntime(rt) {
+				continue
+			}
 			if len(d.RoutinesOn(rt)) == 0 && !d.Runs(Wildcard, rt) {
 				return fail("runtimes: lists %s, but none of the routines run on it; remove it, or add it to a routine's runtimes", rt)
 			}
+		}
+		if (len(d.Routines) > 0 || d.AllRoutines) && len(agentRuntimes) == len(d.Runtimes) {
+			return fail("routines: lists routines, but runtimes: [%s] only deploy agents, which run no routines; add a runtime for the routines, or remove routines:", strings.Join(agentRuntimes, ", "))
 		}
 	case provider.Local:
 		if !personal {
@@ -424,6 +466,9 @@ func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []
 				if !contains(runtimes, rt) {
 					return "", nil, fmt.Errorf("runtimes of %s: %s isn't in the factory's runtimes: [%s]", name, rt, strings.Join(runtimes, ", "))
 				}
+				if AgentsRuntime(rt) {
+					return "", nil, fmt.Errorf("runtimes of %s: %s deploys agents, and runs no routines", name, rt)
+				}
 				if contains(only, rt) {
 					return "", nil, fmt.Errorf("runtimes of %s lists %q twice", name, rt)
 				}
@@ -440,6 +485,42 @@ func parseRoutineEntry(node *yaml.Node, runtimes []string) (name string, only []
 		return "", nil, err
 	}
 	return name, only, nil
+}
+
+// parseAgents reads agents:, a list of agent names or the wildcard "*".
+// Without the key, a factory with a runtime that deploys agents deploys all
+// of them.
+func parseAgents(d *Factory, list []string, present bool) error {
+	agentRuntimes := d.AgentRuntimes()
+	if !present {
+		d.AllAgents = len(agentRuntimes) > 0
+		return nil
+	}
+	if d.Scope == provider.Local {
+		return fmt.Errorf("is only for cloud factories; agents are deployed to Cursor's hosting, with runtime cursor-agents")
+	}
+	if len(agentRuntimes) == 0 {
+		return fmt.Errorf("the factory has no runtime that deploys agents; add cursor-agents to runtimes:, or remove agents:")
+	}
+	if len(list) == 0 {
+		return fmt.Errorf("is empty; list the agents to deploy, or [\"*\"] for all of them (leaving agents: out deploys all of them too)")
+	}
+	seen := map[string]bool{}
+	for _, a := range list {
+		if seen[a] {
+			return fmt.Errorf("lists %q twice", a)
+		}
+		seen[a] = true
+		if a == Wildcard {
+			d.AllAgents = true
+			continue
+		}
+		if err := names.Validate(a); err != nil {
+			return err
+		}
+		d.Agents = append(d.Agents, a)
+	}
+	return nil
 }
 
 func parseTarget(node *yaml.Node) (Target, error) {

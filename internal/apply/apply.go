@@ -454,14 +454,14 @@ func getOnlyCreate(c *plan.Change) bool {
 // happen whose result may be lost. The returned ID is what `fabrica
 // confirm` later resolves.
 func beginUncertainCreate(ctx context.Context, repo *Repo, env *plan.Env, dp *plan.Factory, state *home.State, c *plan.Change, now time.Time) (string, error) {
-	shape := stateShape(c.Desired.Stub.Shape)
+	shape := c.Desired.StateShape()
 	id := HandoffID(dp.Name, c.Key, string(plan.Create), c.Desired.Fingerprint+c.Desired.TokenHash)
 	// One pending entry per resource. An older handoff for it is replaced:
 	// this create is what has to be resolved now.
 	dropPendingForKey(state, c.Key)
 	state.Pending = append(state.Pending, home.Pending{
 		ID: id, Action: string(plan.Create), Resource: c.Key.ID, Runtime: c.Key.Runtime,
-		Routine: c.Routine, Repo: c.Repo, Uncertain: true,
+		Routine: c.Routine, Repo: c.Repo, Agent: c.Agent, Uncertain: true,
 		Shape: &shape, TokenHash: c.Desired.TokenHash, BlueprintCommit: blueprintCommit(dp), IssuedAt: now,
 	})
 	msg := fmt.Sprintf("fabrica: %s %s (creating %s @ %s on %s)", verb(env), dp.Name, c.Routine, c.Repo, c.Key.Runtime)
@@ -514,14 +514,16 @@ func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *hom
 	case plan.Create:
 		remoteID, err := api.Create(ctx, resourceFor(c.Desired, c.Provider, tok))
 		if err != nil {
+			keepAliasToken(opts, dp, c, api)
 			return "", err
 		}
-		upsertResource(state, recordFor(c.Desired, remoteID, dp, now))
+		upsertResource(state, recordAgentReport(opts, dp, c, api, recordFor(c.Desired, remoteID, dp, now)))
 	case plan.Update:
 		if err := api.Update(ctx, c.Current.RemoteID, resourceFor(c.Desired, c.Provider, tok)); err != nil {
+			keepAliasToken(opts, dp, c, api)
 			return "", err
 		}
-		upsertResource(state, recordFor(c.Desired, c.Current.RemoteID, dp, now))
+		upsertResource(state, recordAgentReport(opts, dp, c, api, recordFor(c.Desired, c.Current.RemoteID, dp, now)))
 	case plan.Delete:
 		if err := api.Delete(ctx, dp.Name, c.Current.RemoteID); err != nil {
 			return "", err
@@ -534,6 +536,9 @@ func applyChange(ctx context.Context, opts Options, dp *plan.Factory, state *hom
 
 // resourceFor turns a desired stub into what a provider's API gets.
 func resourceFor(r *plan.Resource, p *provider.Provider, tok string) provider.Resource {
+	if r.Agent != nil {
+		return provider.Resource{Identity: r.Key.ID, Factory: r.Factory, Fingerprint: r.Fingerprint, Agent: r.Agent.Resource()}
+	}
 	shape := r.Stub.Shape
 	res := provider.Resource{
 		Identity: r.Key.ID, Factory: r.Factory, Routine: r.Routine, Repo: r.Repo,
@@ -584,18 +589,10 @@ func fabricaURL(endpoint string, p *provider.Provider, tok string) string {
 
 func recordFor(r *plan.Resource, remoteID string, dp *plan.Factory, now time.Time) home.Resource {
 	return home.Resource{
-		ID: r.Key.ID, Runtime: r.Runtime, Routine: r.Routine, Repo: r.Repo, RemoteID: remoteID,
+		ID: r.Key.ID, Runtime: r.Runtime, Routine: r.Routine, Repo: r.Repo, Agent: r.AgentName(), RemoteID: remoteID,
 		Mode: string(r.Mode), BlueprintCommit: blueprintCommit(dp), TokenHash: r.TokenHash,
-		Shape: stateShape(r.Stub.Shape), AppliedAt: now,
+		Shape: r.StateShape(), AppliedAt: now,
 	}
-}
-
-func stateShape(s stub.Shape) home.Shape {
-	out := home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, SideEffects: s.SideEffects, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
-	for _, t := range s.Triggers {
-		out.Triggers = append(out.Triggers, home.ShapeTrigger{On: t.On, Cron: t.Cron})
-	}
-	return out
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -627,6 +624,9 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 		ID: id, Action: string(c.Action), Runtime: c.Key.Runtime, Factory: dp.Name,
 		Identity: c.Key.ID, Routine: c.Routine, Repo: c.Repo,
 	}
+	if c.Agent != "" {
+		data.Agent = provider.HandoffAgent{Name: c.Agent, Slug: plan.AgentSlugOf(c.Key.ID)}
+	}
 	if c.Current != nil {
 		data.RemoteID, data.FormerIdentity = c.Current.RemoteID, c.Current.FormerID
 	}
@@ -636,7 +636,14 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 	default:
 		data.ConfirmCommand = "fabrica confirm " + id
 	}
-	if r := c.Desired; r != nil {
+	if r := c.Desired; r != nil && r.Agent != nil {
+		a := r.Agent.Resource()
+		data.Agent = provider.HandoffAgent{Name: a.Name, Slug: a.Slug, Repo: a.Repo, Ref: a.Ref, Path: a.Path, EventRepos: a.EventRepos, Redeploy: a.Redeploy}
+		data.Fingerprint = r.Fingerprint
+		if c.Action == plan.Create {
+			data.ConfirmCommand = fmt.Sprintf("fabrica confirm %s --remote-id %s", id, a.Slug)
+		}
+	} else if r != nil {
 		shape := r.Stub.Shape
 		for _, t := range shape.TriggerList() {
 			data.Triggers = append(data.Triggers, provider.HandoffTrigger{On: t.On, Cron: t.Cron, Description: stub.DescribeTrigger(t, r.Repo)})
@@ -679,19 +686,68 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 	dropPending(state, c.Supersedes)
 	pend := home.Pending{
 		ID: id, Action: string(c.Action), Resource: c.Key.ID, Runtime: c.Key.Runtime,
-		Routine: c.Routine, Repo: c.Repo, BlueprintCommit: blueprintCommit(dp), IssuedAt: now,
+		Routine: c.Routine, Repo: c.Repo, Agent: c.Agent, BlueprintCommit: blueprintCommit(dp), IssuedAt: now,
 	}
 	if c.Current != nil {
 		pend.RemoteID = c.Current.RemoteID
 	}
 	if c.Desired != nil {
-		shape := stateShape(c.Desired.Stub.Shape)
+		shape := c.Desired.StateShape()
 		pend.Shape, pend.TokenHash = &shape, tokenHash
 	}
 	if _, exists := state.FindPending(id); !exists {
 		state.Pending = append(state.Pending, pend)
 	}
 	return file, nil
+}
+
+// recordAgentReport adds to an agent's record what deploying it taught
+// the runtime's API: the secrets it declares, and those still unset. A
+// first deploy's alias token, which Cursor shows only once, goes in a
+// file only you can read.
+func recordAgentReport(opts Options, dp *plan.Factory, c *plan.Change, api provider.RuntimeAPI, r home.Resource) home.Resource {
+	reporter, ok := api.(provider.AgentReporter)
+	if !ok || c.Agent == "" || r.Shape.Agent == nil {
+		return r
+	}
+	report, ok := reporter.AgentReport(c.Key.ID)
+	if !ok {
+		return r
+	}
+	shape := *r.Shape.Agent
+	shape.Secrets, shape.UnsetSecrets = report.Secrets, report.UnsetSecrets
+	r.Shape.Agent = &shape
+	keepAliasToken(opts, dp, c, api)
+	return r
+}
+
+// keepAliasToken writes down an agent's alias token, when its deploy
+// returned one, even if the deploy failed afterwards: Cursor shows it once.
+func keepAliasToken(opts Options, dp *plan.Factory, c *plan.Change, api provider.RuntimeAPI) {
+	reporter, ok := api.(provider.AgentReporter)
+	if !ok || c.Agent == "" {
+		return
+	}
+	report, ok := reporter.AgentReport(c.Key.ID)
+	if !ok || report.AliasToken == "" {
+		return
+	}
+	out := opts.Out
+	if out == nil {
+		out = io.Discard
+	}
+	slug := plan.AgentSlugOf(c.Key.ID)
+	dir := filepath.Join(opts.HandoffDir, dp.Name)
+	file := filepath.Join(dir, slug+"-alias-token")
+	err := os.MkdirAll(dir, 0o700)
+	if err == nil {
+		err = os.WriteFile(file, []byte(report.AliasToken+"\n"), 0o600)
+	}
+	if err != nil {
+		fmt.Fprintf(out, "    couldn't save %s's alias token (%v); it's %s, and Cursor won't show it again\n", slug, err, report.AliasToken)
+		return
+	}
+	fmt.Fprintf(out, "    saved %s's alias token, which Cursor shows only once, in %s\n", slug, file)
 }
 
 // HandoffID makes a short, stable ID for a handoff.

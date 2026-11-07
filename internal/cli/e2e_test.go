@@ -29,6 +29,7 @@ import (
 // the toy provider), so end-to-end tests can run real subprocesses without
 // building anything first.
 func TestMain(m *testing.M) {
+	testkit.MaybeRunFakeAgentSDK()
 	testkit.MaybeRunToyProvider()
 	if os.Getenv("FABRICA_TEST_AS_CLI") == "1" {
 		os.Exit(Main(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))

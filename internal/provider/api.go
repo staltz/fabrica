@@ -50,6 +50,10 @@ type Resource struct {
 	Model       *ResourceModel `json:"model,omitempty"`
 	Prompt      string         `json:"prompt"`
 	Fingerprint string         `json:"fingerprint"`
+	// Agent is the agent to deploy, on a runtime whose matrix says agents:
+	// true, where it replaces everything about routines above. Nil
+	// elsewhere.
+	Agent *ResourceAgent `json:"agent,omitempty"`
 }
 
 // ResourceTrigger is the trigger to install.

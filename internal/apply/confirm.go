@@ -88,7 +88,7 @@ func Confirm(ctx context.Context, homeDir, id, remoteID string, absent bool, now
 				return fmt.Errorf("handoff %s has no shape recorded; only Fabrica should write state files", id)
 			}
 			res := home.Resource{
-				ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo,
+				ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo, Agent: p.Agent,
 				RemoteID: remoteID, Mode: "handoff", BlueprintCommit: p.BlueprintCommit,
 				TokenHash: p.TokenHash, Shape: *p.Shape, AppliedAt: now.UTC().Truncate(time.Second),
 			}
@@ -132,7 +132,7 @@ func confirmUncertain(s *home.State, result *Confirmed, p home.Pending, id, remo
 		return fmt.Errorf("pending %s has no shape recorded; only Fabrica should write state files", id)
 	}
 	upsertResource(s, home.Resource{
-		ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo,
+		ID: p.Resource, Runtime: p.Runtime, Routine: p.Routine, Repo: p.Repo, Agent: p.Agent,
 		RemoteID: remoteID, Mode: "api", BlueprintCommit: p.BlueprintCommit,
 		TokenHash: p.TokenHash, Shape: *p.Shape, AppliedAt: now.UTC().Truncate(time.Second),
 	})

@@ -109,7 +109,13 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 
 	runtimes := r.Runtimes
 	if len(runtimes) == 0 {
-		runtimes = d.Runtimes
+		// Runtimes that deploy agents run no routines, so an init can't
+		// pick them by default.
+		for _, rt := range d.Runtimes {
+			if !home.AgentsRuntime(rt) {
+				runtimes = append(runtimes, rt)
+			}
+		}
 	}
 	for _, rt := range runtimes {
 		in.Candidates = append(in.Candidates, e.initCandidate(rt, d, f, r))

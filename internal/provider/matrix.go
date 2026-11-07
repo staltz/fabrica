@@ -139,6 +139,10 @@ type Matrix struct {
 	// by variable name. Without every one of them, api mode is unavailable
 	// and the runtime falls back to its next apply mode.
 	Credentials []Credential
+	// Agents says the runtime deploys a blueprint's agents (Agent SDK
+	// projects), not its routines: factories run no routine on it, and
+	// each of their agents becomes one resource here.
+	Agents bool
 }
 
 // Credential is something a cloud runtime's API needs, like an API key.
@@ -181,6 +185,8 @@ type matrixFile struct {
 	Credentials    map[string]credentialFile `yaml:"credentials"`
 	// multiple_triggers: true means one resource fires on several triggers.
 	MultipleTriggers bool `yaml:"multiple_triggers"`
+	// agents: true means the runtime deploys agents instead of routines.
+	Agents bool `yaml:"agents"`
 }
 
 // credentialFile is one entry under credentials:, keyed by its variable.
@@ -251,6 +257,7 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 		Memory:         f.Memory,
 	}
 	m.MultipleTriggers = f.MultipleTriggers
+	m.Agents = f.Agents
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
@@ -369,6 +376,19 @@ func ParseMatrix(name string, data []byte) (*Matrix, error) {
 	m.Credentials = parseCredentials(f.Credentials, add)
 	if len(m.Credentials) > 0 && (m.Scope != Cloud || !seenMode[API] && !seenLaunch[API]) {
 		add("credentials: are only for a cloud runtime's API, so they need kind: cloud and api in apply_modes or launch_modes")
+	}
+
+	if m.Agents {
+		// It deploys agents, which bring their own triggers, tools and
+		// model, so nothing about routines applies.
+		switch {
+		case m.Scope != Cloud:
+			add("agents: a runtime that deploys agents runs them in the cloud, so it needs kind: cloud")
+		case len(m.Triggers)+len(m.Connectors)+len(m.SideEffects)+len(m.Models) > 0 || m.Memory != Unsupported || m.MultipleTriggers:
+			add("agents: a runtime that deploys agents runs no routines, so it can't list triggers, connectors, side effects, memory, models or multiple_triggers")
+		case len(m.LaunchModes) > 0:
+			add("agents: a runtime that deploys agents can't start init sessions, so it can't have launch_modes")
+		}
 	}
 
 	if len(problems) > 0 {

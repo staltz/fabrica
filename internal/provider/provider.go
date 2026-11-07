@@ -55,7 +55,8 @@ var builtinFS embed.FS
 // builtinAPIs are the built-in cloud runtimes Fabrica can drive through
 // their own API, when the API's credentials are set.
 var builtinAPIs = map[string]func() (RuntimeAPI, error){
-	"cursor-cloud": newCursorAPI,
+	"cursor-cloud":  newCursorAPI,
+	"cursor-agents": newAgentSDKAPI,
 }
 
 var builtins = mustLoadBuiltins()
@@ -169,6 +170,9 @@ func LoadFolder(name, dir string) (*Provider, error) {
 	if m.Scope == Local {
 		return nil, fmt.Errorf("providers/%s/provider.yaml: folder providers for local runtimes aren't supported in v0.1; use kind: cloud", name)
 	}
+	if m.Agents {
+		return nil, fmt.Errorf("providers/%s/provider.yaml: folder providers can't deploy agents in v0.1; drop agents:", name)
+	}
 	p := &Provider{Matrix: m, Dir: dir}
 	if m.HasMode(API) && !m.FindByIdentity {
 		return nil, fmt.Errorf("providers/%s/provider.yaml: a folder provider's api program can't look a resource up by its ID (there's no get operation), so api mode needs find_by_identity: true", name)
@@ -240,6 +244,24 @@ type HandoffData struct {
 	Fingerprint string
 	// ConfirmCommand is the exact `fabrica confirm …` line to run at the end.
 	ConfirmCommand string
+	// Agent is the agent to deploy, on a runtime that deploys agents (whose
+	// handoffs use it instead of everything about routines above).
+	Agent HandoffAgent
+}
+
+// HandoffAgent describes the agent to deploy, update or delete.
+type HandoffAgent struct {
+	Name string
+	Slug string
+	// Repo, Ref and Path are what Cursor builds: an https git URL, an exact
+	// commit, and the project's folder in the repo (empty for its root).
+	Repo string
+	Ref  string
+	Path string
+	// EventRepos are the repos the deployment watches.
+	EventRepos []string
+	// Redeploy is false for an update that only changes EventRepos.
+	Redeploy bool
 }
 
 // HandoffTrigger describes the trigger to set up.

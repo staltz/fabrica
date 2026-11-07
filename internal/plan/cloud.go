@@ -88,9 +88,13 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 		dp.Runtimes = append(dp.Runtimes, &Runtime{Name: rt, Provider: p, Mode: mode, Evaluations: map[string]*stub.Evaluation{}})
 	}
 	routines := checkRoutinesAndParams(dp, d, f)
+	agents := checkAgents(dp, d, f)
 	if d.AllRoutines {
 		// Without the wildcard, parsing already made sure of this.
 		for _, rt := range dp.Runtimes {
+			if agentsRuntime(rt) {
+				continue
+			}
 			if !slices.ContainsFunc(routines, func(r *blueprint.Routine) bool { return d.Runs(r.Ref.Name, rt.Name) }) {
 				dp.Diags.Errorf("factory.idle-runtime", d.File, "runtimes: lists %s, but none of the blueprint's routines run on it: the routines it names run elsewhere, and \"*\" adds no others", rt.Name).
 					Hintf("remove %s, or add it to a routine's runtimes", rt.Name)
@@ -108,11 +112,17 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			dp.Diags = append(dp.Diags, ev.Diags...)
 		}
 	}
-	e.checkProductRepos(ctx, dp, d, f)
+	if len(routines) > 0 {
+		// Agents don't read the Fabrica line or repo skills: only a
+		// factory's routines need its repos ready for them.
+		e.checkProductRepos(ctx, dp, d, f)
+	}
+	agentResources := planAgents(dp, d, agents)
 
 	if dp.Diags.HasErrors() {
 		return // no point working out stubs that can't be installed
 	}
+	dp.Desired = append(dp.Desired, agentResources...)
 	tokenHash := ""
 	if secret, err := e.SecretFor(d.Server); err != nil {
 		dp.Notes = append(dp.Notes, fmt.Sprintf("couldn't read the server secret, so rotated tokens go unnoticed: %v", err))
@@ -185,6 +195,9 @@ func retag(s *home.State, tag string) {
 
 // retagged is id with its tag swapped for prefix's.
 func retagged(id, prefix string) string {
+	if agent, ok := stub.AgentOf(id); ok {
+		return prefix + stub.AgentPrefix + agent
+	}
 	_, routine, trigger, repo := stub.SplitIdentity(id)
 	return prefix + stub.StubName(routine, trigger) + "@" + repo
 }
@@ -334,9 +347,13 @@ func (e *Env) refreshByListing(ctx context.Context, dp *Factory, rt string, p *p
 		r, inState := current[key]
 		if !inState {
 			r = home.Resource{ID: id, Runtime: rt, Mode: string(provider.API), FormerID: formerOf[id]}
-			_, r.Routine, _, r.Repo = stub.SplitIdentity(id)
-			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Mode: provider.API, Provider: p,
-				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Mode: string(provider.API), FormerID: formerOf[id], Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
+			if agent, ok := stub.AgentOf(id); ok {
+				r.Agent = agent
+			} else {
+				_, r.Routine, _, r.Repo = stub.SplitIdentity(id)
+			}
+			dp.Changes = append(dp.Changes, &Change{Action: Adopt, Key: key, Routine: r.Routine, Repo: r.Repo, Agent: r.Agent, Mode: provider.API, Provider: p,
+				Current: &home.Resource{ID: id, Runtime: rt, RemoteID: list[0].RemoteID, Routine: r.Routine, Repo: r.Repo, Agent: r.Agent, Mode: string(provider.API), FormerID: formerOf[id], Shape: home.Shape{Fingerprint: list[0].Fingerprint}},
 				Reasons: []string{"it exists in the runtime but isn't in state (maybe an earlier apply crashed before recording it)"}})
 		}
 		r.RemoteID = list[0].RemoteID
@@ -460,12 +477,22 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 			dp.Pending = append(dp.Pending, pend)
 			continue
 		}
-		c := &Change{Key: want.Key, Routine: want.Routine, Repo: want.Repo, Mode: want.Mode, Provider: want.Provider, Desired: want}
+		c := &Change{Key: want.Key, Routine: want.Routine, Repo: want.Repo, Agent: want.AgentName(), Mode: want.Mode, Provider: want.Provider, Desired: want}
 		if hasPend {
 			c.Supersedes = pend.ID
 		}
+		if hasCur && want.Agent != nil {
+			settleAgent(want.Agent, cur.Shape)
+		}
 		if hasCur {
-			reasons := shapeReasons(cur.Shape, want)
+			var reasons []string
+			switch {
+			case cur.Shape.Fingerprint == want.Fingerprint:
+			case want.Agent != nil:
+				reasons = agentReasons(cur.Shape, want.Agent)
+			default:
+				reasons = shapeReasons(cur.Shape, want)
+			}
 			if cur.RenamedFrom != "" {
 				// Its fingerprint was dropped, so say why instead.
 				reasons = []string{fmt.Sprintf("its prompt still names runtime %s, which is now called %s", cur.RenamedFrom, cur.Runtime)}
@@ -486,6 +513,9 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 			c.Action, c.Current, c.Reasons = Update, &curCopy, reasons
 		} else {
 			c.Action, c.Reasons = Create, []string{"it isn't installed yet"}
+			if want.Agent != nil {
+				c.Reasons = []string{"it isn't deployed yet"}
+			}
 		}
 		dp.Changes = append(dp.Changes, c)
 	}
@@ -504,8 +534,12 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 		if p != nil {
 			mode, _ = p.Mode()
 		}
-		c := &Change{Action: Delete, Key: key, Routine: cur.Routine, Repo: cur.Repo, Mode: mode, Provider: p, Current: &cur,
-			Reasons: []string{e.whyGone(dp, cur)}}
+		why := e.whyGone(dp, cur)
+		if cur.Agent != "" {
+			why = e.whyAgentGone(dp, cur)
+		}
+		c := &Change{Action: Delete, Key: key, Routine: cur.Routine, Repo: cur.Repo, Agent: cur.Agent, Mode: mode, Provider: p, Current: &cur,
+			Reasons: []string{why}}
 		if pend, ok := pending[key]; ok {
 			c.Supersedes = pend.ID
 		}
@@ -536,8 +570,8 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 			continue
 		}
 		mode, _ := p.Mode()
-		dp.Changes = append(dp.Changes, &Change{Action: Delete, Key: key, Routine: pend.Routine, Repo: pend.Repo, Mode: mode, Provider: p,
-			Current:    &home.Resource{ID: pend.Resource, Runtime: pend.Runtime, Routine: pend.Routine, Repo: pend.Repo, Mode: string(mode)},
+		dp.Changes = append(dp.Changes, &Change{Action: Delete, Key: key, Routine: pend.Routine, Repo: pend.Repo, Agent: pend.Agent, Mode: mode, Provider: p,
+			Current:    &home.Resource{ID: pend.Resource, Runtime: pend.Runtime, Routine: pend.Routine, Repo: pend.Repo, Agent: pend.Agent, Mode: string(mode)},
 			Reasons:    []string{"a create handoff for it was never confirmed, and it's no longer deployed; if someone created it anyway, it needs to go"},
 			Supersedes: pend.ID})
 	}
@@ -548,6 +582,8 @@ func (e *Env) diff(dp *Factory, current map[home.Key]home.Resource, providers ma
 		}
 		return a.Key.Runtime < b.Key.Runtime
 	})
+	warnAgentDeletes(dp)
+	noteUnsetSecrets(dp)
 }
 
 // shapeReasons explains how an installed stub differs from the wanted one.

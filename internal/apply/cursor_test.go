@@ -26,7 +26,7 @@ func TestCursorCloudThroughTheAPI(t *testing.T) {
 
 	// 1. With a Cursor API key, cursor-cloud is an api runtime.
 	p := h.plan()
-	text := render(p)
+	text := render(p) + show(p)
 	for _, want := range []string{"cursor-cloud: api mode", "+ create pr-review @ github.com/acme/app on cursor-cloud (api)"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("plan output is missing %q:\n%s", want, text)

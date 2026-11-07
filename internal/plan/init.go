@@ -77,13 +77,13 @@ func (e *Env) planInit(dp *Factory, d *home.Factory, f *blueprint.Blueprint) {
 	st := dp.State.Init
 	switch {
 	case d.NoInit:
-		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s never runs here: the factory says init: false", r.Ref.Name))
+		dp.Details = append(dp.Details, fmt.Sprintf("init routine %s never runs here: the factory says init: false", r.Ref.Name))
 		return
 	case st == nil && dp.State.Born():
-		dp.Notes = append(dp.Notes, fmt.Sprintf("init routine %s doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it", r.Ref.Name))
+		dp.Details = append(dp.Details, fmt.Sprintf("init routine %s doesn't run: it only runs when apply creates the factory, and this one was created before its blueprint had it", r.Ref.Name))
 		return
 	case st != nil && st.Status == home.InitStarted:
-		dp.Notes = append(dp.Notes, "init "+describeInitRecord(st))
+		dp.Details = append(dp.Details, "init "+describeInitRecord(st))
 		return
 	case st != nil && st.Status == home.InitWaiting:
 		dp.Init = &Init{Routine: r, Waiting: st}

@@ -165,6 +165,18 @@ params: { slack_channel: "#eng" }
 	if !strings.Contains(out, "+ create pr-review @ github.com/acme/app on claude-code-cloud (handoff)") || !strings.Contains(out, "on cursor-cloud (handoff)") {
 		t.Fatalf("plan:\n%s", out)
 	}
+	// Plan lists only what apply would change; show says how it's set up.
+	for _, detail := range []string{"endpoint https://fabrica.acme.dev/", "routine pr-review: trigger"} {
+		if strings.Contains(out, detail) {
+			t.Errorf("plan should leave %q to show:\n%s", detail, out)
+		}
+	}
+	shown := mustFab(t, 0, home, "show", "pr-review")
+	for _, want := range []string{"Factory pr-review (cloud)", "blueprint github.com/acme/blueprint", "endpoint https://fabrica.acme.dev/", "claude-code-cloud: handoff mode", "routine pr-review: trigger"} {
+		if !strings.Contains(shown, want) {
+			t.Errorf("show is missing %q:\n%s", want, shown)
+		}
+	}
 
 	handoffs := t.TempDir()
 	out = mustFab(t, 0, home, "apply", "--handoff-dir", handoffs)

@@ -236,7 +236,7 @@ The Markdown body is the routine's prompt. It must not be empty.
 
 ### Triggers
 
-Triggers are plain names. Which ones work depends on the runtime, and `fabrica plan` tells you. Triggers can't be emulated: if a runtime doesn't have one, that's an error. These are the ones the built-in providers know:
+Triggers are plain names. Which ones work depends on the runtime, and `fabrica show` tells you. Triggers can't be emulated: if a runtime doesn't have one, that's an error. These are the ones the built-in providers know:
 
 | Trigger | Where |
 |---|---|
@@ -330,7 +330,7 @@ models:
   - default
 ```
 
-Each runtime runs the routine on the **first** entry it has: that model, at that effort. Runtimes list the models they have, and the efforts each one can run at, in their [capability matrix](providers.md#capability-matrices), so `fabrica plan` shows which one every runtime picked.
+Each runtime runs the routine on the **first** entry it has: that model, at that effort. Runtimes list the models they have, and the efforts each one can run at, in their [capability matrix](providers.md#capability-matrices), so `fabrica show` says which one every runtime picked.
 
 - **An entry** is either `{ model: <id>, effort: <level>, fast: <true|false> }` (`effort` and `fast` are optional), or a model's ID on its own, which means that model at its default effort, with fast mode off. Model IDs are their makers' own, like Anthropic's `claude-opus-5-5` or OpenAI's `gpt-5.5`, and the same on every runtime: where a runtime calls a model something else (Cursor calls GLM 5.3 `glm-5p3`), Fabrica translates.
 - **Efforts** are `none`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. Runtimes call some of them something else (Cursor says `extra-high` for some models), and their providers translate. An entry only matches a runtime that has that model *at that effort*.
@@ -374,7 +374,7 @@ Fabrica runs it **when it creates a factory**: `fabrica apply` starts a session 
 1. the **first runtime it can start the session on by itself**: through the runtime's API (Cursor's cloud agents, with a Cursor API key; a folder provider with a `launch` operation), or with a local tool's command line (`claude`, when `fabrica apply` runs on a machine that has Claude Code, and never in CI);
 2. otherwise, the **first runtime a person can start it on**, from a handoff. Apply writes the instructions, and `fabrica confirm` records that it's started.
 
-So a list like `[claude-code-local, cursor-cloud, claude-code-cloud]` runs the session on your laptop when you apply from there, as a Cursor cloud agent when CI applies with a Cursor key, and otherwise asks a person to start it in Claude Code on the web. A runtime that can't run the routine at all (it lacks a connector the routine needs, or none of its models) is skipped, and `fabrica plan` says why for each one. If no runtime is left, that's an error.
+So a list like `[claude-code-local, cursor-cloud, claude-code-cloud]` runs the session on your laptop when you apply from there, as a Cursor cloud agent when CI applies with a Cursor key, and otherwise asks a person to start it in Claude Code on the web. A runtime that can't run the routine at all (it lacks a connector the routine needs, or none of its models) is skipped, and `fabrica show` says why for each one. If no runtime is left, that's an error.
 
 Each provider says how it can start sessions, in its capability matrix (`launch_modes`, see [Providers](providers.md#init-sessions)). The session is served by the factory's own Fabrica server, wherever it runs, so on a local runtime it can only use [text-only skills](#skill-files-and-relative-paths) too.
 

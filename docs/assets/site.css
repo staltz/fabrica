@@ -271,8 +271,8 @@ a { color: inherit; }
   transition: opacity 360ms linear, transform 360ms var(--ease);
 }
 .note svg { width: 64px; height: 28px; fill: none; stroke: var(--graphite); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
-.note--move { top: 214px; }
-.note--plan { top: 303px; }
+.note--move { top: 192px; }
+.note--plan { top: 281px; }
 .js .notes.is-waiting .note { opacity: 0; transform: translateX(-6px); }
 .js .notes.is-waiting .note.on { opacity: 1; transform: none; }
 @media (max-width: 1180px) { .notes { display: none; } }

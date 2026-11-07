@@ -113,7 +113,12 @@ type Factory struct {
 	// blueprint has an init routine that hasn't run yet.
 	Init  *Init
 	Diags diag.List
+	// Notes are remarks about what the plan found, worth reading before
+	// an apply, like a resource deleted by hand.
 	Notes []string
+	// Details describe how the factory is set up, like which commit its
+	// blueprint resolved to. `fabrica show` prints them; plan doesn't.
+	Details []string
 	// Destroy is true when everything the factory installed is to go.
 	Destroy bool
 }
@@ -333,7 +338,7 @@ func (e *Env) loadBlueprint(ctx context.Context, dp *Factory, ref home.Blueprint
 	if resolved.Kind.Follows() {
 		mode = "follows the branch: merges take effect on the next run, no apply needed"
 	}
-	dp.Notes = append(dp.Notes, fmt.Sprintf("blueprint %s → %s (%s %s; %s)", ref.String(), gitx.Short(resolved.Commit), resolved.Kind, ref.Ref, mode))
+	dp.Details = append(dp.Details, fmt.Sprintf("blueprint %s → %s (%s %s; %s)", ref.String(), gitx.Short(resolved.Commit), resolved.Kind, ref.Ref, mode))
 	if f != nil && len(f.Overrides) > 0 {
 		drift, err := e.Loader.OverrideDrift(ctx, f)
 		if err != nil {

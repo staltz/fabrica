@@ -20,6 +20,7 @@ import (
 	"github.com/staltz/fabrica/internal/product"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
+	"github.com/staltz/fabrica/internal/style"
 	"github.com/staltz/fabrica/internal/token"
 )
 
@@ -89,7 +90,8 @@ func failIfErrors(errs int) error {
 
 func checkBlueprint(ctx context.Context, out io.Writer, t *tools, dir string) error {
 	f, diags := t.loader.LoadDir(ctx, dir, blueprint.LoadOptions{})
-	fmt.Fprintf(out, "Blueprint %s\n", dir)
+	st := style.For(out)
+	fmt.Fprintf(out, "%s %s\n", st.Bold("Blueprint"), dir)
 	if f != nil {
 		diags = append(diags, f.Lint()...)
 		fmt.Fprintf(out, "  %s\n", itemCounts(f))
@@ -112,7 +114,7 @@ func checkBlueprint(ctx context.Context, out io.Writer, t *tools, dir string) er
 		}
 	}
 	errs, warns := printDiags(out, diags, false)
-	fmt.Fprintln(out, countSummary(errs, warns))
+	fmt.Fprintln(out, countSummary(style.For(out), errs, warns))
 	return failIfErrors(errs)
 }
 
@@ -128,7 +130,8 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 	if h.Personal {
 		kind = "personal home repo"
 	}
-	fmt.Fprintf(out, "Home repo %s (%s)\n", dir, kind)
+	st := style.For(out)
+	fmt.Fprintf(out, "%s %s %s\n", st.Bold("Home repo"), dir, st.Dim("("+kind+")"))
 	errs, warns := printDiags(out, p.Diags, false)
 	for _, d := range p.Factories {
 		scope := "cloud"
@@ -138,27 +141,21 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 		case d.Local():
 			scope = "local"
 		}
-		fmt.Fprintf(out, "Factory %s (%s)\n", d.Name, scope)
-		for _, n := range d.Notes {
-			fmt.Fprintf(out, "  · %s\n", n)
+		fmt.Fprintf(out, "%s %s\n", st.Bold("Factory "+d.Name), st.Dim("("+scope+")"))
+		for _, n := range append(d.Details, d.Notes...) {
+			fmt.Fprintf(out, "  %s %s\n", st.Dim("·"), n)
 		}
-		var buf strings.Builder
-		e, w := printDiags(&buf, d.Diags, false)
+		e, w := printDiagsIndented(out, "  ", d.Diags, false)
 		errs, warns = errs+e, warns+w
-		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-			if line != "" {
-				fmt.Fprintf(out, "  %s\n", line)
-			}
-		}
 		if e == 0 {
-			fmt.Fprintln(out, "  ✓ ok")
+			fmt.Fprintln(out, "  "+st.Green("✓ ok"))
 		}
 	}
 	if p.Local != nil {
 		e, w := printDiags(out, p.Local.Diags, false)
 		errs, warns = errs+e, warns+w
 	}
-	fmt.Fprintln(out, countSummary(errs, warns))
+	fmt.Fprintln(out, countSummary(style.For(out), errs, warns))
 	return failIfErrors(errs)
 }
 
@@ -179,10 +176,11 @@ func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir 
 		return err
 	}
 	ws.Repo = repo
+	st := style.For(out)
 	if repo != "" {
-		fmt.Fprintf(out, "Product repo %s (%s)\n", repo, top)
+		fmt.Fprintf(out, "%s %s %s\n", st.Bold("Product repo"), repo, st.Dim("("+top+")"))
 	} else {
-		fmt.Fprintf(out, "Product repo %s\n", top)
+		fmt.Fprintf(out, "%s %s\n", st.Bold("Product repo"), top)
 	}
 
 	type target struct {
@@ -223,21 +221,15 @@ func checkProduct(ctx context.Context, out io.Writer, t *tools, g *globals, dir 
 
 	errs, warns := 0, 0
 	for _, tg := range targets {
-		fmt.Fprintf(out, "Against %s\n", tg.label)
+		fmt.Fprintf(out, "%s %s\n", st.Bold("Against"), tg.label)
 		diags := tg.diags.Only(diag.Error)
 		if tg.f != nil {
 			diags = append(diags, product.Check(ws, tg.f)...)
 		}
-		var buf strings.Builder
-		e, w := printDiags(&buf, diags, true)
+		e, w := printDiagsIndented(out, "  ", diags, true)
 		errs, warns = errs+e, warns+w
-		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-			if line != "" {
-				fmt.Fprintf(out, "  %s\n", line)
-			}
-		}
 	}
-	fmt.Fprintln(out, countSummary(errs, warns))
+	fmt.Fprintln(out, countSummary(style.For(out), errs, warns))
 	return failIfErrors(errs)
 }
 

@@ -129,7 +129,7 @@ The blueprint's `ref` decides how the factory gets updates:
 - **A branch** (`main`, `stable`) means **follow**. A merge to that branch takes effect on the next run, with no apply needed.
 - **A tag or a commit** means **frozen**. Nothing changes until you edit the factory.
 
-`fabrica plan` shows which mode each factory is in. If a name is both a branch and a tag in the blueprint repo, Fabrica refuses to guess and asks you to use a name that's only one of them.
+`fabrica show` says which mode each factory is in. If a name is both a branch and a tag in the blueprint repo, Fabrica refuses to guess and asks you to use a name that's only one of them.
 
 ## Local factories
 

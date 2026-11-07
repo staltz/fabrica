@@ -113,6 +113,13 @@ func render(p *plan.Plan) string {
 	return b.String()
 }
 
+// show is what `fabrica show` prints for the plan.
+func show(p *plan.Plan) string {
+	var b strings.Builder
+	p.RenderShow(&b)
+	return b.String()
+}
+
 func TestFullCloudLifecycle(t *testing.T) {
 	h := newHarness(t)
 	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": testkit.PRReviewFactory}).CommitPush("add pr-review")
@@ -125,10 +132,12 @@ func TestFullCloudLifecycle(t *testing.T) {
 	if got := len(p.Factory("pr-review").Changes); got != 4 {
 		t.Fatalf("changes = %d, want 4\n%s", got, render(p))
 	}
-	text := render(p)
 	for _, want := range []string{"follows the branch", "toy: api mode", "claude-code-cloud: handoff mode", "token in the url", "slack [native]"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("plan output is missing %q:\n%s", want, text)
+		if !strings.Contains(show(p), want) {
+			t.Errorf("show output is missing %q:\n%s", want, show(p))
+		}
+		if strings.Contains(render(p), want) {
+			t.Errorf("plan output should leave %q to show:\n%s", want, render(p))
 		}
 	}
 
@@ -296,8 +305,8 @@ func TestRoutineModelsReachTheStubs(t *testing.T) {
 	// Claude routines have the model; the toy runtime doesn't, so it gets
 	// default and its own model.
 	p := h.plan()
-	if text := render(p); p.ExitCode() != 2 || !strings.Contains(text, "model claude-opus-5-5 (high)") || !strings.Contains(text, "model default") {
-		t.Fatalf("plan should show the model each runtime picked:\n%s", text)
+	if text := show(p); p.ExitCode() != 2 || !strings.Contains(text, "model claude-opus-5-5 (high)") || !strings.Contains(text, "model default") {
+		t.Fatalf("show should say the model each runtime picked:\n%s", text)
 	}
 	res := h.apply()
 	if len(res.Handoffs) != 2 {
@@ -854,7 +863,7 @@ func TestSeveralTriggersGetAStubEach(t *testing.T) {
 	several := strings.Replace(testkit.PRReviewRoutine, "trigger: { on: github.pull_request.opened }", "triggers:\n  - { on: github.pull_request.opened }\n  - { on: github.pull_request.synchronize }", 1)
 	h.w.UpdateBlueprint(map[string]string{"routines/pr-review.md": several})
 	p := h.plan()
-	text := render(p)
+	text := render(p) + show(p)
 	if p.ExitCode() != 2 || len(p.Factory("pr-review").Changes) != 6 {
 		t.Fatalf("after adding a trigger: exit %d\n%s", p.ExitCode(), text)
 	}

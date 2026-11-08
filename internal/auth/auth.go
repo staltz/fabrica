@@ -21,7 +21,9 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -164,6 +166,47 @@ type Requirements struct {
 	// Problems are things that kept Fabrica from working out everything,
 	// like a blueprint it couldn't load to see its providers.
 	Problems []string
+	// AgentSecrets are the secrets the factories' agents declared when they
+	// were last deployed. Apply sets each one it finds in its environment
+	// on the agent's next deploy. They aren't Needs: an agent deploys
+	// without them, and you can set them on the deployment yourself.
+	AgentSecrets []AgentSecret
+}
+
+// AgentSecret is one secret a deployed agent declares.
+type AgentSecret struct {
+	Factory string
+	Agent   string
+	// Slug is the agent's deployment.
+	Slug string
+	Name string
+	// Unset means the last deploy couldn't set it, because apply's
+	// environment didn't have it.
+	Unset bool
+}
+
+// InEnv reports whether apply's environment has the secret.
+func (s AgentSecret) InEnv() bool { return strings.TrimSpace(os.Getenv(s.Name)) != "" }
+
+// agentSecrets lists what the deployed agents of the home repo's factories
+// declare, from their state.
+func agentSecrets(h *home.Home) ([]AgentSecret, error) {
+	var out []AgentSecret
+	for _, name := range h.StateNames {
+		st, err := home.ReadState(h.Dir, name)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range st.Resources {
+			if r.Agent == "" || r.Shape.Agent == nil {
+				continue
+			}
+			for _, secret := range r.Shape.Agent.Secrets {
+				out = append(out, AgentSecret{Factory: name, Agent: r.Agent, Slug: r.RemoteID, Name: secret, Unset: slices.Contains(r.Shape.Agent.UnsetSecrets, secret)})
+			}
+		}
+	}
+	return out, nil
 }
 
 // Env is what working out requirements needs.
@@ -271,6 +314,11 @@ func Find(ctx context.Context, env *Env, h *home.Home) *Requirements {
 	for _, key := range sortedNames(repos) {
 		r.Repos = append(r.Repos, *repos[key])
 	}
+	secrets, err := agentSecrets(h)
+	if err != nil {
+		r.Problems = append(r.Problems, fmt.Sprintf("couldn't read which secrets the agents declare: %v", err))
+	}
+	r.AgentSecrets = secrets
 	return r
 }
 

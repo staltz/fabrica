@@ -100,6 +100,8 @@ type Factory struct {
 	// Routines are the blueprint's routines the factory deploys: the ones
 	// it names, then the ones its wildcard adds.
 	Routines []*blueprint.Routine
+	// Agents are the blueprint's agents the factory deploys.
+	Agents []*blueprint.Agent
 	// Resolved is the blueprint ref resolved to a commit.
 	Resolved gitx.Resolved
 	Runtimes []*Runtime
@@ -137,11 +139,15 @@ type Runtime struct {
 	// Evaluations are the factory's routines checked against this
 	// runtime, by routine name.
 	Evaluations map[string]*stub.Evaluation
+	// Agents are the deployments of the factory's agents, on a runtime
+	// that deploys agents.
+	Agents []*AgentDeploy
 }
 
 // Resource is a stub that should exist: one routine (or, for a routine
 // split into a stub per trigger, one of its triggers), on one repo, in one
-// runtime.
+// runtime. Or, on a runtime that deploys agents, an agent's deployment,
+// with Agent set and no routine, repo, evaluation or stub.
 type Resource struct {
 	Key      home.Key
 	Factory  string
@@ -157,6 +163,33 @@ type Resource struct {
 	TokenHash   string
 	Mode        provider.ApplyMode
 	Provider    *provider.Provider
+	Agent       *AgentDeploy
+}
+
+// AgentName is the agent the resource deploys, or "".
+func (r *Resource) AgentName() string {
+	if r.Agent == nil {
+		return ""
+	}
+	return r.Agent.Agent.Ref.Name
+}
+
+// StateShape is what state records about the resource's shape.
+func (r *Resource) StateShape() home.Shape {
+	if r.Agent != nil {
+		shape := r.Agent.Shape
+		return home.Shape{Agent: &shape, Fingerprint: r.Fingerprint}
+	}
+	return StubStateShape(r.Stub.Shape)
+}
+
+// StubStateShape is the part of a stub's shape that state records.
+func StubStateShape(s stub.Shape) home.Shape {
+	out := home.Shape{Trigger: s.Trigger, Cron: s.Cron, Connectors: s.ConnectorNames(), Memory: s.Memory, SideEffects: s.SideEffects, Model: s.Model, Effort: s.Effort, Fast: s.Fast, Fingerprint: s.Fingerprint()}
+	for _, t := range s.Triggers {
+		out.Triggers = append(out.Triggers, home.ShapeTrigger{On: t.On, Cron: t.Cron})
+	}
+	return out
 }
 
 // Action is what a change does.
@@ -173,10 +206,13 @@ const (
 
 // Change is one piece of work for apply.
 type Change struct {
-	Action   Action
-	Key      home.Key
-	Routine  string
-	Repo     string
+	Action  Action
+	Key     home.Key
+	Routine string
+	Repo    string
+	// Agent is the agent whose deployment this is, on a runtime that
+	// deploys agents; Routine and Repo are empty then.
+	Agent    string
 	Mode     provider.ApplyMode
 	Provider *provider.Provider
 	// Desired is what to create or update to.

@@ -113,6 +113,8 @@ func fileFor(ref names.Ref) string {
 		return "rules/" + ref.Name + ".mdc"
 	case names.Connectors:
 		return "connectors/" + ref.Name + ".yaml"
+	case names.Agents:
+		return "agents/" + ref.Name + "/package.json"
 	default:
 		return "providers/" + ref.Name + "/provider.yaml"
 	}
@@ -207,6 +209,9 @@ func (f *Blueprint) items() []item {
 	for _, n := range sortedKeys(f.Providers) {
 		out = append(out, f.Providers[n])
 	}
+	for _, n := range sortedKeys(f.Agents) {
+		out = append(out, f.Agents[n])
+	}
 	return out
 }
 
@@ -225,6 +230,8 @@ func (f *Blueprint) Item(ref names.Ref) (*ItemInfo, bool) {
 		it, ok = lookupItem(f.Connectors, ref.Name)
 	case names.Providers:
 		it, ok = lookupItem(f.Providers, ref.Name)
+	case names.Agents:
+		it, ok = lookupItem(f.Agents, ref.Name)
 	}
 	if !ok {
 		return nil, false

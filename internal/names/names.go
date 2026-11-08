@@ -1,8 +1,8 @@
 // Package names handles the names of blueprint items and the way you refer to
 // them.
 //
-// Every item in a blueprint (a skill, a routine, a rule, a connector or a
-// provider) gets its name from its file or folder name. You refer to an item
+// Every item in a blueprint (a skill, a routine, a rule, a connector, a
+// provider or an agent) gets its name from its file or folder name. You refer to an item
 // by kind and name, exactly like its path: `skills/pr-review`,
 // `routines/pr-review`, `rules/tests-first`. Each kind has its own namespace,
 // so a skill and a routine can both be called `pr-review`.
@@ -23,10 +23,11 @@ const (
 	Rules      Kind = "rules"
 	Connectors Kind = "connectors"
 	Providers  Kind = "providers"
+	Agents     Kind = "agents"
 )
 
 // Kinds lists every kind, in the order we like to print them.
-var Kinds = []Kind{Skills, Routines, Rules, Connectors, Providers}
+var Kinds = []Kind{Skills, Routines, Rules, Connectors, Providers, Agents}
 
 // Singular returns "skill" for Skills, "routine" for Routines and so on.
 func (k Kind) Singular() string { return strings.TrimSuffix(string(k), "s") }
@@ -57,7 +58,7 @@ func ParseRef(s string) (Ref, error) {
 	}
 	k := Kind(kind)
 	if !k.Valid() {
-		return Ref{}, fmt.Errorf("%q has an unknown kind %q; use one of skills, routines, rules, connectors or providers", s, kind)
+		return Ref{}, fmt.Errorf("%q has an unknown kind %q; use one of skills, routines, rules, connectors, providers or agents", s, kind)
 	}
 	if strings.Contains(name, "/") {
 		return Ref{}, fmt.Errorf("%q has too many slashes; write it as kind/name, like skills/pr-review", s)

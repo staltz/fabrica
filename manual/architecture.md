@@ -15,8 +15,8 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `paths` | Where Fabrica keeps things: the personal home repo, the cache and local run history. |
 | `fabline` | The Fabrica line, and the list of every sentence ever accepted. |
 | `gitx` | A thin wrapper around the `git` binary: a cache of bare clones, unpacked commit trees, ref resolution, and the commit and push operations the apply lock is built on. |
-| `provider` | Capability matrices, the built-in providers (embedded YAML, handoff and launch templates), folder providers, the `api` protocol client, the client for Cursor's Automations API, the launchers that start init sessions (Cursor's Cloud Agents API, `claude -p`), and handoff rendering. |
-| `blueprint` | The blueprint format: manifest, lock, every item kind, import resolution (blueprints and plain repos), filters, collisions, overrides, expects, lint warnings, and `lock`/`upgrade`. |
+| `provider` | Capability matrices, the built-in providers (embedded YAML, handoff and launch templates), folder providers, the `api` protocol client, the client for Cursor's Automations API, the `agent-sdk` driver that deploys blueprint agents, the launchers that start init sessions (Cursor's Cloud Agents API, `claude -p`), and handoff rendering. |
+| `blueprint` | The blueprint format: manifest, lock, every item kind (Agent SDK projects in `agents/` included), import resolution (blueprints and plain repos), filters, collisions, overrides, expects, lint warnings, and `lock`/`upgrade`. |
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
 | `home` | Home repos: factories, local matching, state files, and creating your personal home repo when it's missing. |
@@ -35,7 +35,7 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `hook` | What `fabrica hook` does when a local tool fires a hook: running a local routine, or the session pointer hook that tells a session where its transcript is. |
 | `selfupdate` | What `fabrica -u` does: installs the latest GitHub release over the running binary, checked against the release's checksums. |
 | `cli` | The cobra commands. Thin: they parse flags, call the packages above and print. |
-| `testkit` | Test helpers: a fake git host, home repos with a shared remote, the toy runtime, and a ready-made world. |
+| `testkit` | Test helpers: a fake git host, home repos with a shared remote, the toy runtime, a fake `agent-sdk` and `npm`, and a ready-made world. |
 
 The arrows only point down: `blueprint` never imports `plan`, `plan` never imports `mcpserver`, and so on. `cmd/fabrica` is just `main`.
 

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 )
 
@@ -24,10 +25,20 @@ func hashBytes(b []byte) string {
 // Symlinks are refused: a skill must work wherever its folder is copied,
 // exactly as it is in git, and a link could point anywhere.
 func hashTree(dir string) (string, []SkillFile, error) {
+	return hashTreeSkipping(dir)
+}
+
+// hashTreeSkipping is hashTree, leaving out every folder with one of the
+// given names (like an agent's node_modules, which `npm install` puts next
+// to the code but git doesn't have).
+func hashTreeSkipping(dir string, skip ...string) (string, []SkillFile, error) {
 	var files []SkillFile
 	err := fs.WalkDir(os.DirFS(dir), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.IsDir() && p != "." && slices.Contains(skip, d.Name()) {
+			return fs.SkipDir
 		}
 		if isSymlink(d) {
 			return fmt.Errorf("%s is a symlink, and Fabrica doesn't allow symlinks in skills or providers; copy the file in instead", p)

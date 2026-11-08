@@ -1,0 +1,30 @@
+# Cursor's hosted Agent SDK agents (https://cursor.com/docs/agent-sdk).
+#
+# This runtime runs no routines. It deploys a blueprint's agents: Agent SDK
+# projects that bring their own channels, schedules, tools and model, so
+# none of a routine's triggers, connectors, side effects or models apply.
+# Each agent becomes one deployment per factory, watching the factory's
+# repos.
+#
+# Fabrica drives Cursor's `agent-sdk` command line (from the
+# @grok/agent-sdk npm package), the documented way to deploy, with a Cursor
+# API key. Hosted agents need a Cursor team with agent hosting turned on,
+# and a team service-account key with agent access. Without the key, the
+# CLI or npm, it falls back to handoffs that list the commands to run.
+#
+# Deployments are named <tag>_<agent>, which Fabrica can read back from
+# `agent-sdk deployment list`, so it finds what it made by identity.
+kind: cloud
+description: Cursor's hosted Agent SDK agents
+agents: true
+apply_modes: [api, handoff]
+find_by_identity: true
+skill_transport: text
+mcp_auth:
+  header: native
+credentials:
+  CURSOR_API_KEY:
+    description: a Cursor team service-account key with agent access
+    url: https://cursor.com/dashboard/team
+    instructions: Create a service account with agent access, then a key for it, and copy the key. Hosted agents need a Cursor team with agent hosting turned on.
+    aliases: [CURSOR_SERVICE_ACCOUNT_KEY] # what the agent-sdk command line also reads

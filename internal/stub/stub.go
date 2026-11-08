@@ -543,6 +543,33 @@ func Identity(tag, name, repo string) string {
 	return IdentityPrefix(tag) + name + "@" + repo
 }
 
+// AgentIdentity is the identity of a factory's deployment of a blueprint
+// agent, like "k7q2#agents/pr-reviewer". An agent is deployed once per
+// factory, watching all of its repos, so no repo goes in.
+func AgentIdentity(tag, agent string) string {
+	return IdentityPrefix(tag) + AgentPrefix + agent
+}
+
+// AgentPrefix starts the name part of every agent identity. Routine names
+// have no slashes, so an identity is an agent's exactly when its name
+// starts with it.
+const AgentPrefix = "agents/"
+
+// AgentOf returns the agent an identity is about, and false for a stub's.
+func AgentOf(id string) (string, bool) {
+	_, name, _, _ := SplitIdentity(id)
+	return strings.CutPrefix(name, AgentPrefix)
+}
+
+// AgentSlug is the slug a factory's agent is deployed under in Cursor,
+// like "k7q2_pr-reviewer": the tag and the agent's name. Neither has an
+// underscore (both follow the naming rule), so a slug always comes apart
+// again, and Fabrica can tell its own deployments from a listing.
+func AgentSlug(tag, agent string) string { return tag + "_" + agent }
+
+// AgentSlugMaxLen is the longest slug Cursor accepts.
+const AgentSlugMaxLen = 64
+
 // StubName names a stub: its routine, plus its trigger when the routine is
 // split into a stub per trigger, like "pr-review:github.push". Routine
 // names have no colons, so the two always come apart again.

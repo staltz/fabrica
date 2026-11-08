@@ -14,6 +14,7 @@ routines/<name>.md                # one file per routine
 rules/<name>.mdc                  # one file per rule, in Cursor's format
 connectors/<name>.yaml            # one file per connector
 providers/<name>/provider.yaml    # optional custom providers (plus api and handoff.md)
+agents/<name>/                    # Cursor Agent SDK projects, unchanged; see Agents
 evals/                            # reserved for later; ignored for now, with a warning
 ```
 
@@ -82,7 +83,7 @@ Each import gets an alias that *you* choose (`base` and `community` above). Alia
 
 ### Names and namespaces
 
-After imports are resolved, a blueprint is one **flat** set of names, with a separate namespace for each kind of item. You refer to items by kind and name, just like their paths: `skills/pr-review`, `routines/pr-review`, `rules/tests-first`. A skill and a routine can both be called `pr-review`.
+After imports are resolved, a blueprint is one **flat** set of names, with a separate namespace for each kind of item. You refer to items by kind and name, just like their paths: `skills/pr-review`, `routines/pr-review`, `rules/tests-first`, `agents/pr-reviewer`. A skill and a routine can both be called `pr-review`.
 
 ### Collisions are errors
 
@@ -116,6 +117,7 @@ Any repo without a `fabrica.yaml` can still be imported:
 - Its skills are found at `<path>/*/SKILL.md` (default `path: skills`).
 - Its Cursor rules, `.cursor/rules/*.mdc` at the repo root, come in unchanged.
 - A root `AGENTS.md` comes in as one always-on rule, called `rules/agents-md`.
+- Its Cursor Agent SDK projects come in as agents: the repo itself (or its `path:`) when it's one, named after its `package.json`, or else each subfolder that's one. See [Importing agents](agents.md#importing-agents).
 
 That makes the whole existing ecosystem of skill and rule collections usable, without asking anyone to change their repo. If an import finds nothing at all, that's an error, since it usually means `git:` or `path:` is wrong.
 
@@ -473,6 +475,10 @@ expects: [test, deploy?]     # '?' means optional
 
 A blueprint can ship providers for runtimes Fabrica doesn't support out of the box, in `providers/<name>/`. They're imported like everything else. See [Providers](providers.md#folder-providers). For now, a custom provider can't replace a built-in one.
 
+## Agents
+
+`agents/<name>/` holds a [Cursor Agent SDK](https://cursor.com/docs/agent-sdk) project, exactly as the Agent SDK lays it out, which factories with the `cursor-agents` runtime deploy to Cursor's hosting. Agents have a page of their own: [Agents](agents.md).
+
 ## `evals/`
 
-Reserved for future skill and routine testing. For now, `fabrica check` warns if the folder exists, and Fabrica ignores it.
+Reserved for future skill and routine testing. For now, `fabrica check` warns if the folder exists, and Fabrica ignores it. An agent's own `evals/`, inside `agents/<name>/`, is part of the agent, and isn't affected.

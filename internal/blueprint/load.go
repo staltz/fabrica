@@ -2,8 +2,9 @@
 // describe how agents should build software.
 //
 // A blueprint has a manifest (fabrica.yaml), a lock (fabrica.lock), and items:
-// skills, routines, rules, connectors and providers. It can import other
-// blueprints, and plain repos full of skills or rules, in whole or in part.
+// skills, routines, rules, connectors, providers and agents. It can import
+// other blueprints, and plain repos full of skills, rules or Agent SDK
+// projects, in whole or in part.
 // After imports are resolved, a blueprint is one flat set of names, with a
 // separate namespace for each kind of item.
 //
@@ -69,6 +70,7 @@ type Blueprint struct {
 	Rules      map[string]*Rule
 	Connectors map[string]*Connector
 	Providers  map[string]*ProviderItem
+	Agents     map[string]*Agent
 	// Imports are the blueprint's direct imports, sorted by alias.
 	Imports []*Import
 	// Overrides are imported items this blueprint excluded and then defined
@@ -179,6 +181,7 @@ func (l *Loader) load(ctx context.Context, src Source, opts LoadOptions) (*Bluep
 		Rules:      map[string]*Rule{},
 		Connectors: map[string]*Connector{},
 		Providers:  map[string]*ProviderItem{},
+		Agents:     map[string]*Agent{},
 		Imports:    t.imports,
 		Overrides:  t.overrides,
 	}
@@ -194,6 +197,8 @@ func (l *Loader) load(ctx context.Context, src Source, opts LoadOptions) (*Bluep
 			f.Connectors[ref.Name] = v
 		case *ProviderItem:
 			f.Providers[ref.Name] = v
+		case *Agent:
+			f.Agents[ref.Name] = v
 		}
 	}
 	diags = append(diags, f.validate()...)
@@ -234,7 +239,7 @@ func (l *Loader) build(ctx context.Context, src Source, lockOverride *Lock, stac
 		}
 	}
 
-	local, localDiags := loadItems(src.Dir)
+	local, localDiags := loadItems(src)
 	t.diags = append(t.diags, localDiags...)
 
 	// Resolve each import and apply its filter.
@@ -362,15 +367,18 @@ func (l *Loader) readImport(ctx context.Context, spec ImportSpec, url, commit st
 	if _, err := os.Stat(filepath.Join(dir, ManifestFile)); err == nil {
 		return l.build(ctx, Source{Dir: dir, Git: spec.Git, Commit: commit, Path: spec.Path}, nil, stack)
 	}
-	return loadPlain(root, spec.Path)
+	return loadPlain(root, spec.Git, commit, spec.Path)
 }
 
 // loadPlain reads a repo that isn't a blueprint: its skills from
 // <path>/*/SKILL.md (path defaults to "skills"), its Cursor rules from
-// .cursor/rules/*.mdc, and a root AGENTS.md as the always-on rule
-// rules/agents-md.
-func loadPlain(root, skillsPath string) *tree {
+// .cursor/rules/*.mdc, a root AGENTS.md as the always-on rule
+// rules/agents-md, and its Agent SDK projects (see loadPlainAgents).
+func loadPlain(root, git, commit, skillsPath string) *tree {
 	t := &tree{items: map[names.Ref]item{}}
+	for _, a := range loadPlainAgents(root, git, commit, skillsPath) {
+		t.items[a.Ref] = a
+	}
 	if skillsPath == "" {
 		skillsPath = "skills"
 	}
@@ -410,14 +418,15 @@ func loadPlain(root, skillsPath string) *tree {
 		t.items[r.Ref] = r
 	}
 	if len(t.items) == 0 {
-		t.diags.Errorf("import.empty", "", "this repo has no %s, no skills at %s/*/SKILL.md, no .cursor/rules/*.mdc and no AGENTS.md, so there's nothing to import", ManifestFile, skillsPath).
+		t.diags.Errorf("import.empty", "", "this repo has no %s, no skills at %s/*/SKILL.md, no .cursor/rules/*.mdc, no AGENTS.md and no Agent SDK project, so there's nothing to import", ManifestFile, skillsPath).
 			Hintf("check the import's git: and path:")
 	}
 	return t
 }
 
 // loadItems reads the items defined directly in a blueprint folder.
-func loadItems(dir string) (map[names.Ref]item, diag.List) {
+func loadItems(src Source) (map[names.Ref]item, diag.List) {
+	dir := src.Dir
 	items := map[names.Ref]item{}
 	var diags diag.List
 	add := func(it item) { items[it.info().Ref] = it }
@@ -494,6 +503,25 @@ func loadItems(dir string) (map[names.Ref]item, diag.List) {
 			continue
 		}
 		add(loadProviderItem(filepath.Join(dir, "providers", e.Name()), e.Name(), file))
+	}
+	// The repo's root, for agents whose lockfile is at the root of an npm
+	// workspace. A blueprint read from a folder has no known root, and
+	// parseAgent looks for a .git instead.
+	repoRoot := ""
+	if src.Git != "" {
+		repoRoot = filepath.Clean(strings.TrimSuffix(filepath.Clean(dir), filepath.FromSlash(src.Path)))
+	}
+	for _, e := range readDir("agents") {
+		file := "agents/" + e.Name()
+		switch {
+		case isSymlink(e):
+			diags.Errorf("agent.symlink", file, "agent folders can't be symlinks; Cursor builds agents exactly as they are in git")
+		case !e.IsDir():
+			diags.Warnf("blueprint.stray-file", file, "isn't an agent folder, so Fabrica ignores it (agents live in agents/<name>/, each an Agent SDK project)")
+		default:
+			agentSrc := AgentSource{Git: src.Git, Commit: src.Commit, Path: path.Join(src.Path, file)}
+			add(parseAgent(filepath.Join(dir, "agents", e.Name()), e.Name(), file, repoRoot, agentSrc))
+		}
 	}
 	if info, err := os.Stat(filepath.Join(dir, "evals")); err == nil && info.IsDir() {
 		diags.Warnf("blueprint.evals", "evals/", "evals/ is reserved for skill and routine tests in a future version; v0.1 ignores it")

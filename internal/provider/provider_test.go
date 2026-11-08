@@ -11,7 +11,8 @@ import (
 func TestBuiltinsLoad(t *testing.T) {
 	t.Setenv(CursorKeyEnv, "") // without its key, cursor-cloud uses handoffs too
 	t.Setenv(CursorTokenEnv, "")
-	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-cloud", "cursor-local"}
+	t.Setenv(CursorServiceAccountKeyEnv, "")
+	want := []string{"claude-code-cloud", "claude-code-local", "codex", "codex-cli", "copilot-cloud", "copilot-local", "cursor-agents", "cursor-cloud", "cursor-local"}
 	got := BuiltinNames()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("BuiltinNames = %v, want %v", got, want)
@@ -30,23 +31,25 @@ func TestBuiltinsLoad(t *testing.T) {
 
 func TestParseMatrixRejectsMistakes(t *testing.T) {
 	cases := map[string]string{
-		"emulated trigger":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {schedule: emulated}\n",
-		"api without find":    "kind: cloud\napply_modes: [api]\nskill_transport: text\nmcp_auth: {url: native}\n",
-		"cloud directory":     "kind: cloud\napply_modes: [handoff]\nskill_transport: directory\nmcp_auth: {url: native}\n",
-		"no token path":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\n",
-		"unknown key":         "kind: cloud\napply_mode: [handoff]\n",
-		"bad support value":   "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nconnectors: {github: yes}\n",
-		"bad memory value":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmemory: sometimes\n",
-		"model named default": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {default: []}\n",
-		"bad model name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {Opus 5: []}\n",
-		"unknown effort":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [extra-high]}\n",
-		"effort twice":        "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [high, high]}\n",
-		"id of no model":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {glm-5.3: glm-5p3}\n",
-		"id is the name":      "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {gpt-5.5: gpt-5.5}\n",
-		"id twice":            "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-x, gpt-5.4: gpt-x}\n",
-		"id of another model": "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-5.4}\n",
-		"fast but no model":   "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [grok-4.7]\n",
-		"fast twice":          "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [gpt-5.5, gpt-5.5]\n",
+		"emulated trigger":     "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {schedule: emulated}\n",
+		"api without find":     "kind: cloud\napply_modes: [api]\nskill_transport: text\nmcp_auth: {url: native}\n",
+		"cloud directory":      "kind: cloud\napply_modes: [handoff]\nskill_transport: directory\nmcp_auth: {url: native}\n",
+		"no token path":        "kind: cloud\napply_modes: [handoff]\nskill_transport: text\n",
+		"unknown key":          "kind: cloud\napply_mode: [handoff]\n",
+		"bad support value":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nconnectors: {github: yes}\n",
+		"bad memory value":     "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmemory: sometimes\n",
+		"model named default":  "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {default: []}\n",
+		"agents with triggers": "kind: cloud\nagents: true\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\ntriggers: {schedule: native}\n",
+		"local agents":         "kind: local\nagents: true\napply_modes: [api]\nskill_transport: directory\n",
+		"bad model name":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {Opus 5: []}\n",
+		"unknown effort":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [extra-high]}\n",
+		"effort twice":         "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [high, high]}\n",
+		"id of no model":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {glm-5.3: glm-5p3}\n",
+		"id is the name":       "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nmodel_ids: {gpt-5.5: gpt-5.5}\n",
+		"id twice":             "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-x, gpt-5.4: gpt-x}\n",
+		"id of another model":  "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: [], gpt-5.4: []}\nmodel_ids: {gpt-5.5: gpt-5.4}\n",
+		"fast but no model":    "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [grok-4.7]\n",
+		"fast twice":           "kind: cloud\napply_modes: [handoff]\nskill_transport: text\nmcp_auth: {url: native}\nmodels: {gpt-5.5: []}\nfast_models: [gpt-5.5, gpt-5.5]\n",
 	}
 	for name, yaml := range cases {
 		if _, err := ParseMatrix("x", []byte(yaml)); err == nil {

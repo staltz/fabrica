@@ -153,7 +153,11 @@ func (d *Factory) Render(w io.Writer) {
 	if len(d.Pending) > 0 || d.Init != nil && d.Init.Waiting != nil {
 		fmt.Fprintln(w, "  Waiting for `fabrica confirm`:")
 		for _, p := range d.Pending {
-			fmt.Fprintf(w, "    %s %s: %s %s @ %s on %s, issued %s\n", st.Cyan("…"), p.ID, p.Action, stubName(p.Resource, p.Routine), p.Repo, p.Runtime, p.IssuedAt.Format("2006-01-02"))
+			what := stubName(p.Resource, p.Routine) + " @ " + p.Repo
+			if p.Agent != "" {
+				what = "agent " + p.Agent
+			}
+			fmt.Fprintf(w, "    %s %s: %s %s on %s, issued %s\n", st.Cyan("…"), p.ID, p.Action, what, p.Runtime, p.IssuedAt.Format("2006-01-02"))
 		}
 		if d.Init != nil && d.Init.Waiting != nil {
 			in := d.Init.Waiting
@@ -163,7 +167,11 @@ func (d *Factory) Render(w io.Writer) {
 	if d.State != nil {
 		var unverifiable []string
 		for _, r := range d.State.Resources {
-			if r.Unverifiable() {
+			switch {
+			case !r.Unverifiable():
+			case r.Agent != "":
+				unverifiable = append(unverifiable, fmt.Sprintf("agent %s on %s", r.Agent, r.Runtime))
+			default:
 				unverifiable = append(unverifiable, fmt.Sprintf("%s @ %s on %s", stubName(r.ID, r.Routine), r.Repo, r.Runtime))
 			}
 		}
@@ -203,6 +211,9 @@ func (d *Factory) RenderShow(w io.Writer) {
 		for _, name := range sortedEvalNames(rt.Evaluations) {
 			fmt.Fprintf(w, "    routine %s %s\n", st.Bold(name+":"), describeEvaluation(st, rt.Evaluations[name]))
 		}
+		for _, a := range rt.Agents {
+			fmt.Fprintf(w, "    agent %s %s\n", st.Bold(a.Agent.Ref.Name+":"), describeAgent(st, a))
+		}
 	}
 	d.Init.render(w, st)
 	renderDiags(w, st, "  ", d.Diags.Sorted())
@@ -237,6 +248,9 @@ func (c *Change) Describe() string { return c.styled(style.Style{}) }
 func (c *Change) styled(st style.Style) string {
 	sym := map[Action]string{Create: "+", Update: "~", Delete: "-", Adopt: "="}[c.Action]
 	line := st.Mark(fmt.Sprintf("%s %-6s %s @ %s on %s", sym, c.Action, stubName(c.Key.ID, c.Routine), c.Repo, c.Key.Runtime))
+	if c.Agent != "" {
+		line = st.Mark(fmt.Sprintf("%s %-6s agent %s on %s", sym, c.Action, c.Agent, c.Key.Runtime))
+	}
 	line += " " + st.Dim("("+string(c.Mode)+")")
 	if len(c.Reasons) > 0 {
 		line += ": " + strings.Join(c.Reasons, "; ")
@@ -280,9 +294,21 @@ func Tildify(p string) string {
 	return p
 }
 
+// describeAgent says how an agent is deployed.
+func describeAgent(st style.Style, a *AgentDeploy) string {
+	from := a.Shape.Git + " at " + gitx.Short(a.Agent.Source.Commit)
+	if a.Shape.Path != "" {
+		from += ", " + a.Shape.Path
+	}
+	return fmt.Sprintf("deployment %s, built from %s, watching %s", a.Slug, from, strings.Join(a.Shape.EventRepos, ", "))
+}
+
 func describeRuntime(rt *Runtime) string {
 	m := rt.Provider.Matrix
 	parts := []string{string(rt.Mode) + " mode"}
+	if m.Agents {
+		return strings.Join(append(parts, "deploys the blueprint's agents, one deployment each, watching the factory's repos"), ", ")
+	}
 	if !rt.Provider.Builtin {
 		parts = append(parts, "folder provider")
 	}

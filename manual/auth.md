@@ -14,7 +14,7 @@ fabrica auth login    # set up whatever is missing
 | What | Who needs it | Where it comes from |
 |---|---|---|
 | **The secret of each Fabrica server** | Cloud factories. Apply makes each factory's token with it (`HMAC(secret, factory name)`), and the server checks every token with the same secret. | Fabrica makes one for a new server, or you paste the one your server already uses. |
-| **Runtime API credentials** | Runtimes Fabrica drives through an API: Cursor automations (`CURSOR_API_KEY`), and folder providers that declare [`credentials:`](#for-provider-authors). Without them, a runtime falls back to handoffs if it can, and otherwise can't be applied. | The page `fabrica auth login` opens for you. |
+| **Runtime API credentials** | Runtimes Fabrica drives through an API: Cursor automations (`CURSOR_API_KEY`), Cursor's hosted [agents](agents.md) (`CURSOR_API_KEY` too, a team service-account key), and folder providers that declare [`credentials:`](#for-provider-authors). Without them, a runtime falls back to handoffs if it can, and otherwise can't be applied. | The page `fabrica auth login` opens for you. |
 | **Git access** | Every factory. Apply reads blueprints and (for cloud factories) product repos, and pushes state to the home repo. | Whatever your git already uses: a credential helper, an SSH key, or the GitHub CLI. Fabrica keeps no git credentials. |
 
 Local factories, the ones on your laptop, only need git access to their blueprint. Runtimes that use handoffs (Claude routines, Codex and Copilot automations, as of October 2026) need nothing at all: you follow the handoff yourself.

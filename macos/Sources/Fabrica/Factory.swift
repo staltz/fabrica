@@ -21,6 +21,9 @@ struct Factory: Equatable, Sendable {
     var routines: [Routine] = []
     var targets: [Target] = []
     var params: [Param] = []
+    /// `pace:` is the factory's unit of time, like 30m, 4h or 2d. Routines
+    /// with a pace trigger run every so many paces.
+    var pace = ""
     /// `init: false` turns the blueprint's init routine off.
     var runsInit = true
 
@@ -139,6 +142,8 @@ extension Factory {
                 }
             case "params":
                 params = Self.params(value)
+            case "pace":
+                pace = value.string ?? ""
             case "init":
                 runsInit = value.bool ?? true
             default:
@@ -260,6 +265,7 @@ extension Factory {
             }
         }
 
+        if !pace.isEmpty { out += "pace: \(Y.block(pace))\n" }
         if !params.isEmpty {
             out += "params:\n"
             for p in params { out += "  \(Y.block(p.key)): \(Y.block(p.value))\n" }

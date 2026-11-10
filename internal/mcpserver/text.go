@@ -6,6 +6,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/fabline"
+	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/promptblock"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/runs"
@@ -132,6 +133,16 @@ func describeActivation(r *blueprint.Rule) string {
 	}
 }
 
+// describeTrigger writes a routine's trigger, and for a pace trigger, how
+// often that is at the factory's pace, like "pace (every 4 paces: every 2h
+// at the factory's pace of 30m)".
+func describeTrigger(t blueprint.Trigger, p pace.Pace) string {
+	if t.On != blueprint.PaceTrigger || p == 0 {
+		return t.String()
+	}
+	return fmt.Sprintf("%s (%s: every %s at the factory's pace of %s)", t.On, blueprint.DescribeEvery(t.Every), pace.Minutes(p.Times(t.Every)), p)
+}
+
 func ruleText(r *blueprint.Rule) string {
 	return fmt.Sprintf("# Rule %s\n\n%s\n\n%s\n", ruleTitle(r), describeActivation(r), r.Body)
 }
@@ -150,10 +161,18 @@ func routineText(snap *Snapshot, r *blueprint.Routine, run *runs.Run, repo, runt
 	if run != nil {
 		fmt.Fprintf(&b, "Run %s, on runtime %s, for repo %s.\n\n", run.ID, run.Runtime, run.Repo)
 	}
+	var factoryPace pace.Pace
+	if snap.Factory != nil {
+		factoryPace = snap.Factory.Pace
+	}
 	if len(r.Triggers) == 1 {
-		fmt.Fprintf(&b, "- Trigger: %s\n", r.Triggers[0])
+		fmt.Fprintf(&b, "- Trigger: %s\n", describeTrigger(r.Triggers[0], factoryPace))
 	} else {
-		fmt.Fprintf(&b, "- Triggers: %s (any of them)\n", blueprint.DescribeTriggers(r.Triggers))
+		var triggers []string
+		for _, t := range r.Triggers {
+			triggers = append(triggers, describeTrigger(t, factoryPace))
+		}
+		fmt.Fprintf(&b, "- Triggers: %s (any of them)\n", strings.Join(triggers, ", "))
 	}
 	if len(r.Skills) > 0 {
 		fmt.Fprintf(&b, "- Skills: %s (load each with skill_load)\n", strings.Join(r.Skills, ", "))
@@ -163,7 +182,7 @@ func routineText(snap *Snapshot, r *blueprint.Routine, run *runs.Run, repo, runt
 	var eval *stub.Evaluation
 	var st *stub.Stub
 	if p, ok := runtimeProvider(f, runtime); ok {
-		eval = stub.Evaluate(f, r, stub.Target{Runtime: p})
+		eval = stub.Evaluate(f, r, stub.Target{Runtime: p, Pace: factoryPace})
 		st = runStub(eval, run)
 	}
 	var conns []string

@@ -55,6 +55,19 @@ func TestCloudFactory(t *testing.T) {
 	}
 }
 
+func TestFactoryPace(t *testing.T) {
+	h := openHome(t, false, map[string]string{"factories/pr-review.yaml": "pace: 30m\n" + cloudFactory, "factories/plain.yaml": cloudFactory})
+	if h.Diags.HasErrors() {
+		t.Fatal(h.Diags)
+	}
+	if got := h.Factories["pr-review"].Pace; got != 30 {
+		t.Errorf("pace = %d minutes, want 30", got)
+	}
+	if got := h.Factories["plain"].Pace; got != 0 {
+		t.Errorf("a factory without pace: has none, got %d", got)
+	}
+}
+
 func TestFactoryErrors(t *testing.T) {
 	cases := map[string]string{
 		"mixed runtimes":     "blueprint: { git: g.com/a/f, ref: main }\nserver: https://x.dev\nruntimes: [claude-code-cloud, claude-code-local]\nroutines: [r]\ntargets: [github.com/a/b]\n",
@@ -69,6 +82,9 @@ func TestFactoryErrors(t *testing.T) {
 		"local init":         "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\ninit: false\n",
 		"local alias":        "blueprint: { git: g.com/a/f, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\nalias: mine\n",
 		"bad alias":          "alias: My Factory\n" + cloudFactory,
+		"bad pace":           "pace: 30\n" + cloudFactory,
+		"pace in seconds":    "pace: 30s\n" + cloudFactory,
+		"pace as a list":     "pace: [30m]\n" + cloudFactory,
 	}
 	for name, yaml := range cases {
 		t.Run(name, func(t *testing.T) {

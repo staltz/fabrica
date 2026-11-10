@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/staltz/fabrica/internal/blueprint"
+	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/names"
 )
 
@@ -89,5 +90,22 @@ func TestRoutineTextNestsPromptHeadings(t *testing.T) {
 	}
 	if strings.Contains(got, "\n# Check deps\n") || strings.Contains(got, "\n## How\n") {
 		t.Errorf("prompt headings should sit under Instructions:\n%s", got)
+	}
+}
+
+func TestRoutineTextSaysHowOftenAPaceIs(t *testing.T) {
+	r := &blueprint.Routine{
+		ItemInfo: blueprint.ItemInfo{Ref: names.Ref{Name: "tidy"}},
+		Triggers: []blueprint.Trigger{{On: "pace", Every: 4}},
+		Prompt:   "Tidy.",
+	}
+	snap := &Snapshot{Blueprint: &blueprint.Blueprint{Source: blueprint.Source{Dir: "bp"}}, Factory: &home.Factory{Name: "x", Pace: 30}}
+	got := routineText(snap, r, nil, "github.com/acme/app", "", nil)
+	if want := "- Trigger: pace (every 4 paces: every 2h at the factory's pace of 30m)\n"; !strings.Contains(got, want) {
+		t.Errorf("routine text is missing %q:\n%s", want, got)
+	}
+	snap.Factory = nil
+	if got := routineText(snap, r, nil, "github.com/acme/app", "", nil); !strings.Contains(got, "- Trigger: pace (every 4 paces)\n") {
+		t.Errorf("without a factory, the trigger is just its every:\n%s", got)
 	}
 }

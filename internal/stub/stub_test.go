@@ -7,6 +7,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/gitx"
+	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/stub"
 	"github.com/staltz/fabrica/internal/testkit"
@@ -499,5 +500,73 @@ func TestSeveralTriggersLocally(t *testing.T) {
 	e = stub.Evaluate(f, f.Routines["pr-review"], target(t, "claude-code-local"))
 	if e.OK() || !strings.Contains(e.Diags.String(), "runs on session.stop as a hook inside the session you have open") {
 		t.Errorf("auto-fix on a routine that's also a hook should be an error: %s", e.Diags)
+	}
+}
+
+func TestPaceTrigger(t *testing.T) {
+	const paced = "---\ntrigger: { on: pace, every: 4 }\nconnectors: [github]\n---\nTidy.\n"
+	const scheduled = "---\ntrigger: { on: schedule, cron: \"0 */2 * * *\" }\nconnectors: [github]\n---\nTidy.\n"
+	const several = "---\ntriggers:\n  - { on: github.pull_request.opened }\n  - { on: pace, every: 4 }\nconnectors: [github]\n---\nTidy.\n"
+	f := load(t, map[string]string{"routines/tidy.md": paced, "routines/cron.md": scheduled, "routines/several.md": several})
+	at := func(runtime string, p pace.Pace) stub.Target {
+		tg := target(t, runtime)
+		tg.Pace = p
+		return tg
+	}
+
+	// At a pace of 30m, every 4 paces is a schedule every 2h, the same
+	// stub as a routine with that cron.
+	e := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 30))
+	if !e.OK() || len(e.Stubs) != 1 {
+		t.Fatalf("%d stubs: %s", len(e.Stubs), e.Diags)
+	}
+	if sh := e.Stubs[0].Shape; sh.Trigger != "schedule" || sh.Cron != "0 */2 * * *" {
+		t.Errorf("shape = %+v", sh)
+	}
+	if e.Triggers[0].Name != "pace (every 2h)" || e.Triggers[0].Support != provider.Native {
+		t.Errorf("trigger use = %+v", e.Triggers[0])
+	}
+	cron := stub.Evaluate(f, f.Routines["cron"], at("claude-code-cloud", 30))
+	if e.Stubs[0].Shape.Fingerprint() != cron.Stubs[0].Shape.Fingerprint() {
+		t.Error("a pace trigger should install the same stub as its schedule")
+	}
+
+	// A new pace changes the schedule, so the stub needs a re-apply.
+	slower := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 60))
+	if !slower.OK() || slower.Stubs[0].Shape.Cron != "0 */4 * * *" || slower.Stubs[0].Shape.Fingerprint() == e.Stubs[0].Shape.Fingerprint() {
+		t.Errorf("at 1h: %+v %s", slower.Stubs[0].Shape, slower.Diags)
+	}
+
+	// Locally, it's a scheduled task, not a hook.
+	local := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-local", 30))
+	if !local.OK() || local.Stubs[0].InSession {
+		t.Errorf("locally, a pace trigger is a scheduled task: %+v %s", local.Stubs[0], local.Diags)
+	}
+
+	// Split into a stub per trigger, it's named like a schedule.
+	split := stub.Evaluate(f, f.Routines["several"], at("claude-code-cloud", 30))
+	if !split.OK() || len(split.Stubs) != 2 || split.Stubs[1].Name("several") != "several:schedule" {
+		t.Errorf("stubs: %+v %s", split.Stubs, split.Diags)
+	}
+
+	// A factory without a pace can't run it.
+	none := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 0))
+	if none.OK() || !none.Diags.HasCode("factory.pace") || !strings.Contains(none.Diags.String(), "factory pr-review has no pace") {
+		t.Errorf("want a missing-pace error, got:\n%s", none.Diags)
+	}
+	if strings.Contains(none.Diags.String(), "doesn't support trigger") {
+		t.Errorf("a missing pace isn't the runtime's fault:\n%s", none.Diags)
+	}
+
+	// Nor can one whose period cron can't repeat.
+	odd := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 25))
+	if odd.OK() || !strings.Contains(odd.Diags.String(), "every 100m") {
+		t.Errorf("want an error about 100m, got:\n%s", odd.Diags)
+	}
+
+	// A runtime without schedules can't run it either.
+	noSchedule := stub.Evaluate(f, f.Routines["tidy"], at("cursor-local", 30))
+	if noSchedule.OK() || !strings.Contains(noSchedule.Diags.String(), "doesn't support trigger pace") {
+		t.Errorf("want an unsupported-trigger error, got:\n%s", noSchedule.Diags)
 	}
 }

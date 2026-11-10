@@ -80,7 +80,7 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 			if !d.Runs(r.Ref.Name, rt.Name) {
 				continue
 			}
-			ev := stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: rt.Provider})
+			ev := stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: rt.Provider, Pace: d.Pace})
 			rt.Evaluations[r.Ref.Name] = ev
 			dp.Diags = append(dp.Diags, ev.Diags...)
 		}

@@ -60,6 +60,7 @@ import Yams
         f.targets = [.init(repo: "github.com/acme/app"),
                      .init(repo: "github.com/acme/api", params: [.init(key: "slack_channel", value: "#api")])]
         f.params = [.init(key: "slack_channel", value: "#eng"), .init(key: "strict", value: "true")]
+        f.pace = "30m"
         f.runsInit = false
 
         let yaml = f.yaml
@@ -68,6 +69,7 @@ import Yams
         // And it's YAML that any parser reads the same way.
         let loaded = try Yams.load(yaml: yaml) as? [String: Any]
         #expect((loaded?["init"] as? Bool) == false)
+        #expect(loaded?["pace"] as? String == "30m")
         #expect((loaded?["params"] as? [String: Any])?["strict"] as? String == "true")
     }
 

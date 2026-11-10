@@ -8,6 +8,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/names"
+	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/provider"
 )
 
@@ -96,20 +97,62 @@ func (s *Skill) withOrigin(o Origin) item { c := *s; c.Origin = o; return &c }
 
 // Trigger is what makes a routine fire.
 type Trigger struct {
-	// On is the event, like "github.pull_request.opened" or "schedule".
+	// On is the event, like "github.pull_request.opened", "schedule" or
+	// "pace".
 	On string
 	// Cron is the schedule, for On == "schedule".
 	Cron string
+	// Every is how many of the factory's paces go between runs, for On ==
+	// "pace", and for the schedule AtPace makes of a pace trigger.
+	Every int
 }
 
+// ScheduleTrigger fires a routine on a cron schedule.
+const ScheduleTrigger = "schedule"
+
+// PaceTrigger fires a routine every so many paces of the factory that
+// deploys it. Runtimes never see it: AtPace turns it into a schedule.
+const PaceTrigger = "pace"
+
 func (t Trigger) String() string {
-	if t.On == InitTrigger {
+	switch {
+	case t.On == InitTrigger:
 		return "init (once, when the factory is created)"
-	}
-	if t.Cron != "" {
+	case t.On == PaceTrigger:
+		return t.On + " (" + DescribeEvery(t.Every) + ")"
+	case t.Cron != "" && t.Every > 0:
+		return t.On + " (" + t.Cron + ", " + DescribeEvery(t.Every) + ")"
+	case t.Cron != "":
 		return t.On + " (" + t.Cron + ")"
 	}
 	return t.On
+}
+
+// DescribeEvery writes a pace trigger's every:, like "every pace" or "every
+// 4 paces".
+func DescribeEvery(every int) string {
+	if every == 1 {
+		return "every pace"
+	}
+	return fmt.Sprintf("every %d paces", every)
+}
+
+// AtPace is the trigger as a runtime installs it, for a factory with a
+// pace: a pace trigger becomes a schedule that repeats every so many
+// paces, and any other trigger stays as it is. It fails when the factory
+// has no pace, or when cron can't repeat the period evenly.
+func (t Trigger) AtPace(p pace.Pace) (Trigger, error) {
+	if t.On != PaceTrigger {
+		return t, nil
+	}
+	if p == 0 {
+		return t, fmt.Errorf("the factory has no pace")
+	}
+	cron, err := pace.Cron(p.Times(t.Every))
+	if err != nil {
+		return t, fmt.Errorf("at the factory's pace of %s, %s is every %s, but %v", p, DescribeEvery(t.Every), pace.Minutes(p.Times(t.Every)), err)
+	}
+	return Trigger{On: ScheduleTrigger, Cron: cron, Every: t.Every}, nil
 }
 
 // DescribeTriggers lists triggers in words, like "github.push, schedule (0
@@ -195,10 +238,22 @@ const InitTrigger = "init"
 // IsInit reports whether the routine is an init routine.
 func (r *Routine) IsInit() bool { return len(r.Triggers) == 1 && r.Triggers[0].On == InitTrigger }
 
-// HasTrigger reports whether the routine fires on an event.
+// HasTrigger reports whether the routine fires on an event. A pace
+// trigger counts as a schedule, since that's what runtimes install for it.
 func (r *Routine) HasTrigger(on string) bool {
 	for _, t := range r.Triggers {
-		if t.On == on {
+		if t.On == on || t.On == PaceTrigger && on == ScheduleTrigger {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPace reports whether the routine has a pace trigger, so it needs a
+// factory with a pace.
+func (r *Routine) HasPace() bool {
+	for _, t := range r.Triggers {
+		if t.On == PaceTrigger {
 			return true
 		}
 	}

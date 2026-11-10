@@ -22,6 +22,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/names"
+	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/provider"
 	"github.com/staltz/fabrica/internal/repourl"
 	"github.com/staltz/fabrica/internal/stub"
@@ -79,6 +80,10 @@ type Factory struct {
 	RoutineRuntimes map[string][]string
 	Targets         []Target
 	Params          map[string]string
+	// Pace is pace:, the factory's unit of time, like 30m. Routines with a
+	// pace trigger, like `{ on: pace, every: 4 }`, run every so many of
+	// them. Zero when the factory has none.
+	Pace pace.Pace
 	// Agents are the blueprint agents the factory names under agents:.
 	Agents []string
 	// AllAgents is a "*" entry under agents:, or no agents: at all on a
@@ -230,6 +235,7 @@ type factoryFile struct {
 	Agents    []string             `yaml:"agents"`
 	Targets   []yaml.Node          `yaml:"targets"`
 	Params    map[string]yaml.Node `yaml:"params"`
+	Pace      string               `yaml:"pace"`
 	Init      *bool                `yaml:"init"`
 }
 
@@ -338,6 +344,14 @@ func ParseFactory(name, file string, data []byte, personal bool) (*Factory, diag
 
 	if err := parseAgents(d, f.Agents, f.Agents != nil); err != nil {
 		return fail("agents: %v", err)
+	}
+
+	if f.Pace != "" {
+		p, err := pace.Parse(strings.TrimSpace(f.Pace))
+		if err != nil {
+			return fail("pace: %v", err)
+		}
+		d.Pace = p
 	}
 
 	var err error

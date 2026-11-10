@@ -43,6 +43,7 @@ params:
 | `routines` | for cloud, unless it only deploys agents | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. `"*"` stands for all of them, see [below](#all-routines). |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
+| `pace` | for routines with a `pace` trigger | The factory's unit of time: a whole number of minutes, hours or days, like `30m`, `4h` or `2d`. Routines with a [pace trigger](blueprints.md#pace) run every so many paces. See [Pace](#pace). |
 | `agents` | no | Which of the blueprint's [agents](agents.md) to deploy, on a runtime that deploys agents (`cursor-agents`). `"*"` stands for all of them, and so does leaving it out. No routine runs on `cursor-agents`, so a factory of only agents needs no `routines:`. |
 | `init` | no | `false` never runs the blueprint's [init routine](blueprints.md#init-routines) for this factory. See [Init](#init). |
 
@@ -102,6 +103,26 @@ targets: [github.com/acme/app]
 Params are set once at the top, and individual targets can override them. Every param must be declared by one of the factory's routines, and every required param must have a value for every target. Both are errors otherwise, which catches typos.
 
 If two runtimes need different settings, write two factory files.
+
+### Pace
+
+`pace:` sets how fast the factory works. A routine with a [pace trigger](blueprints.md#pace), like `trigger: { on: pace, every: 4 }`, runs every 4 paces, so in a factory with `pace: 30m` it runs every 2h, and in one with `pace: 1d`, every 4 days. One blueprint can then run often in a busy repo and seldom in a quiet one, keeping its routines' rhythm relative to each other, and changing `pace:` speeds them all up or slows them all down at once.
+
+```yaml
+pace: 30m   # 5m, 4h, 2d, …: N minutes (m), hours (h) or days (d)
+```
+
+Runtimes only know cron, so a pace trigger is installed as a `schedule` trigger, with the cron Fabrica works out from the period (UTC). That means it needs a runtime that has `schedule`, and changing `pace:` (or a routine's `every:`) changes the cron, so `plan` shows the stubs as updates. Cron can only repeat some periods evenly, and any other is an error that names the nearest ones that work:
+
+| Period | Cron |
+|---|---|
+| Minutes that divide an hour: `1m`, `2m`, `3m`, `4m`, `5m`, `6m`, `10m`, `12m`, `15m`, `20m`, `30m` | `*/N * * * *`, from minute 0 of each hour |
+| Hours that divide a day: `1h`, `2h`, `3h`, `4h`, `6h`, `8h`, `12h` | `0 */N * * *`, from midnight |
+| `1d` | `0 0 * * *`, at midnight |
+| `7d` | `0 0 * * 1`, at midnight on Mondays |
+| Any other number of days, up to `31d` | `0 0 */N * *`, at midnight, counted from the 1st of each month. Cron starts counting again every month, so the last gap of a month can be shorter: every `2d` runs on the 31st and again on the 1st. |
+
+A factory that deploys a routine with a pace trigger, but has no `pace:`, is an error (`factory.pace`).
 
 ### Init
 

@@ -105,9 +105,13 @@ type routineFile struct {
 	Runtimes    []string             `yaml:"runtimes"`
 }
 
+// maxEvery caps a pace trigger's every:, which keeps the period in range.
+const maxEvery = 1000
+
 type triggerFile struct {
-	On   string `yaml:"on"`
-	Cron string `yaml:"cron"`
+	On    string `yaml:"on"`
+	Cron  string `yaml:"cron"`
+	Every *int   `yaml:"every"`
 }
 
 type paramFile struct {
@@ -168,10 +172,16 @@ func parseRoutine(data []byte, name, file string) *Routine {
 			return fail("trigger.on is missing; say what fires the routine, like `trigger: { on: github.pull_request.opened }`")
 		case !triggerRe.MatchString(t.On):
 			return fail("trigger.on %q isn't a valid event name (like github.pull_request.opened or schedule)", t.On)
-		case t.On == "schedule" && t.Cron == "":
+		case t.On == ScheduleTrigger && t.Cron == "":
 			return fail("a schedule trigger needs a cron expression, like `trigger: { on: schedule, cron: \"0 9 * * 1\" }`")
-		case t.On != "schedule" && t.Cron != "":
+		case t.On != ScheduleTrigger && t.Cron != "":
 			return fail("trigger.cron only makes sense with `on: schedule`")
+		case t.On != PaceTrigger && t.Every != nil:
+			return fail("trigger.every only makes sense with `on: pace`")
+		case t.Every != nil && (*t.Every < 1 || *t.Every > maxEvery):
+			return fail("trigger.every is %d; it's how many of the factory's paces go between runs, a whole number from 1 to %d", *t.Every, maxEvery)
+		case t.On == PaceTrigger && seenTriggers[ScheduleTrigger], t.On == ScheduleTrigger && seenTriggers[PaceTrigger]:
+			return fail("triggers: lists both schedule and pace; a pace trigger is a schedule too, and a routine runs on one schedule (to run on two, write a routine for each)")
 		case t.On == InitTrigger && len(triggers) > 1:
 			return fail("init can't share a routine with other triggers: an init routine runs once, when the factory is created; move the other triggers to a routine of their own")
 		case seenTriggers[t.On]:
@@ -183,7 +193,14 @@ func parseRoutine(data []byte, name, file string) *Routine {
 				return fail("%v", err)
 			}
 		}
-		r.Triggers = append(r.Triggers, Trigger{On: t.On, Cron: strings.Join(strings.Fields(t.Cron), " ")})
+		tr := Trigger{On: t.On, Cron: strings.Join(strings.Fields(t.Cron), " ")}
+		if t.On == PaceTrigger {
+			tr.Every = 1
+			if t.Every != nil {
+				tr.Every = *t.Every
+			}
+		}
+		r.Triggers = append(r.Triggers, tr)
 	}
 
 	// Init routines run once, where the routine says.

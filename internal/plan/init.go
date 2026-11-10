@@ -160,7 +160,7 @@ func (e *Env) initCandidate(rt string, d *home.Factory, f *blueprint.Blueprint, 
 		return c
 	}
 	c.Provider = p
-	c.Eval = stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: d.Endpoint()})
+	c.Eval = stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: d.Endpoint(), Pace: d.Pace})
 	if errs := c.Eval.Diags.Only(diag.Error); len(errs) > 0 {
 		var msgs []string
 		for _, d := range errs {

@@ -363,3 +363,74 @@ func TestLocalRoutineWithSeveralTriggers(t *testing.T) {
 		t.Errorf("only the session.start hook should go:\n%s", out)
 	}
 }
+
+func TestLocalPaceRoutineInstallsTheHeartbeat(t *testing.T) {
+	h := newHarness(t)
+	h.w.MakePersonal(t)
+	var ran []string
+	h.env.GOOS, h.env.CacheDir = "linux", t.TempDir()
+	h.env.RunScheduler = func(name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	h.w.UpdateBlueprint(map[string]string{"routines/tidy.md": "---\ntrigger: { on: pace, every: 4 }\n---\nTidy up.\n"})
+	const factory = "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [github.com/acme/app]\nroutines: [tidy]\npace: 30m\n"
+	h.w.Home.Write(map[string]string{"factories/mine.yaml": factory})
+
+	// Nothing goes into Claude Code for the routine: the heartbeat job
+	// starts its sessions.
+	p := h.plan()
+	out := render(p)
+	if p.ExitCode() != 2 || !strings.Contains(out, "+ install the heartbeat: a systemd user timer, fabrica-heartbeat.timer, that runs `fabrica heartbeat` every minute") {
+		t.Fatalf("plan should install the heartbeat:\n%s", out)
+	}
+	if strings.Contains(out, "hook for routine mine/tidy") || strings.Contains(out, "scheduled task") {
+		t.Errorf("a pace routine gets no hook or task:\n%s", out)
+	}
+	if res := h.apply(); res.ExitCode() != 0 {
+		t.Fatalf("apply failed:\n%s", h.out.String())
+	}
+	service, _ := os.ReadFile(filepath.Join(h.env.UserHome, ".config", "systemd", "user", "fabrica-heartbeat.service"))
+	if !strings.Contains(string(service), "ExecStart=/usr/local/bin/fabrica heartbeat --home "+h.w.Home.Dir) {
+		t.Errorf("the service runs fabrica heartbeat on the home repo:\n%s", service)
+	}
+	if !slices.Contains(ran, "systemctl --user enable --now fabrica-heartbeat.timer") {
+		t.Errorf("apply should start the timer: %v", ran)
+	}
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("after applying, it's in sync:\n%s", render(p))
+	}
+
+	// A new pace is read live, so it changes nothing here.
+	h.w.Home.Write(map[string]string{"factories/mine.yaml": strings.Replace(factory, "30m", "7m", 1)})
+	if p := h.plan(); p.ExitCode() != 0 {
+		t.Errorf("a new pace needs no apply:\n%s", render(p))
+	}
+
+	// A wildcard factory can't run it: there'd be no repo to clone.
+	h.w.Home.Write(map[string]string{"factories/mine.yaml": strings.Replace(factory, "[github.com/acme/app]", "[\"*\"]", 1)})
+	if p := h.plan(); !p.Factory("mine").Diags.HasCode("factory.schedule-wildcard") {
+		t.Errorf("want a wildcard error:\n%s", render(p))
+	}
+
+	// Without the routine, the heartbeat goes.
+	h.w.Home.Write(map[string]string{"factories/mine.yaml": strings.Replace(factory, "routines: [tidy]", "routines: [review-before-push]", 1)})
+	ran = nil
+	if !strings.Contains(render(h.plan()), "- remove the heartbeat") {
+		t.Errorf("plan should remove the heartbeat:\n%s", render(h.plan()))
+	}
+	h.apply()
+	if _, err := os.Stat(filepath.Join(h.env.UserHome, ".config", "systemd", "user", "fabrica-heartbeat.timer")); !os.IsNotExist(err) {
+		t.Errorf("the timer should be gone: %v", err)
+	}
+	if !slices.Contains(ran, "systemctl --user disable --now fabrica-heartbeat.timer") {
+		t.Errorf("apply should stop the timer: %v", ran)
+	}
+
+	// Where Fabrica can't install a job, plan says to run it by hand.
+	h.w.Home.Write(map[string]string{"factories/mine.yaml": factory})
+	h.env.GOOS = "plan9"
+	if p := h.plan(); !p.Local.Diags.HasCode("local.heartbeat") || !strings.Contains(render(p), "fabrica heartbeat --watch") {
+		t.Errorf("want a warning:\n%s", render(p))
+	}
+}

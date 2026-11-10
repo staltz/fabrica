@@ -48,6 +48,14 @@ type Session struct {
 	// readable only by you. Local launchers check the repo out and keep
 	// their log there. Folder providers don't get it.
 	Dir string `json:"-"`
+	// Title names the session where the runtime shows a name, like "Fabrica
+	// init onboard of factory acme". Empty means a name for an init.
+	Title string `json:"-"`
+	// FabricaCommand, when set, is the local Fabrica server to connect to,
+	// over stdio, instead of Fabrica.URL: `fabrica mcp --runtime … --home
+	// …`. It's how a local factory's pace routine reaches your local
+	// factories, like your own sessions do.
+	FabricaCommand []string `json:"-"`
 }
 
 // Launched is what a launcher reports about the session it started.

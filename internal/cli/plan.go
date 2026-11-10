@@ -29,7 +29,7 @@ func planEnv(t *tools, only []string) (*plan.Env, error) {
 	}
 	return &plan.Env{
 		Loader: t.loader, Git: t.git, Secret: secret, ServerSecret: savedServerSecret,
-		Binary: fabricaBinary(), UserHome: userHome(),
+		Binary: fabricaBinary(), UserHome: userHome(), CacheDir: t.cacheDir,
 		SkipLocal: os.Getenv("CI") != "",
 		Refresh:   true,
 		Only:      only,

@@ -250,14 +250,14 @@ Only the latest version is kept. Saving an empty memory deletes the row.
 
 ### `pace_fires`
 
-One row per call the remote server made to a stub's webhook, on its factory's [heartbeat](mcp-server.md#the-heartbeat): the runs of routines with a [pace trigger](blueprints.md#pace). The local server never writes it.
+One row per run of a routine with a [pace trigger](blueprints.md#pace) that a heartbeat started: in the remote server's database, each call it made to a stub's webhook, on its factory's [heartbeat](mcp-server.md#the-heartbeat); in your `runs.db`, each session [`fabrica heartbeat`](cli.md#fabrica-heartbeat) started for a local factory.
 
 | Column | What it is |
 |---|---|
 | `factory`, `runtime`, `stub`, `beat_at` | Which stub (by its identity, like `4ckr#tidy@github.com/acme/app`), on which beat (RFC 3339, UTC, when the beat started). Together they're the primary key, which is what keeps a stub from firing twice in one beat. |
 | `routine`, `repo` | The stub's routine and repo. |
-| `fired_at` | RFC 3339, UTC: when the server called the webhook. Later than `beat_at` when the server was down as the beat started. |
-| `status` | `fired` (the runtime started a run), `failed`, or `firing` (the call was cut short, by a restart say; it isn't tried again). |
+| `fired_at` | RFC 3339, UTC: when the server called the webhook, or the heartbeat started the session. Later than `beat_at` when the server was down, or the computer asleep, as the beat started. |
+| `status` | `fired` (the run started), `failed`, or `firing` (the start was cut short, by a restart say; it isn't tried again). |
 | `error` | Why it failed, when it did. Never the webhook's token or URL. |
 
 The run a call starts is in `runs` like any other, once its stub calls `run_begin`.

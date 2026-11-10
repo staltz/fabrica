@@ -124,7 +124,15 @@ fabrica webhook acme '4ckr#tidy@github.com/acme/app' --runtime cursor-cloud --ur
 
 It asks for the token (or API key), and keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
 
-A factory that deploys a routine with a pace trigger, but has no `pace:`, is an error (`factory.pace`), and so is one that deploys it to a runtime without webhooks, like a local one (`capability.trigger`).
+#### Pace in a local factory
+
+A local factory has no server running all the time, so your machine keeps its heartbeat. When a local factory runs a routine with a pace trigger, `fabrica apply` installs a job in your system's per-user scheduler that runs [`fabrica heartbeat`](cli.md#fabrica-heartbeat) every minute: a launchd agent (`~/Library/LaunchAgents/dev.fabrica.heartbeat.plist`) on macOS, a systemd user timer (`~/.config/systemd/user/fabrica-heartbeat.timer`) on Linux. It's one job for the machine, whatever the factories, and apply removes it when no local factory needs it anymore. Elsewhere, `plan` warns, and you keep `fabrica heartbeat --watch` running yourself.
+
+Each run looks at the beat every local factory with a pace is in, counted the same way the server counts. On a new beat, it starts a session for every routine that runs on it, on each of the factory's runtimes and repos: a headless run of the tool (`claude -p` on `claude-code-local`, in Claude Code's auto permission mode) in a fresh clone of the repo under `$FABRICA_CACHE/sessions/<factory>/`, served by your local `fabrica mcp` like a hook is. Its output goes to `session.log` in the same folder, and the folder goes once the session has been quiet for a day. Every start is recorded in your `runs.db`, so a routine starts at most once per beat on each runtime and repo. A computer that was asleep when a beat started starts it when it wakes, as long as the beat hasn't ended; a beat that passed while it slept is skipped. The job only runs while you're logged in.
+
+So locally, a pace trigger works on runtimes Fabrica can start sessions on (Claude Code, for now), and its factory has to list its targets: `targets: ["*"]` is an error, like for a schedule (`factory.schedule-wildcard`). Nothing is installed in the tool for the routine itself, and changing `pace:` or `every:` needs no apply here either.
+
+A factory that deploys a routine with a pace trigger, but has no `pace:`, is an error (`factory.pace`), and so is one that deploys it to a runtime that can't run it, like Codex cloud or Cursor IDE (`capability.trigger`).
 
 ### Init
 

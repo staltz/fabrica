@@ -145,6 +145,8 @@ A routine with a [pace trigger](blueprints.md#pace), like `{ on: pace, every: 4 
 - **Each stub fires at most once per beat.** Before calling a webhook, the server records the call in the `pace_fires` table of its [database](run-history.md#pace_fires), and a beat already there is never called again, even after a restart. A server that was down when a beat started calls it as soon as it's back, as long as the beat hasn't ended; a beat that passed entirely while it was down is skipped.
 - **A failed call isn't retried**, except when the runtime answers `429` or `503`, which mean it started nothing: webhooks have no idempotency key, so a retry could start a second run. Failures are logged and recorded with their reason. A token sealed with an earlier server secret can't be opened, and its calls are recorded as failed.
 
+Local factories keep their heartbeat on your machine instead, with [`fabrica heartbeat`](cli.md#fabrica-heartbeat): see [Pace in a local factory](home-repos.md#pace-in-a-local-factory).
+
 Runtimes limit how often a webhook can fire (a Claude routine, 30 times an hour, and an account, 100 API fires an hour), so keep the period of a pace routine (its pace times `every:`) well above that.
 
 ### The admin API

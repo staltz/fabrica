@@ -133,6 +133,20 @@ func (s Shape) TriggerList() []blueprint.Trigger {
 	return out
 }
 
+// ResourceConnectors is the shape's connectors, as a provider takes them.
+func (s Shape) ResourceConnectors() []provider.ResourceConnector {
+	var out []provider.ResourceConnector
+	for _, c := range s.Connectors {
+		rc := provider.ResourceConnector{Name: c.Name, Kind: c.Kind}
+		if c.Server != nil {
+			rc.URL, rc.Transport, rc.Auth, rc.Secret = c.Server.URL, c.Server.Transport, c.Server.Auth, c.Server.Secret
+			rc.Command, rc.Args, rc.Env = c.Server.Command, c.Server.Args, c.Server.Env
+		}
+		out = append(out, rc)
+	}
+	return out
+}
+
 // ShapeConnector is one connector as it's actually installed in the
 // runtime.
 type ShapeConnector struct {
@@ -292,9 +306,17 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 			use := Use{Name: tr.On, Support: m.Trigger(tr.On)}
 			hint := triggerHint(r, tr.On)
 			if tr.On == blueprint.PaceTrigger {
-				// Runtimes install a pace trigger as a webhook, which the
-				// Fabrica server calls on the factory's heartbeat.
+				// Cloud runtimes install a pace trigger as a webhook, which
+				// the Fabrica server calls on the factory's heartbeat.
+				// Locally, `fabrica heartbeat` starts a session for it, so
+				// the runtime needs a launcher.
 				use.Support = m.Trigger(blueprint.WebhookTrigger)
+				if m.Scope == provider.Local {
+					use.Support = provider.Unsupported
+					if m.HasLaunchMode(provider.API) {
+						use.Support = provider.Native
+					}
+				}
 				if p := t.Pace.Times(tr.Every); p > 0 {
 					use.Name = fmt.Sprintf("%s (every %s)", tr.On, pace.Minutes(p))
 				}
@@ -370,6 +392,9 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 		case r.IsInit():
 			session = "is an init routine, which runs in a one-off session Fabrica starts"
 			sessionHint = "drop it from side_effects:, and turn it on in that session when you want it"
+		case st.Triggers[0].On == blueprint.PaceTrigger:
+			session = "runs on its factory's pace, in a session `fabrica heartbeat` starts"
+			sessionHint = fmt.Sprintf("drop it from side_effects:, or run the routine on a cloud runtime that has it; on %s, only schedule routines get settings of their own", rt)
 		case len(r.Triggers) > 1:
 			session = fmt.Sprintf("runs on %s as a hook inside the session you have open", st.Trigger)
 			sessionHint = fmt.Sprintf("drop it from side_effects:, and turn it on in that session when you want it, or move the routine's %s trigger to a routine of its own; on %s, only schedule triggers get settings of their own", st.Trigger, rt)
@@ -467,12 +492,18 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 }
 
 // installedTriggers is a routine's triggers as runtimes install them: its
-// pace trigger, if it has one, becomes a webhook. A pace trigger needs a
+// pace trigger, if it has one, becomes a webhook on a cloud runtime, and
+// stays a pace trigger, without its every:, on a local one. A pace trigger needs a
 // factory with a pace, and when it has none, the error goes in diags.
 func installedTriggers(r *blueprint.Routine, t Target, diags *diag.List) []blueprint.Trigger {
 	out := make([]blueprint.Trigger, len(r.Triggers))
 	for i, tr := range r.Triggers {
 		out[i] = tr.Installed()
+		if tr.On == blueprint.PaceTrigger && t.Runtime.Matrix.Scope == provider.Local {
+			// Nothing is installed in a local tool: `fabrica heartbeat`
+			// fires it, reading the pace and every: live.
+			out[i] = blueprint.Trigger{On: blueprint.PaceTrigger}
+		}
 		if tr.On == blueprint.PaceTrigger && t.Pace == 0 {
 			factory := "the factory"
 			if t.Factory != "" {
@@ -509,7 +540,7 @@ func split(r *blueprint.Routine, triggers []blueprint.Trigger, m *provider.Matri
 
 // paceHint is triggerHint for a pace trigger, which needs webhooks.
 func paceHint(r *blueprint.Routine) string {
-	const why = "a pace trigger is installed as a webhook, which the Fabrica server calls on the factory's heartbeat, so it needs a cloud runtime with webhooks, like claude-code-cloud or cursor-cloud"
+	const why = "a pace trigger needs a cloud runtime with webhooks, which the Fabrica server calls on the factory's heartbeat (like claude-code-cloud or cursor-cloud), or a local runtime Fabrica can start sessions on, which `fabrica heartbeat` does (like claude-code-local)"
 	if len(r.Triggers) > 1 {
 		return why + "; deploy this routine to one, or drop pace from its triggers (or move it to a routine of its own)"
 	}

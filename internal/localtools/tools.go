@@ -11,6 +11,9 @@
 //     session pointer hook per tool, running `fabrica hook session …`.
 //   - Scheduled tasks: one per repo for each local routine with a
 //     schedule trigger (Claude Code only).
+//   - The heartbeat job, outside the tools: one per machine, in the
+//     system's scheduler, when a local routine has a pace trigger (see
+//     heartbeat.go).
 //
 // Everything Fabrica installs carries an identifying mark (the `fabrica`
 // name prefix, or the `fabrica hook` command), so Fabrica finds its own

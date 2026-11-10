@@ -192,6 +192,17 @@ Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace tr
 
 It asks for the webhook's token (or API key), without showing what you type or paste; without a terminal, it reads it from stdin. The token is sealed with the factory's server secret (from `FABRICA_SERVER_SECRET`, or saved by `fabrica auth login`), so the state file only holds it encrypted, and only the Fabrica server can read it. Like confirm, it commits and pushes the factory's state, and refuses while an apply holds its lock. Updates keep the webhook. After you rotate the server secret, run it again for each stub.
 
+## `fabrica heartbeat`
+
+Starts the routines with a pace trigger of your local factories, when their pace says they're due: a headless session of the tool (`claude -p` for Claude Code), in a fresh clone of each repo, served by your local `fabrica mcp`. It starts each routine at most once per beat, however often it runs, so it's made to run every minute, and `fabrica apply` installs a job that does: a launchd agent on macOS, a systemd user timer on Linux. See [Pace in a local factory](home-repos.md#pace-in-a-local-factory). Cloud factories don't need it: their Fabrica server keeps their heartbeat.
+
+| Flag | What it does |
+|---|---|
+| `--watch` | Keep running, and look at the start of every minute, instead of looking once. For systems where Fabrica can't install the job. |
+| `--home <folder>` | Your personal home repo. |
+
+It prints each session it started and where its output goes, and exits with `1` when a session didn't start.
+
 ## `fabrica unlock <factory>`
 
 Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created. A create on a runtime that can't list resources, whose ID was never recorded, is not adopted: `plan` reports it, and apply won't retry it until you confirm whether it exists.

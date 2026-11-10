@@ -107,6 +107,7 @@ Copilot reads MCP servers from the repository's settings (**Settings → Copilot
 | `session.stop` | native (Stop) | native (stop) | native (Stop) | native (agentStop) |
 | `git.pre_commit`, `git.pre_push` | native (PreToolUse on Bash) | native (beforeShellExecution) | native (PreToolUse on Bash) | native (preToolUse on bash) |
 | `schedule` | native (desktop app scheduled task) | — | — | — |
+| `pace` | native (`fabrica heartbeat` starts `claude -p`) | — | — | — |
 | Connectors | MCP over http, sse, stdio; github, slack and linear through their fallbacks | same | MCP over http and stdio; github, slack and linear through their fallbacks | same as Claude Code |
 | Side effects | `github.pr_autofix` native for `schedule` (the scheduled task's setting), the rest emulated | all emulated | all emulated | all emulated |
 | Memory | emulated (in `runs.db`) | emulated | emulated | emulated |

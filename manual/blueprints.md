@@ -275,7 +275,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica s
 |---|---|
 | `github.pull_request.opened`, `.synchronize`, `.reopened`, …, `github.issues.opened` | Cloud runtimes (see [providers](providers.md) for each one's list) |
 | `schedule` (with `cron:`) | Cloud runtimes and Claude Code (desktop app scheduled tasks) |
-| `pace` (with `every:`) | Cloud runtimes with webhooks: Claude routines and Cursor automations. See [Pace](#pace). |
+| `pace` (with `every:`) | Cloud runtimes with webhooks (Claude routines and Cursor automations), and Claude Code. See [Pace](#pace). |
 | `session.start` | Claude Code, Codex CLI and Copilot CLI |
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
@@ -310,7 +310,9 @@ A `schedule` trigger fixes when a routine runs. A `pace` trigger leaves it to th
 trigger: { on: pace, every: 4 }   # every 4 paces: every 2h in a factory with pace: 30m
 ```
 
-`every:` is a whole number from 1 to 1000, and defaults to 1. Runtimes don't keep that time: the [Fabrica server](mcp-server.md#the-heartbeat) does. Each stub of the routine gets a `webhook` trigger in its runtime (an **API** trigger on a Claude routine, a **Webhook** trigger on a Cursor automation), and the server keeps the factory's heartbeat: it beats once every pace, and calls the webhook on every `every:`-th beat. So a pace trigger runs on the runtimes that have webhooks, and when a routine is [split into a stub per trigger](#several-triggers), its stub is named after `webhook`. Neither the pace nor `every:` is baked into the stub, so changing them takes effect at the server's next refresh, with no apply. Local runtimes have no server to call them, so routines with a pace trigger only run in cloud factories.
+`every:` is a whole number from 1 to 1000, and defaults to 1. Runtimes don't keep that time: the [Fabrica server](mcp-server.md#the-heartbeat) does. Each stub of the routine gets a `webhook` trigger in its runtime (an **API** trigger on a Claude routine, a **Webhook** trigger on a Cursor automation), and the server keeps the factory's heartbeat: it beats once every pace, and calls the webhook on every `every:`-th beat. So a pace trigger runs on the runtimes that have webhooks, and when a routine is [split into a stub per trigger](#several-triggers), its stub is named after `webhook`. Neither the pace nor `every:` is baked into the stub, so changing them takes effect at the server's next refresh, with no apply.
+
+Local factories keep their heartbeat on your machine: [`fabrica heartbeat`](cli.md#fabrica-heartbeat), which a job that `fabrica apply` installs runs every minute, starts a session for each run, on runtimes Fabrica can start sessions on (`claude -p` for Claude Code). Nothing is installed in the tool for the routine itself. See [Pace](home-repos.md#pace).
 
 `webhook` itself isn't a trigger a blueprint can use: nothing but the heartbeat calls it.
 

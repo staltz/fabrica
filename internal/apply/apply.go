@@ -566,18 +566,7 @@ func modelFor(shape stub.Shape) *provider.ResourceModel {
 }
 
 // connectorsFor is a shape's connectors, for a provider.
-func connectorsFor(shape stub.Shape) []provider.ResourceConnector {
-	var out []provider.ResourceConnector
-	for _, c := range shape.Connectors {
-		rc := provider.ResourceConnector{Name: c.Name, Kind: c.Kind}
-		if c.Server != nil {
-			rc.URL, rc.Transport, rc.Auth, rc.Secret = c.Server.URL, c.Server.Transport, c.Server.Auth, c.Server.Secret
-			rc.Command, rc.Args, rc.Env = c.Server.Command, c.Server.Args, c.Server.Env
-		}
-		out = append(out, rc)
-	}
-	return out
-}
+func connectorsFor(shape stub.Shape) []provider.ResourceConnector { return shape.ResourceConnectors() }
 
 // fabricaURL is the URL a runtime should use for the Fabrica server: with
 // the token in the path when the runtime can't send headers.
@@ -819,6 +808,24 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 			}
 			fmt.Fprintln(out, "  Scheduled tasks only run while the app is open and the computer is awake.")
 		}
+	}
+	return applyHeartbeat(out, lp.Heartbeat)
+}
+
+// applyHeartbeat installs, updates or removes the heartbeat job.
+func applyHeartbeat(out io.Writer, hb *plan.LocalHeartbeat) error {
+	if hb == nil || len(hb.Changes) == 0 {
+		return nil
+	}
+	if err := hb.Scheduler.Apply(hb.Job); err != nil {
+		return fmt.Errorf("heartbeat: %w", err)
+	}
+	fmt.Fprintf(out, "%s %s\n", style.For(out).Bold("Local heartbeat:"), hb.Scheduler.Describe())
+	for _, c := range hb.Changes {
+		fmt.Fprintf(out, "  %s %s\n", style.For(out).Green("✓"), c)
+	}
+	if hb.Job != nil {
+		fmt.Fprintln(out, "  It runs while you're logged in. Each routine with a pace trigger runs in a session of its own (`claude -p`), in a fresh clone of its repo; `fabrica heartbeat` says where their output goes.")
 	}
 	return nil
 }

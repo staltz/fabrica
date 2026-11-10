@@ -85,6 +85,9 @@ func (p *Plan) Summary() string {
 		for _, rt := range p.Local.Runtimes {
 			changes += len(rt.Changes)
 		}
+		if hb := p.Local.Heartbeat; hb != nil {
+			changes += len(hb.Changes)
+		}
 	}
 	var parts []string
 	parts = append(parts, plural(changes, "change"))
@@ -278,6 +281,19 @@ func (l *LocalPlan) Render(w io.Writer) {
 			fmt.Fprintf(w, "    %s\n", st.Mark(c))
 		}
 	}
+	if hb := l.Heartbeat; hb != nil {
+		var files []string
+		for _, f := range hb.Scheduler.Files() {
+			files = append(files, Tildify(f))
+		}
+		fmt.Fprintf(w, "  %s %s\n", st.Bold("heartbeat"), st.Dim("("+strings.Join(files, ", ")+")"))
+		if len(hb.Changes) == 0 {
+			fmt.Fprintln(w, "    "+st.Green("In sync."))
+		}
+		for _, c := range hb.Changes {
+			fmt.Fprintf(w, "    %s\n", st.Mark(c))
+		}
+	}
 	renderDiags(w, st, "  ", l.Diags.Sorted())
 }
 
@@ -435,6 +451,9 @@ type JSON struct {
 	Diags     diag.List     `json:"diagnostics,omitempty"`
 	Factories []FactoryJSON `json:"factories"`
 	Local     []LocalJSON   `json:"local,omitempty"`
+	// Heartbeat is what apply would do to the heartbeat job, which starts
+	// local routines with a pace trigger.
+	Heartbeat []string `json:"heartbeat,omitempty"`
 }
 
 // FactoryJSON is one factory in JSON output.
@@ -517,6 +536,9 @@ func (p *Plan) ToJSON() JSON {
 	if p.Local != nil {
 		for _, rt := range p.Local.Runtimes {
 			out.Local = append(out.Local, LocalJSON{Runtime: rt.Name, Changes: rt.Changes})
+		}
+		if hb := p.Local.Heartbeat; hb != nil {
+			out.Heartbeat = hb.Changes
 		}
 		out.Diags = append(out.Diags, p.Local.Diags...)
 	}

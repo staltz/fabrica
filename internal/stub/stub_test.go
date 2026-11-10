@@ -556,11 +556,25 @@ func TestPaceTrigger(t *testing.T) {
 		t.Errorf("a missing pace isn't the runtime's fault:\n%s", none.Diags)
 	}
 
-	// Runtimes without webhooks can't run it: local ones have no server to
-	// call them, whatever schedules they have.
-	for _, rt := range []string{"claude-code-local", "cursor-local", "codex"} {
+	// Locally, nothing is installed in the tool: `fabrica heartbeat`
+	// starts a session for each run, on runtimes it can start them on.
+	local := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-local", 30))
+	if !local.OK() || len(local.Stubs) != 1 || local.Stubs[0].Shape.Trigger != "pace" || !local.Stubs[0].InSession {
+		t.Errorf("claude-code-local: %+v %s", local.Stubs, local.Diags)
+	}
+	if other := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-local", 60)); other.Stubs[0].Shape.Fingerprint() != local.Stubs[0].Shape.Fingerprint() {
+		t.Error("locally too, the pace isn't baked into the stub")
+	}
+	autofix := load(t, map[string]string{"routines/tidy.md": strings.Replace(paced, "connectors: [github]", "connectors: [github]\nside_effects: [github.pr_autofix]", 1)})
+	if e := stub.Evaluate(autofix, autofix.Routines["tidy"], at("claude-code-local", 30)); e.OK() || !strings.Contains(e.Diags.String(), "in a session `fabrica heartbeat` starts") {
+		t.Errorf("a native side effect can't be set on a session the heartbeat starts:\n%s", e.Diags)
+	}
+
+	// Runtimes Fabrica can't start sessions on, and cloud runtimes without
+	// webhooks, can't run it.
+	for _, rt := range []string{"cursor-local", "codex-cli", "codex"} {
 		e := stub.Evaluate(f, f.Routines["tidy"], at(rt, 30))
-		if e.OK() || !strings.Contains(e.Diags.String(), "doesn't support trigger pace") || !strings.Contains(e.Diags.String(), "needs a cloud runtime with webhooks") {
+		if e.OK() || !strings.Contains(e.Diags.String(), "doesn't support trigger pace") || !strings.Contains(e.Diags.String(), "which `fabrica heartbeat` does") {
 			t.Errorf("%s: want an unsupported-trigger error, got:\n%s", rt, e.Diags)
 		}
 	}

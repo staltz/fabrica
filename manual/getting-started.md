@@ -120,7 +120,7 @@ It finds the factory that covers the repo and checks the Fabrica line, skill nam
 
 Open the repo in Claude Code or Cursor and ask for something. Behind the scenes, the agent:
 
-1. calls `run_begin` with a short summary of what you asked for,
+1. calls `run_begin` with the repo and a short summary of what you asked for,
 2. calls `rules_get` and follows your rules,
 3. calls `skills_list` and loads what it needs with `skill_load` (locally, Fabrica unpacks each skill's folder into `~/.cache/fabrica/skills/`, so its scripts can run),
 4. reports progress with `run_report`.

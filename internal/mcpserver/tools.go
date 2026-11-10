@@ -35,7 +35,7 @@ type runBeginArgs struct {
 	Intent  string `json:"intent" jsonschema:"a summary of the original request in at most 20 words of casual plain English"`
 	Routine string `json:"routine,omitempty" jsonschema:"for a routine run, the routine's name from your stub"`
 	Runtime string `json:"runtime,omitempty" jsonschema:"for a routine run, the runtime from your stub"`
-	Repo    string `json:"repo,omitempty" jsonschema:"for a routine run, the repo from your stub, like github.com/acme/app"`
+	Repo    string `json:"repo" jsonschema:"the repo this session works in, from its git remote, like github.com/acme/app; for a routine run, the repo from your stub"`
 	Stub    string `json:"stub,omitempty" jsonschema:"for a routine run, the stub fingerprint from your stub"`
 	Session string `json:"session,omitempty" jsonschema:"where this session's transcript lives, if you know it: a transcript file path, a session ID or a session URL"`
 }
@@ -98,7 +98,7 @@ type runReportOut struct {
 
 func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	out := skillsListOut{HowTo: "Load the skills that are relevant to your task with skill_load. "}
@@ -139,7 +139,7 @@ func (s *session) skillsList(ctx context.Context, req *mcp.CallToolRequest, _ no
 
 func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in nameArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	if err := clashError(snap); err != nil {
@@ -166,7 +166,7 @@ func (s *session) skillLoad(ctx context.Context, req *mcp.CallToolRequest, in na
 
 func (s *session) skillFile(ctx context.Context, req *mcp.CallToolRequest, in skillFileArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	if err := clashError(snap); err != nil {
@@ -205,7 +205,7 @@ func (s *session) skillFile(ctx context.Context, req *mcp.CallToolRequest, in sk
 
 func (s *session) rulesGet(ctx context.Context, req *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	s.bindOpenRun(ctx, snap, "")
@@ -220,7 +220,7 @@ func (s *session) rulesGet(ctx context.Context, req *mcp.CallToolRequest, _ noAr
 
 func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nameArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	r := snap.Blueprint.Rules[in.Name]
@@ -234,7 +234,7 @@ func (s *session) ruleLoad(ctx context.Context, req *mcp.CallToolRequest, in nam
 
 func (s *session) routineGet(ctx context.Context, req *mcp.CallToolRequest, in nameArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	r := snap.Blueprint.Routines[in.Name]
@@ -279,7 +279,7 @@ func memorySupport(f *blueprint.Blueprint, runtime string) provider.Support {
 
 func (s *session) memorySave(ctx context.Context, req *mcp.CallToolRequest, in memorySaveArgs) (*mcp.CallToolResult, any, error) {
 	snap := s.snapshot(ctx, req.Session)
-	if err := refusal(snap); err != nil {
+	if err := s.refusal(snap); err != nil {
 		return nil, nil, err
 	}
 	// Locally, only a routine run begun in this session can write its
@@ -338,28 +338,20 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 	}
 
 	// Who and where. Locally Fabrica knows both; remotely they come from
-	// the stub.
+	// the stub, or from the agent.
+	repo, repoErr := repourl.Normalize(in.Repo)
 	if snap.remote() {
-		run.Runtime = in.Runtime
-		if in.Repo != "" {
-			repo, err := repourl.Normalize(in.Repo)
-			if err != nil {
-				return refuse(fmt.Errorf("repo: %v", err))
-			}
-			run.Repo = repo
-		}
+		run.Runtime, run.Repo = in.Runtime, repo
 	} else {
 		run.Runtime, run.Repo = snap.Runtime, snap.Repo
-		if in.Runtime != "" && in.Runtime != snap.Runtime {
-			return refuse(fmt.Errorf("you said runtime %s, but this Fabrica server serves %s", in.Runtime, snap.Runtime))
-		}
-		if in.Repo != "" {
-			if repo, err := repourl.Normalize(in.Repo); err != nil || repo != snap.Repo {
-				return refuse(fmt.Errorf("you said repo %s, but this workspace is %s", in.Repo, snap.Repo))
-			}
-		}
 	}
-	if err := refusal(snap); err != nil {
+	if repoErr != nil {
+		return refuse(fmt.Errorf("repo: %v", repoErr))
+	}
+	if !snap.remote() && in.Runtime != "" && in.Runtime != snap.Runtime {
+		return refuse(fmt.Errorf("you said runtime %s, but this Fabrica server serves %s", in.Runtime, snap.Runtime))
+	}
+	if err := s.refusal(snap); err != nil {
 		return refuse(err)
 	}
 	if err := clashError(snap); err != nil {
@@ -381,6 +373,18 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 		}
 	}
 
+	// A factory's blueprint is only for its own repos. An agent working in
+	// another repo (an MCP config pointing at the wrong factory, or a
+	// workspace that isn't the one it works in) gets nothing, for the rest
+	// of the session. Stubs went through the stale-stub checks above, which
+	// say why more precisely.
+	if why := wrongRepo(snap, repo); why != "" {
+		s.mu.Lock()
+		s.wrongRepo = why
+		s.mu.Unlock()
+		return refuse(errors.New(why))
+	}
+
 	if err := s.core.Runs.Begin(ctx, run); err != nil {
 		return nil, nil, fmt.Errorf("couldn't record the run: %v", err)
 	}
@@ -397,6 +401,38 @@ func (s *session) runBegin(ctx context.Context, req *mcp.CallToolRequest, in run
 		next = fmt.Sprintf("Call routine_get with name %q and follow it. Record progress with run_report.", in.Routine)
 	}
 	return jsonResult(runBeginOut{RunID: run.ID, Next: next})
+}
+
+// wrongRepo says why repo, the one the agent says it works in, isn't one the
+// session's factory serves, or "" when it is.
+func wrongRepo(snap *Snapshot, repo string) string {
+	var why string
+	switch {
+	case !snap.remote() && repo != snap.Repo:
+		why = fmt.Sprintf("you said repo %s, but this workspace is %s", repo, snap.Repo)
+	case snap.remote() && !snap.Factory.Covers(repo):
+		why = fmt.Sprintf("factory %s isn't for repo %s (the MCP config of this session may point at the wrong factory)", snap.factoryName(), repo)
+	default:
+		return ""
+	}
+	return why + ". " + wrongRepoNote
+}
+
+// wrongRepoNote ends every wrong-repo refusal; recordRefusal looks for it.
+const wrongRepoNote = "Fabrica won't serve a factory's working rules, skills or routines to another repo, so don't use any from this server in this session"
+
+// refusal is why Fabrica won't serve this session: the snapshot's refusal,
+// or a run_begin that said the agent works in a repo the factory isn't for.
+func (s *session) refusal(snap *Snapshot) error {
+	if err := refusal(snap); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.wrongRepo != "" {
+		return fmt.Errorf("Fabrica can't serve this session: %s", s.wrongRepo)
+	}
+	return nil
 }
 
 // checkStub runs the two stale-stub checks, in order: the stub is still
@@ -474,6 +510,8 @@ func (s *session) recordRefusal(ctx context.Context, run runs.Run, cause error) 
 		summary = "Refused: the repo's AGENTS.md is missing the Fabrica line"
 	case strings.Contains(cause.Error(), "same names as blueprint skills"):
 		summary = "Refused: repo skills clash with blueprint skills"
+	case strings.Contains(cause.Error(), wrongRepoNote):
+		summary = "Refused: the agent works in a repo this factory isn't for"
 	}
 	if err := s.core.Runs.Begin(ctx, run); err == nil {
 		_ = s.core.Runs.AddCheckpoint(ctx, run.ID, runs.Checkpoint{At: s.core.now(), Author: runs.ByFabrica, Status: runs.Failed, Summary: summary})

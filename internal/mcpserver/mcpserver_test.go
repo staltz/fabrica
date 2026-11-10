@@ -163,7 +163,7 @@ func TestLocalSession(t *testing.T) {
 	}
 
 	// An interactive session.
-	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "add a dark mode toggle to settings"}))
+	runID := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "add a dark mode toggle to settings"}))
 	rules := c.ok("rules_get", nil)
 	for _, want := range []string{"Product knowledge only", "tests-first (Test-first workflow)", "Write a failing test", "typescript: TypeScript style. Applies when you work on files matching *.ts."} {
 		if !strings.Contains(rules, want) {
@@ -201,7 +201,7 @@ func TestLocalSession(t *testing.T) {
 
 	c.ok("run_report", map[string]any{"run_id": runID, "summary": "added the toggle and its test", "status": "succeeded", "links": []any{"https://github.com/acme/app/pull/7"}})
 	c.fails("run_report", map[string]any{"run_id": runID, "summary": strings.Repeat("too many words ", 8)}, "limit is 20")
-	c.fails("run_begin", map[string]any{"intent": ""}, "is empty")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": ""}, "is empty")
 
 	// Run history knows what happened.
 	run, err := lw.db.Get(context.Background(), runID)
@@ -215,13 +215,13 @@ func TestLocalSession(t *testing.T) {
 
 	// A local routine run, from a hook, with the right stub.
 	fp := localStub(t, lw.opts, "review-before-push")
-	c.ok("run_begin", map[string]any{"intent": "review my diff before pushing", "routine": "review-before-push", "stub": fp})
+	c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review my diff before pushing", "routine": "review-before-push", "stub": fp})
 	routine := c.ok("routine_get", map[string]any{"name": "review-before-push"})
 	if !strings.Contains(routine, "Review your own diff") || !strings.Contains(routine, "## Working rules") {
 		t.Errorf("routine_get = %s", routine)
 	}
 	// The wrong stub is refused, and then routine_get won't serve it either.
-	c.fails("run_begin", map[string]any{"intent": "review again", "routine": "review-before-push", "stub": "000000000000"}, "this stub is outdated")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review again", "routine": "review-before-push", "stub": "000000000000"}, "this stub is outdated")
 	c.fails("routine_get", map[string]any{"name": "review-before-push"}, "refused")
 }
 
@@ -233,7 +233,7 @@ func TestLocalRefusesWithoutTheFabricaLine(t *testing.T) {
 		t.Errorf("instructions should explain the refusal and show the line:\n%s", instructions)
 	}
 	c.fails("rules_get", nil, "AGENTS.md doesn't start with the Fabrica line")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug"}, "recorded as failed run")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}, "recorded as failed run")
 }
 
 func TestLocalRefusesSkillClashes(t *testing.T) {
@@ -242,7 +242,7 @@ func TestLocalRefusesSkillClashes(t *testing.T) {
 	c, _ := lw.connect(t)
 	c.ok("rules_get", nil) // rules still load
 	c.fails("skill_load", map[string]any{"name": "pdf"}, "same names as blueprint skills (pr-review)")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug"}, "same names as blueprint skills")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}, "same names as blueprint skills")
 }
 
 func TestLocalUsesRootsFromTheClient(t *testing.T) {
@@ -257,7 +257,27 @@ func TestLocalUsesRootsFromTheClient(t *testing.T) {
 	// version today's editors use.
 	core.ProtocolVersions = []string{"2025-11-25"}
 	c := connect(t, core.NewServer(instructions), lw.ws)
-	c.ok("run_begin", map[string]any{"intent": "look around"})
+	c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "look around"})
+}
+
+// TestLocalRefusesAnotherRepo: an agent that works in another repo than the
+// workspace Fabrica resolved gets none of the factory's blueprint.
+func TestLocalRefusesAnotherRepo(t *testing.T) {
+	lw := newLocalWorld(t)
+	c, _ := lw.connect(t)
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/api", "intent": "fix a bug"}, "you said repo github.com/acme/api, but this workspace is github.com/acme/app")
+	// For the rest of the session, nothing from the blueprint is served,
+	// not even after a run_begin with the workspace's repo.
+	c.fails("rules_get", nil, "don't use any from this server")
+	c.fails("skills_list", nil, "don't use any from this server")
+	c.fails("skill_load", map[string]any{"name": "pr-review"}, "don't use any from this server")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}, "don't use any from this server")
+
+	// A repo that isn't a repo name is refused too, but only that call.
+	other, _ := lw.connect(t)
+	other.fails("run_begin", map[string]any{"repo": "not a repo", "intent": "fix a bug"}, "repo:")
+	other.ok("run_begin", map[string]any{"repo": "https://github.com/acme/app.git", "intent": "fix a bug"})
+	other.ok("rules_get", nil)
 }
 
 func TestLocalStubNoLongerDeployed(t *testing.T) {
@@ -267,7 +287,7 @@ func TestLocalStubNoLongerDeployed(t *testing.T) {
 	// The routine is removed from the factory after the hook was
 	// installed.
 	lw.w.Home.Write(map[string]string{"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local]\ntargets: [\"*\"]\n"})
-	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in factory my-default")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push isn't in factory my-default")
 }
 
 func TestLocalStubNoLongerRunsOnRuntime(t *testing.T) {
@@ -277,7 +297,7 @@ func TestLocalStubNoLongerRunsOnRuntime(t *testing.T) {
 	// The routine is narrowed to another runtime after the hook was
 	// installed.
 	lw.w.Home.Write(map[string]string{"factories/my-default.yaml": "blueprint: { git: github.com/acme/blueprint, ref: main }\nruntimes: [claude-code-local, cursor-local]\ntargets: [\"*\"]\nroutines: [{ routine: review-before-push, runtimes: [cursor-local] }]\n"})
-	c.fails("run_begin", map[string]any{"intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push doesn't run on runtime claude-code-local in factory my-default")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review", "routine": "review-before-push", "stub": fp}, "no longer deployed: routine review-before-push doesn't run on runtime claude-code-local in factory my-default")
 }
 
 type remoteWorld struct {
@@ -585,7 +605,7 @@ func TestRemoteSessionlessRoutineGet(t *testing.T) {
 		t.Fatalf("routine_get before run_begin: status %d isErr %v %s", status, isErr, text)
 	}
 
-	status, _, body = sessionlessRPC(t, endpoint, "tools/call", "run_begin", map[string]any{
+	status, _, body = sessionlessRPC(t, endpoint, "tools/call", "run_begin", map[string]any{"repo": "github.com/acme/app",
 		"name": "run_begin",
 		"arguments": map[string]any{
 			"intent":  "review PR 7 on the app",
@@ -702,6 +722,44 @@ func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
+// TestRemoteRefusesAnotherRepo: a cloud session whose MCP config points at
+// a factory that isn't for its repo gets none of that factory's blueprint.
+func TestRemoteRefusesAnotherRepo(t *testing.T) {
+	rw := newRemoteWorld(t)
+	path := "/pr-review/t/" + token.For(testkit.Secret, "pr-review")
+	c := rw.connect(t, path)
+	text := c.callText("run_begin", map[string]any{"repo": "github.com/acme/billing", "intent": "fix a bug"})
+	if !strings.Contains(text, "factory pr-review isn't for repo github.com/acme/billing") || !strings.Contains(text, "recorded as failed run") {
+		t.Fatalf("run_begin = %s", text)
+	}
+
+	// A client with MCP sessions (Cursor) gets nothing more from the
+	// blueprint for the rest of the session. Sessionless HTTP has no
+	// session to remember the refusal in, so there the refusal itself has
+	// to stop the agent.
+	stateful := connect(t, rw.srv.newSession("pr-review"))
+	stateful.fails("run_begin", map[string]any{"repo": "github.com/acme/billing", "intent": "fix a bug"}, "factory pr-review isn't for repo github.com/acme/billing")
+	stateful.fails("rules_get", nil, "factory pr-review isn't for repo github.com/acme/billing")
+	stateful.fails("skills_list", nil, "factory pr-review isn't for repo github.com/acme/billing")
+	stateful.fails("skill_file", map[string]any{"name": "pr-review", "path": "checklist.md"}, "factory pr-review isn't for repo github.com/acme/billing")
+	stateful.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}, "factory pr-review isn't for repo github.com/acme/billing")
+
+	// Both refusals for github.com/acme/billing are in run history, under the
+	// repo the agent said.
+	list, _, err := rw.db.List(context.Background(), runs.Filter{Repo: "github.com/acme/billing"})
+	if err != nil || len(list) != 2 || list[0].Factory != "pr-review" {
+		t.Fatalf("runs for github.com/acme/billing = %+v, %v", list, err)
+	}
+	if cps, _ := rw.db.Checkpoints(context.Background(), list[0].RunID); len(cps) != 1 || cps[0].Status != runs.Failed || !strings.Contains(cps[0].Summary, "repo this factory isn't for") {
+		t.Errorf("checkpoints = %+v", cps)
+	}
+
+	// A session for one of the factory's repos is served as usual.
+	ok := rw.connect(t, path)
+	ok.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"})
+	ok.ok("rules_get", nil)
+}
+
 func TestRemoteRoutineRun(t *testing.T) {
 	rw := newRemoteWorld(t)
 	c := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
@@ -709,7 +767,7 @@ func TestRemoteRoutineRun(t *testing.T) {
 
 	// Routines only run from stubs, with every value filled in.
 	c.fails("routine_get", map[string]any{"name": "pr-review"}, "only run from stubs")
-	c.fails("run_begin", map[string]any{"intent": "review PR 7", "routine": "pr-review"}, "needs routine, runtime, repo and stub")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review PR 7", "routine": "pr-review"}, "needs routine, runtime, repo and stub")
 
 	args := map[string]any{"intent": "review PR 7 on the app", "routine": "pr-review", "runtime": "claude-code-cloud", "repo": "github.com/acme/api", "stub": fp}
 	runID := c.runID(c.ok("run_begin", args))
@@ -835,7 +893,7 @@ func TestLocalMemoryOnlyForRoutinesThatAskForIt(t *testing.T) {
 	lw := newLocalWorld(t)
 	c, _ := lw.connect(t)
 	fp := localStub(t, lw.opts, "review-before-push")
-	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "review my diff", "routine": "review-before-push", "stub": fp}))
+	runID := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review my diff", "routine": "review-before-push", "stub": fp}))
 	if r := c.ok("routine_get", map[string]any{"name": "review-before-push"}); strings.Contains(r, "## Memory") {
 		t.Errorf("a routine without memory: true gets no memory section here:\n%s", r)
 	}
@@ -967,7 +1025,7 @@ func TestLoadsAreRecorded(t *testing.T) {
 		t.Fatalf("loads before run_begin = %s", n)
 	}
 
-	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "add a dark mode toggle"}))
+	runID := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "add a dark mode toggle"}))
 	c.ok("rules_get", nil)
 	c.ok("rule_load", map[string]any{"name": "typescript"})
 	c.ok("skill_load", map[string]any{"name": "pdf"})
@@ -981,13 +1039,13 @@ func TestLoadsAreRecorded(t *testing.T) {
 	}
 
 	// A routine run: routine_get is a routine load.
-	routineRun := c.runID(c.ok("run_begin", map[string]any{"intent": "review my diff", "routine": "review-before-push", "stub": localStub(t, lw.opts, "review-before-push")}))
+	routineRun := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review my diff", "routine": "review-before-push", "stub": localStub(t, lw.opts, "review-before-push")}))
 	c.ok("routine_get", map[string]any{"name": "review-before-push"})
 	if got := loadsOf(t, lw.dbPath, routineRun); got != "routine:review-before-push" {
 		t.Errorf("loads = %s", got)
 	}
 	// A refused routine isn't served, so it isn't loaded.
-	c.fails("run_begin", map[string]any{"intent": "review again", "routine": "review-before-push", "stub": "000000000000"}, "this stub is outdated")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review again", "routine": "review-before-push", "stub": "000000000000"}, "this stub is outdated")
 	c.fails("routine_get", map[string]any{"name": "review-before-push"}, "refused")
 	if got := countRows(t, lw.dbPath, "loads"); got != "5" {
 		t.Errorf("%s loads in all, want 5", got)
@@ -1000,7 +1058,7 @@ func TestRunBeginSession(t *testing.T) {
 	ctx := context.Background()
 
 	// The pointer is stored, and the return value is the same as ever.
-	text := c.ok("run_begin", map[string]any{"intent": "fix a bug", "session": "  /home/me/.claude/projects/app/3f2a.jsonl \n"})
+	text := c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug", "session": "  /home/me/.claude/projects/app/3f2a.jsonl \n"})
 	var out map[string]any
 	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out) != 2 || out["run_id"] == nil || out["next"] == nil {
 		t.Errorf("run_begin returns run_id and next, and nothing else: %s", text)
@@ -1009,21 +1067,21 @@ func TestRunBeginSession(t *testing.T) {
 		t.Errorf("session = %q", run.Session)
 	}
 	// It's optional.
-	if run, _ := lw.db.Get(ctx, c.runID(c.ok("run_begin", map[string]any{"intent": "fix another bug"}))); run.Session != "" {
+	if run, _ := lw.db.Get(ctx, c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix another bug"}))); run.Session != "" {
 		t.Errorf("session = %q", run.Session)
 	}
 
 	// A bad one is an error, and the run isn't recorded, so the agent tries again.
 	before := countRows(t, lw.dbPath, "runs")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": "line one\nline two"}, "one line")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": "tab\there"}, "control characters")
-	c.fails("run_begin", map[string]any{"intent": "fix a bug", "session": strings.Repeat("x", runs.MaxSessionBytes+1)}, "limit is 512")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug", "session": "line one\nline two"}, "one line")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug", "session": "tab\there"}, "control characters")
+	c.fails("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug", "session": strings.Repeat("x", runs.MaxSessionBytes+1)}, "limit is 512")
 	if after := countRows(t, lw.dbPath, "runs"); after != before {
 		t.Errorf("runs went from %s to %s; a bad session shouldn't record a run", before, after)
 	}
 
 	// A refused run keeps its pointer, so a retro can find its transcript.
-	refused := c.callText("run_begin", map[string]any{"intent": "review again", "routine": "review-before-push", "stub": "000000000000", "session": "copilot-local:3f2a"})
+	refused := c.callText("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "review again", "routine": "review-before-push", "stub": "000000000000", "session": "copilot-local:3f2a"})
 	id := regexp.MustCompile(`failed run (run_\w+);`).FindStringSubmatch(refused)
 	if id == nil {
 		t.Fatalf("no failed run in %s", refused)
@@ -1044,7 +1102,7 @@ func TestRunReportFriction(t *testing.T) {
 	lw := newLocalWorld(t)
 	c, _ := lw.connect(t)
 	ctx := context.Background()
-	runID := c.runID(c.ok("run_begin", map[string]any{"intent": "fix a bug"}))
+	runID := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}))
 
 	report := func(friction any) map[string]any {
 		return map[string]any{"run_id": runID, "summary": "kept going", "friction": friction}
@@ -1125,7 +1183,7 @@ func TestRunReportOnlyForRunsOfThisFactoryAndRepo(t *testing.T) {
 
 		// Connections drop and come back: another session of the same
 		// factory and repo can keep reporting on the run.
-		runID := c.runID(c.ok("run_begin", map[string]any{"intent": "fix a bug"}))
+		runID := c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "fix a bug"}))
 		again, _ := lw.connect(t)
 		again.ok("run_report", report(runID))
 		if cps, _ := lw.db.Checkpoints(ctx, runID); len(cps) != 1 {
@@ -1151,7 +1209,7 @@ func TestRunReportOnlyForRunsOfThisFactoryAndRepo(t *testing.T) {
 		sameFactory := seed(rw.db, "pr-review", "github.com/acme/api")
 		c.ok("run_report", report(sameFactory))
 		other := rw.connect(t, "/pr-review/t/"+token.For(testkit.Secret, "pr-review"))
-		other.ok("run_report", report(c.runID(c.ok("run_begin", map[string]any{"intent": "look around"}))))
+		other.ok("run_report", report(c.runID(c.ok("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "look around"}))))
 	})
 }
 

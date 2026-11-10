@@ -43,6 +43,7 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | The credentials file can be read by other users | ❌ Fabrica won't use it until you `chmod 600` it | — | — | — |
 | A cloud routine's `skills:` lists a skill that isn't text-only | ❌ error | — (works locally) | ❌ `skill_load` refuses | `capability.skill` |
 | A routine run without a stub on the remote server | — | — | ❌ `run_begin` and `routine_get` refuse | — |
+| An agent's `run_begin` names a repo the factory isn't for (not the workspace's repo locally, not in the factory's `targets:` remotely) | — | ❌ `run_begin` refuses, and every other tool for the rest of the session | ❌ `run_begin` refuses, and with MCP sessions every other tool for the rest of the session | — |
 | An agent's folder isn't an Agent SDK project Cursor can build (no `package.json` that depends on `@grok/agent-sdk`, no `bot/` instructions, no lockfile, a committed `node_modules/`) | ❌ error | — | — | `agent.invalid` |
 | A factory names an agent the blueprint doesn't have, deploys agents from a blueprint with none, or lists `agents:` without a runtime that deploys them | ❌ error | — | — | `factory.unknown-agent`, `factory.idle-runtime`, `factory.invalid` |
 | An agent's repo isn't one Cursor can clone over `https://`, a target isn't on GitHub, GitLab or Bitbucket, or the deployment's slug is over 64 characters | ❌ error | — | — | `agent.source`, `agent.target`, `agent.slug` |

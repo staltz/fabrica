@@ -32,7 +32,7 @@ func Instructions(snap *Snapshot) string {
 		b.WriteString(")")
 	}
 	b.WriteString(".\n\n")
-	b.WriteString("1. Call run_begin first, with an intent that sums up the request in at most 20 words of casual plain English. A routine stub tells you the extra values to pass.\n")
+	b.WriteString("1. Call run_begin first, with the repo you work in (from its git remote, like github.com/acme/app) and an intent that sums up the request in at most 20 words of casual plain English. A routine stub tells you the extra values to pass. If run_begin refuses because this factory isn't for your repo, tell the user and don't use Fabrica in this session.\n")
 	b.WriteString("2. Call rules_get and follow those rules for the whole session.\n")
 	b.WriteString("3. Call skills_list, and load the skills your task needs with skill_load. ")
 	if snap.remote() {

@@ -68,7 +68,7 @@ Some things are a judgment call. "Use vitest" is product knowledge. "Always writ
 Everything an agent gets from Fabrica comes over MCP. There's no copying files into repos and no fallback. Here's what a run looks like:
 
 1. **Something starts the run.** For an interactive session, it's you opening your editor: the Fabrica line in `AGENTS.md` and the MCP server's instructions tell the agent to use Fabrica. For a routine, it's a trigger firing (a new PR, say), which starts the runtime's stub.
-2. **The agent calls `run_begin`.** It passes a short summary of what it's doing (at most 20 words, in casual plain English). A routine's stub also passes its routine, runtime, repo and stub fingerprint. Fabrica records the run and returns a `run_id`.
+2. **The agent calls `run_begin`.** It passes the repo it works in and a short summary of what it's doing (at most 20 words, in casual plain English). Fabrica refuses if the factory isn't for that repo. A routine's stub also passes its routine, runtime and stub fingerprint. Fabrica records the run and returns a `run_id`.
 3. **The agent loads what it needs.** `rules_get` for the always-on rules, `skills_list` and `skill_load` for skills, and for routines, `routine_get` for the full routine.
 4. **The agent reports checkpoints** with `run_report`: a short summary, a status (`progress`, `succeeded` or `failed`) and optional links, like the PR it commented on. There's no "end of run" event, because nobody can reliably know when a run is over.
 

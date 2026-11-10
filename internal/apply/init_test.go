@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/staltz/fabrica/internal/apply"
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/plan"
 	"github.com/staltz/fabrica/internal/provider"
@@ -291,5 +292,41 @@ func TestInitProblems(t *testing.T) {
 	p = h.plan()
 	if !p.Factory("pr-review").Diags.HasCode("factory.init-routine") {
 		t.Errorf("listing the init routine under routines: is an error:\n%s", render(p))
+	}
+}
+
+func TestRequiredParamsCanBeSetByAnImport(t *testing.T) {
+	h := newHarness(t)
+	h.w.Host.Repo("github.com/acme/onboarding").Write(map[string]string{
+		"fabrica.yaml":        "",
+		"routines/onboard.md": "---\ntrigger: { on: init }\nruntimes: [toy]\nparams:\n  welcome_channel: { required: true }\n---\nSay hi in {{params.welcome_channel}}.\n",
+		"routines/triage.md":  "---\ntrigger: { on: github.pull_request.opened }\nparams:\n  owner: { required: true }\n---\nAssign the pull request to {{params.owner}}.\n",
+	}).Commit("init")
+	importOnboarding := func(params string) {
+		h.w.Blueprint.Write(map[string]string{"fabrica.yaml": "expects: [test?]\nimports:\n  onboarding: { git: github.com/acme/onboarding, ref: main" + params + " }\n"})
+		lock, _, _, diags := h.env.Loader.Lock(context.Background(), h.w.Blueprint.Dir)
+		if diags.HasErrors() {
+			h.t.Fatal(diags)
+		}
+		if err := blueprint.WriteLock(h.w.Blueprint.Dir, lock); err != nil {
+			h.t.Fatal(err)
+		}
+		h.w.UpdateBlueprint(nil)
+	}
+	h.w.Home.Write(map[string]string{"factories/pr-review.yaml": strings.Replace(testkit.PRReviewFactory, "routines: [pr-review]", "routines: [pr-review, triage]", 1)}).CommitPush("add pr-review")
+
+	// Upstream leaves them for each factory to set.
+	importOnboarding("")
+	text := render(h.plan())
+	for _, want := range []string{`routine triage needs param "owner"`, `init routine onboard needs param "welcome_channel"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("plan output is missing %q:\n%s", want, text)
+		}
+	}
+
+	// The blueprint decides them for every factory that uses it.
+	importOnboarding(", params: { owner: \"@platform\", welcome_channel: \"#hello\" }")
+	if p := h.plan(); p.Factory("pr-review").Diags.HasErrors() || !p.Factory("pr-review").Init.Start() {
+		t.Errorf("params the import sets aren't missing anymore:\n%s", render(p))
 	}
 }

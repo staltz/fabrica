@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/names"
 	"github.com/staltz/fabrica/internal/yamlx"
@@ -53,6 +55,9 @@ type ImportSpec struct {
 	// Only and Exclude filter what comes in. At most one of them is set.
 	Only    []names.Ref
 	Exclude []names.Ref
+	// Params become the new defaults of the params of the same name, in
+	// every routine the import brings.
+	Params map[string]string
 }
 
 // Excludes reports whether the import's exclude: list has ref.
@@ -85,11 +90,12 @@ type manifestFile struct {
 }
 
 type importFile struct {
-	Git     string    `yaml:"git"`
-	Ref     string    `yaml:"ref"`
-	Path    string    `yaml:"path"`
-	Only    *[]string `yaml:"only"`
-	Exclude *[]string `yaml:"exclude"`
+	Git     string               `yaml:"git"`
+	Ref     string               `yaml:"ref"`
+	Path    string               `yaml:"path"`
+	Only    *[]string            `yaml:"only"`
+	Exclude *[]string            `yaml:"exclude"`
+	Params  map[string]yaml.Node `yaml:"params"`
 }
 
 // ReadManifest reads fabrica.yaml from a blueprint folder.
@@ -161,6 +167,15 @@ func parseManifest(data []byte) (*Manifest, error) {
 				spec.Exclude = []names.Ref{}
 			}
 		}
+		for name, v := range imp.Params {
+			if v.Kind != yaml.ScalarNode {
+				return nil, fmt.Errorf("imports.%s.params.%s must be a single value, not a list or map", alias, name)
+			}
+			if spec.Params == nil {
+				spec.Params = map[string]string{}
+			}
+			spec.Params[name] = v.Value
+		}
 		m.Imports = append(m.Imports, spec)
 	}
 	sort.Slice(m.Imports, func(i, j int) bool { return m.Imports[i].Alias < m.Imports[j].Alias })
@@ -199,7 +214,7 @@ type LockedImport struct {
 
 // Matches reports whether a lock entry was made for this import spec. If
 // you change an import's git, ref or path, its old pin no longer counts.
-// Changing only: or exclude: doesn't need a new pin.
+// Changing only:, exclude: or params: doesn't need a new pin.
 func (l LockedImport) Matches(spec ImportSpec) bool {
 	return l.Git == spec.Git && l.Ref == spec.Ref && l.Path == spec.Path
 }

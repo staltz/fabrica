@@ -299,6 +299,8 @@ struct FactoryEditor: View {
             AddButton(title: draft.allRoutines != nil ? "Add Exception" : "Add Routine") {
                 draft.routines.append(.init(name: ""))
             }
+            TextField("Pace", text: $draft.pace, prompt: Text("Like 30m, 4h or 2d"))
+                .help("The unit of time for routines with a pace trigger: { on: pace, every: 4 } runs every 4 paces")
         } header: {
             Text("Routines")
         } footer: {

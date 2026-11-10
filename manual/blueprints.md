@@ -224,7 +224,7 @@ Review the PR using the `pr-review` skill, post one comment, then tell {{params.
 | Key | What it is |
 |---|---|
 | `description` | Optional. A one-line summary. |
-| `trigger` | Required, unless there's `triggers:`. `on:` is the event. A `schedule` trigger also needs `cron:` (five fields, UTC). |
+| `trigger` | Required, unless there's `triggers:`. `on:` is the event. A `schedule` trigger also needs `cron:` (five fields, UTC). A `pace` trigger can have `every:` (default 1). |
 | `triggers` | Instead of `trigger:`, a list of them, for a routine that runs on any of several events. See [Several triggers](#several-triggers). |
 | `skills` | The blueprint skills the routine uses. They **must exist** in the blueprint. |
 | `connectors` | The connectors the routine needs. `name?` marks one as optional. Don't list `fabrica`: it's added automatically. |
@@ -244,6 +244,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica s
 |---|---|
 | `github.pull_request.opened`, `.synchronize`, `.reopened`, …, `github.issues.opened` | Cloud runtimes (see [providers](providers.md) for each one's list) |
 | `schedule` (with `cron:`) | Cloud runtimes and Claude Code (desktop app scheduled tasks) |
+| `pace` (with `every:`) | Wherever `schedule` works. See [Pace](#pace). |
 | `session.start` | Claude Code, Codex CLI and Copilot CLI |
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
@@ -261,7 +262,7 @@ triggers:
   - { on: schedule, cron: "0 9 * * 1" }
 ```
 
-Each event can appear once (so one schedule per routine: write a routine for each schedule), and `init` can't share a routine with other triggers. Every runtime the routine runs on needs every one of its triggers.
+Each event can appear once (so one schedule per routine: write a routine for each schedule, and a routine can't have both `schedule` and `pace`), and `init` can't share a routine with other triggers. Every runtime the routine runs on needs every one of its triggers.
 
 How a runtime gets them depends on what it can do:
 
@@ -269,6 +270,16 @@ How a runtime gets them depends on what it can do:
 - **A stub per trigger** everywhere else: each one is a separate resource in the runtime, with the trigger in its identity, like `4ckr#pr-review:github.pull_request.synchronize@github.com/acme/app` (see [Identities](concepts.md#identities)). Locally, that's a hook for each event and a scheduled task for the schedule.
 
 Either way it's the same routine: one prompt, one memory, one run history. Adding a trigger to a routine with one, or going back to one, renames its stubs, so `plan` shows the old ones as deletes and the new ones as creates.
+
+#### Pace
+
+A `schedule` trigger fixes when a routine runs. A `pace` trigger leaves it to the factory: it runs the routine every so many of the factory's [paces](home-repos.md#pace), a unit of time each factory sets with `pace:`.
+
+```yaml
+trigger: { on: pace, every: 4 }   # every 4 paces: every 2h in a factory with pace: 30m
+```
+
+`every:` is a whole number from 1 to 1000, and defaults to 1. The routine still runs on a schedule: for each factory, Fabrica works out the period (the factory's pace times `every:`) and installs it as a `schedule` trigger with the cron for it. So a pace trigger works on the runtimes that have `schedule`, and when a routine is [split into a stub per trigger](#several-triggers), its stub is named after `schedule`. Not every period can be written as a cron, and [Pace](home-repos.md#pace) lists the ones that can.
 
 ### Side effects
 

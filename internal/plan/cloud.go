@@ -107,7 +107,7 @@ func (e *Env) planDesired(ctx context.Context, dp *Factory, d *home.Factory) {
 			if !d.Runs(r.Ref.Name, rt.Name) {
 				continue
 			}
-			ev := stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint()})
+			ev := stub.Evaluate(f, r, stub.Target{Factory: d.Name, Runtime: rt.Provider, Endpoint: d.Endpoint(), Pace: d.Pace})
 			rt.Evaluations[r.Ref.Name] = ev
 			dp.Diags = append(dp.Diags, ev.Diags...)
 		}

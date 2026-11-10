@@ -34,6 +34,7 @@ import (
 
 	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
+	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/provider"
 )
 
@@ -46,6 +47,9 @@ type Target struct {
 	// https://fabrica.acme.dev/pr-review. Empty for local runtimes, which
 	// talk to `fabrica mcp` over stdio.
 	Endpoint string
+	// Pace is the factory's pace, which turns pace triggers into
+	// schedules. Zero when the factory has none.
+	Pace pace.Pace
 }
 
 // Shape is everything a stub bakes into a runtime.
@@ -274,6 +278,13 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	default:
 		for _, tr := range r.Triggers {
 			use := Use{Name: tr.On, Support: m.Trigger(tr.On)}
+			if tr.On == blueprint.PaceTrigger {
+				// Runtimes install a pace trigger as a schedule.
+				use.Support = m.Trigger(blueprint.ScheduleTrigger)
+				if p := t.Pace.Times(tr.Every); p > 0 {
+					use.Name = fmt.Sprintf("%s (every %s)", tr.On, pace.Minutes(p))
+				}
+			}
 			if use.Support != provider.Native {
 				e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, tr.On).
 					Hintf("%s", triggerHint(r, tr.On))
@@ -281,7 +292,7 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 			e.Triggers = append(e.Triggers, use)
 		}
 	}
-	e.Stubs = split(r, m)
+	e.Stubs = split(r, triggersAtPace(r, t, &e.Diags), m)
 
 	// What every stub of the routine bakes in; the triggers and the native
 	// side effects differ from stub to stub.
@@ -440,23 +451,52 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	return e
 }
 
-// split works out the stubs a runtime gets for a routine: one with all its
-// triggers where the runtime takes several per stub, and one for each
-// elsewhere. A routine with one trigger always gets one stub, named after
-// the routine alone.
-func split(r *blueprint.Routine, m *provider.Matrix) []*Stub {
-	inSession := func(tr blueprint.Trigger) bool {
-		return tr.On == blueprint.InitTrigger || m.Scope == provider.Local && tr.On != "schedule"
+// triggersAtPace is a routine's triggers as runtimes install them for a
+// factory: its pace trigger, if it has one, becomes a schedule at the
+// factory's pace. When that fails, the error goes in diags, and the pace
+// trigger stays as it is.
+func triggersAtPace(r *blueprint.Routine, t Target, diags *diag.List) []blueprint.Trigger {
+	if !r.HasPace() {
+		return r.Triggers
 	}
-	if len(r.Triggers) <= 1 || m.MultipleTriggers {
-		st := &Stub{Triggers: r.Triggers}
-		for _, tr := range r.Triggers {
+	out := make([]blueprint.Trigger, len(r.Triggers))
+	for i, tr := range r.Triggers {
+		at, err := tr.AtPace(t.Pace)
+		out[i] = at
+		switch {
+		case err == nil:
+		case t.Pace == 0:
+			factory := "the factory"
+			if t.Factory != "" {
+				factory = "factory " + t.Factory
+			}
+			diags.Errorf("factory.pace", r.Where(), "routine %s runs on a pace trigger (%s), but %s has no pace", r.Ref.Name, blueprint.DescribeEvery(tr.Every), factory).
+				Hintf("give the factory a pace, the unit of time pace triggers count in, like `pace: 30m` (or 4h, or 2d)")
+		default:
+			diags.Errorf("factory.pace", r.Where(), "routine %s can't run on its pace trigger: %v", r.Ref.Name, err).
+				Hintf("change the factory's pace:, or the routine's every:, so the period is one cron can repeat")
+		}
+	}
+	return out
+}
+
+// split works out the stubs a runtime gets for a routine, from its
+// triggers as the runtime installs them: one with all of them where the
+// runtime takes several per stub, and one for each elsewhere. A routine
+// with one trigger always gets one stub, named after the routine alone.
+func split(r *blueprint.Routine, triggers []blueprint.Trigger, m *provider.Matrix) []*Stub {
+	inSession := func(tr blueprint.Trigger) bool {
+		return tr.On == blueprint.InitTrigger || m.Scope == provider.Local && tr.On != blueprint.ScheduleTrigger
+	}
+	if len(triggers) <= 1 || m.MultipleTriggers {
+		st := &Stub{Triggers: triggers}
+		for _, tr := range triggers {
 			st.InSession = st.InSession || inSession(tr)
 		}
 		return []*Stub{st}
 	}
-	out := make([]*Stub, len(r.Triggers))
-	for i, tr := range r.Triggers {
+	out := make([]*Stub, len(triggers))
+	for i, tr := range triggers {
 		out[i] = &Stub{Trigger: tr.On, Triggers: []blueprint.Trigger{tr}, InSession: inSession(tr)}
 	}
 	return out
@@ -670,7 +710,7 @@ func DescribeTrigger(tr blueprint.Trigger, repo string) string {
 	if tr.On == blueprint.InitTrigger {
 		return "once, when the factory is created"
 	}
-	if tr.On == "schedule" {
+	if tr.On == blueprint.ScheduleTrigger {
 		return fmt.Sprintf("on a schedule, cron `%s` (UTC)", tr.Cron)
 	}
 	if rest, ok := strings.CutPrefix(tr.On, "github."); ok {

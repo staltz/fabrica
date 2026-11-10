@@ -464,7 +464,7 @@ func (s *session) checkStub(ctx context.Context, snap *Snapshot, r *blueprint.Ro
 	if snap.remote() {
 		endpoint = d.Endpoint()
 	}
-	ev := stub.Evaluate(snap.Blueprint, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: endpoint})
+	ev := stub.Evaluate(snap.Blueprint, r, stub.Target{Factory: d.Name, Runtime: p, Endpoint: endpoint, Pace: d.Pace})
 	if ev.Stub(run.Stub) == nil || !ev.OK() {
 		var fps []string
 		for _, st := range ev.Stubs {

@@ -1,10 +1,11 @@
 # Claude Code routines, running on claude.ai.
 #
-# Our best reading of the Claude Code docs as of October 2026. Routines can
-# fire on a schedule (at most hourly) or on GitHub pull request and release
-# events. There's no public API to create or list routines yet (the API can
-# only fire one), so Fabrica uses handoff: it writes instructions and you, or
-# an AI with computer use, click through the setup.
+# Our best reading of the Claude Code docs as of November 2026. Routines can
+# fire on a schedule (at most hourly), on GitHub pull request and release
+# events, or through their API trigger (a fire URL and a token). There's no
+# public API to create or list routines yet (the API can only fire one), so
+# Fabrica uses handoff: it writes instructions and you, or an AI with
+# computer use, click through the setup.
 kind: cloud
 description: Claude Code routines on claude.ai
 apply_modes: [handoff]
@@ -20,6 +21,9 @@ mcp_auth:
   url: native
 triggers:
   schedule: native
+  # The routine's API trigger: Fabrica installs it for a pace trigger, and
+  # the Fabrica server fires it on the factory's heartbeat.
+  webhook: native
   github.pull_request.opened: native
   github.pull_request.synchronize: native
   github.pull_request.reopened: native

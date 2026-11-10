@@ -317,3 +317,36 @@ func toJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+func TestCursorWebhookTrigger(t *testing.T) {
+	res := cursorResource()
+	res.Identity = "4ckr#tidy@github.com/acme/app"
+	res.Triggers = []ResourceTrigger{{On: "github.push"}, {On: "webhook"}}
+	wf, err := cursorWorkflowFor(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := toJSON(wf.Triggers); got != `[{"git":{"push":{"repo":"acme/app"}}},{"webhook":{}}]` {
+		t.Errorf("triggers = %s", got)
+	}
+
+	// The setup file says how to give Fabrica each webhook, since Cursor's
+	// API never returns its URL or API key.
+	t.Setenv(CursorKeyEnv, "key_x")
+	client, _ := newCursorAPI()
+	text := client.(ManualSetup).Setup("pr-review", []Resource{cursorResource(), res})
+	for _, want := range []string{
+		"## Webhooks",
+		"fabrica webhook pr-review '4ckr#tidy@github.com/acme/app' --runtime cursor-cloud --url '<the webhook URL>'",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("setup is missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "#pr-review@") && strings.Contains(text[strings.Index(text, "## Webhooks"):], "#pr-review@") {
+		t.Errorf("only automations with a webhook trigger are listed:\n%s", text)
+	}
+	if text := client.(ManualSetup).Setup("pr-review", []Resource{cursorResource()}); strings.Contains(text, "Webhooks") {
+		t.Errorf("without webhooks, there's no webhook section:\n%s", text)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
@@ -667,6 +668,9 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 			data.Fabrica.Header = "Bearer " + tok
 		}
 		data.Prompt, data.Fingerprint = r.Prompt, r.Fingerprint
+		if shape.HasTrigger(blueprint.WebhookTrigger) && (c.Current == nil || c.Current.Webhook == nil) {
+			data.WebhookCommand = provider.WebhookCommand(dp.Name, c.Key.Runtime, c.Key.ID)
+		}
 	}
 	text, err := c.Provider.RenderHandoff(data)
 	if err != nil {
@@ -758,6 +762,11 @@ func HandoffID(factory string, key home.Key, action, version string) string {
 
 func upsertResource(state *home.State, r home.Resource) {
 	if i, ok := state.FindResource(r.Key()); ok {
+		// An update keeps the stub's webhook: the runtime keeps its URL and
+		// token for as long as the stub fires on one.
+		if old := state.Resources[i]; r.Webhook == nil && r.HasWebhookTrigger() {
+			r.Webhook = old.Webhook
+		}
 		state.Resources[i] = r
 		return
 	}

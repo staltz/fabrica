@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -271,8 +273,8 @@ func TestMigratesFromV2(t *testing.T) {
 	}
 	defer db.Close()
 
-	if v := dump(t, raw, "PRAGMA user_version"); v[0][0] != "3" {
-		t.Errorf("user_version = %v, want 3", v)
+	if v := dump(t, raw, "PRAGMA user_version"); v[0][0] != strconv.Itoa(SchemaVersion) {
+		t.Errorf("user_version = %v, want %d", v, SchemaVersion)
 	}
 	// The public interfaces keep their rows.
 	if got := dump(t, raw, "SELECT id, run_id, at, skill FROM skill_loads ORDER BY id"); !reflect.DeepEqual(got, oldSkillLoads) {
@@ -641,5 +643,49 @@ func TestValidID(t *testing.T) {
 		if got := ValidID(id); got != want {
 			t.Errorf("ValidID(%q) = %v, want %v", id, got, want)
 		}
+	}
+}
+
+func TestPaceFires(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "runs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	beat := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	f := Fire{Factory: "acme", Runtime: "claude-code-cloud", Stub: "4ckr#tidy@github.com/acme/app", Routine: "tidy", Repo: "github.com/acme/app", BeatAt: beat, FiredAt: beat.Add(3 * time.Second)}
+
+	if ok, err := db.ClaimFire(ctx, f); !ok || err != nil {
+		t.Fatalf("the first claim of a beat should win: %v, %v", ok, err)
+	}
+	if ok, err := db.ClaimFire(ctx, f); ok || err != nil {
+		t.Fatalf("a beat is only claimed once: %v, %v", ok, err)
+	}
+	other := f
+	other.Runtime = "cursor-cloud"
+	next := f
+	next.BeatAt, next.FiredAt = beat.Add(30*time.Minute), beat.Add(30*time.Minute)
+	for _, g := range []Fire{other, next} {
+		if ok, err := db.ClaimFire(ctx, g); !ok || err != nil {
+			t.Fatalf("another stub or beat is claimed on its own: %+v: %v, %v", g, ok, err)
+		}
+	}
+	if err := db.FinishFire(ctx, f, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.FinishFire(ctx, other, errors.New("401 Unauthorized")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.PaceFires(ctx, beat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].Status != Fired || got[0].Error != "" || got[1].Status != FireFailed || got[1].Error != "401 Unauthorized" || got[2].Status != Firing {
+		t.Fatalf("fires = %+v", got)
+	}
+	if !got[0].BeatAt.Equal(beat) || got[0].Routine != "tidy" {
+		t.Errorf("fire = %+v", got[0])
 	}
 }

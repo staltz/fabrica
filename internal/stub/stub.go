@@ -47,8 +47,10 @@ type Target struct {
 	// https://fabrica.acme.dev/pr-review. Empty for local runtimes, which
 	// talk to `fabrica mcp` over stdio.
 	Endpoint string
-	// Pace is the factory's pace, which turns pace triggers into
-	// schedules. Zero when the factory has none.
+	// Pace is the factory's pace, the unit pace triggers count in. Zero
+	// when the factory has none, which a routine with a pace trigger can't
+	// run without. It's never baked into a stub: the Fabrica server reads
+	// it live when it keeps the factory's heartbeat.
 	Pace pace.Pace
 }
 
@@ -107,6 +109,16 @@ func (s *Shape) setTriggers(triggers []blueprint.Trigger) {
 	for _, t := range triggers {
 		s.Triggers = append(s.Triggers, ShapeTrigger{On: t.On, Cron: t.Cron})
 	}
+}
+
+// HasTrigger reports whether one of the shape's triggers is on.
+func (s Shape) HasTrigger(on string) bool {
+	for _, t := range s.TriggerList() {
+		if t.On == on {
+			return true
+		}
+	}
+	return false
 }
 
 // TriggerList is the shape's triggers, however many it has.
@@ -278,21 +290,24 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	default:
 		for _, tr := range r.Triggers {
 			use := Use{Name: tr.On, Support: m.Trigger(tr.On)}
+			hint := triggerHint(r, tr.On)
 			if tr.On == blueprint.PaceTrigger {
-				// Runtimes install a pace trigger as a schedule.
-				use.Support = m.Trigger(blueprint.ScheduleTrigger)
+				// Runtimes install a pace trigger as a webhook, which the
+				// Fabrica server calls on the factory's heartbeat.
+				use.Support = m.Trigger(blueprint.WebhookTrigger)
 				if p := t.Pace.Times(tr.Every); p > 0 {
 					use.Name = fmt.Sprintf("%s (every %s)", tr.On, pace.Minutes(p))
 				}
+				hint = paceHint(r)
 			}
 			if use.Support != provider.Native {
 				e.Diags.Errorf("capability.trigger", where, "runtime %s doesn't support trigger %s", rt, tr.On).
-					Hintf("%s", triggerHint(r, tr.On))
+					Hintf("%s", hint)
 			}
 			e.Triggers = append(e.Triggers, use)
 		}
 	}
-	e.Stubs = split(r, triggersAtPace(r, t, &e.Diags), m)
+	e.Stubs = split(r, installedTriggers(r, t, &e.Diags), m)
 
 	// What every stub of the routine bakes in; the triggers and the native
 	// side effects differ from stub to stub.
@@ -451,30 +466,20 @@ func Evaluate(f *blueprint.Blueprint, r *blueprint.Routine, t Target) *Evaluatio
 	return e
 }
 
-// triggersAtPace is a routine's triggers as runtimes install them for a
-// factory: its pace trigger, if it has one, becomes a schedule at the
-// factory's pace. When that fails, the error goes in diags, and the pace
-// trigger stays as it is.
-func triggersAtPace(r *blueprint.Routine, t Target, diags *diag.List) []blueprint.Trigger {
-	if !r.HasPace() {
-		return r.Triggers
-	}
+// installedTriggers is a routine's triggers as runtimes install them: its
+// pace trigger, if it has one, becomes a webhook. A pace trigger needs a
+// factory with a pace, and when it has none, the error goes in diags.
+func installedTriggers(r *blueprint.Routine, t Target, diags *diag.List) []blueprint.Trigger {
 	out := make([]blueprint.Trigger, len(r.Triggers))
 	for i, tr := range r.Triggers {
-		at, err := tr.AtPace(t.Pace)
-		out[i] = at
-		switch {
-		case err == nil:
-		case t.Pace == 0:
+		out[i] = tr.Installed()
+		if tr.On == blueprint.PaceTrigger && t.Pace == 0 {
 			factory := "the factory"
 			if t.Factory != "" {
 				factory = "factory " + t.Factory
 			}
 			diags.Errorf("factory.pace", r.Where(), "routine %s runs on a pace trigger (%s), but %s has no pace", r.Ref.Name, blueprint.DescribeEvery(tr.Every), factory).
 				Hintf("give the factory a pace, the unit of time pace triggers count in, like `pace: 30m` (or 4h, or 2d)")
-		default:
-			diags.Errorf("factory.pace", r.Where(), "routine %s can't run on its pace trigger: %v", r.Ref.Name, err).
-				Hintf("change the factory's pace:, or the routine's every:, so the period is one cron can repeat")
 		}
 	}
 	return out
@@ -500,6 +505,15 @@ func split(r *blueprint.Routine, triggers []blueprint.Trigger, m *provider.Matri
 		out[i] = &Stub{Trigger: tr.On, Triggers: []blueprint.Trigger{tr}, InSession: inSession(tr)}
 	}
 	return out
+}
+
+// paceHint is triggerHint for a pace trigger, which needs webhooks.
+func paceHint(r *blueprint.Routine) string {
+	const why = "a pace trigger is installed as a webhook, which the Fabrica server calls on the factory's heartbeat, so it needs a cloud runtime with webhooks, like claude-code-cloud or cursor-cloud"
+	if len(r.Triggers) > 1 {
+		return why + "; deploy this routine to one, or drop pace from its triggers (or move it to a routine of its own)"
+	}
+	return why + "; deploy this routine to one, or change its trigger"
 }
 
 func triggerHint(r *blueprint.Routine, on string) string {
@@ -712,6 +726,9 @@ func DescribeTrigger(tr blueprint.Trigger, repo string) string {
 	}
 	if tr.On == blueprint.ScheduleTrigger {
 		return fmt.Sprintf("on a schedule, cron `%s` (UTC)", tr.Cron)
+	}
+	if tr.On == blueprint.WebhookTrigger {
+		return "a webhook, which the Fabrica server calls on the factory's pace"
 	}
 	if rest, ok := strings.CutPrefix(tr.On, "github."); ok {
 		event, action, _ := strings.Cut(rest, ".")

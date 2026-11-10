@@ -181,6 +181,17 @@ Closes a pending handoff once someone has followed its instructions. That includ
 
 Confirm commits and pushes the factory's state, and refuses while an apply holds its lock.
 
+## `fabrica webhook <factory> <stub>`
+
+Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace trigger](blueprints.md#pace), so the Fabrica server can call it on the factory's [heartbeat](mcp-server.md#the-heartbeat). `<stub>` is the stub's identity, like `'4ckr#tidy@github.com/acme/app'`. No runtime's API hands a webhook's URL and token over, so you copy them from the runtime: a Claude routine's **API** trigger shows a **Fire URL** and makes a token when you click **Generate token**, and a Cursor automation's **Webhook** trigger shows a URL and an API key. A Claude routine's handoff, Cursor's setup file and `plan` print the exact command for each stub that needs it.
+
+| Flag | What it does |
+|---|---|
+| `--runtime <name>` | Required. The runtime the stub is on, like `claude-code-cloud` or `cursor-cloud`. |
+| `--url <url>` | Required. The webhook's URL. |
+
+It asks for the webhook's token (or API key), without showing what you type or paste; without a terminal, it reads it from stdin. The token is sealed with the factory's server secret (from `FABRICA_SERVER_SECRET`, or saved by `fabrica auth login`), so the state file only holds it encrypted, and only the Fabrica server can read it. Like confirm, it commits and pushes the factory's state, and refuses while an apply holds its lock. Updates keep the webhook. After you rotate the server secret, run it again for each stub.
+
 ## `fabrica unlock <factory>`
 
 Removes a lock left behind by a crashed apply. Only use it when you're sure that apply is gone. The next apply adopts whatever the crashed one created. A create on a runtime that can't list resources, whose ID was never recorded, is not adopted: `plan` reports it, and apply won't retry it until you confirm whether it exists.
@@ -224,7 +235,7 @@ Lines are at most 80 characters, so long text is cut with `…`, the intent firs
 
 | Flag | What it does |
 |---|---|
-| `--json` | Print the list as JSON, the same as the server's [admin API](mcp-server.md#the-admin-api) answers: `{"schema_version": 3, "runs": [...], "next": "..."}`. `next` is only there when there are more runs than `--limit`. |
+| `--json` | Print the list as JSON, the same as the server's [admin API](mcp-server.md#the-admin-api) answers: `{"schema_version": 4, "runs": [...], "next": "..."}`. `next` is only there when there are more runs than `--limit`. |
 
 When no run matches, it says so and suggests a wider `--since`. That's not an error, and exits `0`.
 
@@ -336,7 +347,7 @@ Serves a blueprint over MCP.
 | `--workspace <folder>` | Serve this folder, instead of asking the tool for its workspace. |
 | `--home <folder>` | Your personal home repo. |
 
-**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server). It also has a read-only [admin API](mcp-server.md#the-admin-api) and a [dashboard](mcp-server.md#the-dashboard) for people to read run history, which take the admin token from `fabrica auth admin-token`.
+**Remote mode** (`--http`) serves cloud runtimes. See [running the remote server](mcp-server.md#running-the-remote-server). It keeps the [heartbeat](mcp-server.md#the-heartbeat) of factories with a pace, and it also has a read-only [admin API](mcp-server.md#the-admin-api) and a [dashboard](mcp-server.md#the-dashboard) for people to read run history, which take the admin token from `fabrica auth admin-token`.
 
 | Flag | Default | What it does |
 |---|---|---|

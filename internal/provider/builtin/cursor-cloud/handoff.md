@@ -46,4 +46,14 @@ Until you do, the old automation can still fire, but the Fabrica server refuses 
    ```
 
    If you can't find an ID, run `fabrica confirm {{.ID}}` without `--remote-id`. Fabrica will then track this automation as unverifiable.
+{{- if .WebhookCommand}}
+
+10. Give Fabrica the automation's webhook, so it can fire it. Saving the automation made the webhook's URL and API key: copy both from its **Webhook** trigger. Then run this, with the URL in place of `<the webhook URL>`, and paste the API key when it asks for it:
+
+   ```
+   {{.WebhookCommand}}
+   ```
+
+   Fabrica keeps the key in the home repo, sealed with the server secret, so only the Fabrica server can read it. Until you do this, the automation never runs.
+{{- end}}
 {{- end}}

@@ -8,7 +8,6 @@ import (
 
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/names"
-	"github.com/staltz/fabrica/internal/pace"
 	"github.com/staltz/fabrica/internal/provider"
 )
 
@@ -103,7 +102,7 @@ type Trigger struct {
 	// Cron is the schedule, for On == "schedule".
 	Cron string
 	// Every is how many of the factory's paces go between runs, for On ==
-	// "pace", and for the schedule AtPace makes of a pace trigger.
+	// "pace".
 	Every int
 }
 
@@ -111,8 +110,16 @@ type Trigger struct {
 const ScheduleTrigger = "schedule"
 
 // PaceTrigger fires a routine every so many paces of the factory that
-// deploys it. Runtimes never see it: AtPace turns it into a schedule.
+// deploys it. Runtimes never see it: they install a webhook for it (see
+// Installed), and the Fabrica server calls that webhook on the factory's
+// heartbeat.
 const PaceTrigger = "pace"
+
+// WebhookTrigger fires a routine when something calls the webhook its
+// runtime made for it. It's how runtimes install a pace trigger, and only
+// that: blueprints can't use it directly, since nothing else would call
+// the webhook.
+const WebhookTrigger = "webhook"
 
 func (t Trigger) String() string {
 	switch {
@@ -120,8 +127,6 @@ func (t Trigger) String() string {
 		return "init (once, when the factory is created)"
 	case t.On == PaceTrigger:
 		return t.On + " (" + DescribeEvery(t.Every) + ")"
-	case t.Cron != "" && t.Every > 0:
-		return t.On + " (" + t.Cron + ", " + DescribeEvery(t.Every) + ")"
 	case t.Cron != "":
 		return t.On + " (" + t.Cron + ")"
 	}
@@ -137,22 +142,15 @@ func DescribeEvery(every int) string {
 	return fmt.Sprintf("every %d paces", every)
 }
 
-// AtPace is the trigger as a runtime installs it, for a factory with a
-// pace: a pace trigger becomes a schedule that repeats every so many
-// paces, and any other trigger stays as it is. It fails when the factory
-// has no pace, or when cron can't repeat the period evenly.
-func (t Trigger) AtPace(p pace.Pace) (Trigger, error) {
+// Installed is the trigger as a runtime installs it: a pace trigger
+// becomes a webhook, which the Fabrica server calls on the factory's
+// heartbeat, and any other trigger stays as it is. Neither the pace nor
+// every: goes into the runtime, so changing them never needs an apply.
+func (t Trigger) Installed() Trigger {
 	if t.On != PaceTrigger {
-		return t, nil
+		return t
 	}
-	if p == 0 {
-		return t, fmt.Errorf("the factory has no pace")
-	}
-	cron, err := pace.Cron(p.Times(t.Every))
-	if err != nil {
-		return t, fmt.Errorf("at the factory's pace of %s, %s is every %s, but %v", p, DescribeEvery(t.Every), pace.Minutes(p.Times(t.Every)), err)
-	}
-	return Trigger{On: ScheduleTrigger, Cron: cron, Every: t.Every}, nil
+	return Trigger{On: WebhookTrigger}
 }
 
 // DescribeTriggers lists triggers in words, like "github.push, schedule (0
@@ -263,10 +261,10 @@ const InitTrigger = "init"
 func (r *Routine) IsInit() bool { return len(r.Triggers) == 1 && r.Triggers[0].On == InitTrigger }
 
 // HasTrigger reports whether the routine fires on an event. A pace
-// trigger counts as a schedule, since that's what runtimes install for it.
+// trigger counts as a webhook, since that's what runtimes install for it.
 func (r *Routine) HasTrigger(on string) bool {
 	for _, t := range r.Triggers {
-		if t.On == on || t.On == PaceTrigger && on == ScheduleTrigger {
+		if t.On == on || t.On == PaceTrigger && on == WebhookTrigger {
 			return true
 		}
 	}
@@ -275,13 +273,17 @@ func (r *Routine) HasTrigger(on string) bool {
 
 // HasPace reports whether the routine has a pace trigger, so it needs a
 // factory with a pace.
-func (r *Routine) HasPace() bool {
+func (r *Routine) HasPace() bool { return r.Every() > 0 }
+
+// Every is the every: of the routine's pace trigger: how many of the
+// factory's paces go between its runs. Zero when it has no pace trigger.
+func (r *Routine) Every() int {
 	for _, t := range r.Triggers {
 		if t.On == PaceTrigger {
-			return true
+			return t.Every
 		}
 	}
-	return false
+	return 0
 }
 
 // Param looks up a declared param by name.

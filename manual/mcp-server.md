@@ -71,6 +71,7 @@ You host it yourself: a container or a small VM. There's no official hosted serv
 - **It re-fetches regularly** (every minute by default), so merges to followed branches and new factories show up shortly after they land. If a fetch fails, it keeps serving what it had.
 - **Routines only run from stubs.** A `run_begin` that names a routine but leaves out its runtime, repo or stub fingerprint is refused, and so is `routine_get` before a routine run has begun.
 - **Cloud runtimes only get text-only skills** for now, since the server can't put files on their disk.
+- **It keeps each factory's heartbeat**, for the routines with a pace trigger. See [The heartbeat](#the-heartbeat).
 
 ### Auth
 
@@ -90,7 +91,8 @@ It needs:
 
 - the server secret, in `FABRICA_SERVER_SECRET` (at least 32 characters). `fabrica auth login <the server's URL>` makes one and saves it on your machine, and `fabrica auth env <the server's URL>` prints it for the server's environment. (`openssl rand -hex 32` makes a good one too.)
 - read access to the home repo and the blueprints (Fabrica runs `git`, so give it a credential helper, a deploy key, or a token in the URL),
-- a **persistent volume** for its run-history database, which also holds routine memories.
+- a **persistent volume** for its run-history database, which also holds routine memories and the [heartbeat](#the-heartbeat)'s calls,
+- for factories with a pace, outbound HTTPS to their runtimes' webhooks (like `api.anthropic.com` for Claude routines).
 
 ```sh
 fabrica mcp --http \
@@ -133,6 +135,18 @@ Clients on the sessioned protocol (2025-11-25 and earlier), like Cursor automati
 
 Clients on the sessionless protocol (2026-07-28, SEP-2575), like Claude cloud routines since Claude Code ~2.1.304, send `Mcp-Protocol-Version: 2026-07-28` on every request. The go-sdk only accepts that version on a Stateless handler (no session id, GET is 405). Fabrica routes those requests there, and finds the run `run_begin` recorded in history so `routine_get` still works on a later POST. Claude's broker does not fall back to 2025-11-25 when `tools/list` at 2026-07-28 fails: it shows the initialize/`server/discover` instructions and an empty tool list.
 
+### The heartbeat
+
+A routine with a [pace trigger](blueprints.md#pace), like `{ on: pace, every: 4 }`, runs every 4 paces of its factory. The remote server keeps that time, for every factory it serves that has a [`pace:`](home-repos.md#pace):
+
+- **It beats once every pace**, counting from the Unix epoch (midnight UTC on 1 January 1970). So with `pace: 30m`, the beats are on the hour and the half hour, and a 7m pace beats every 7 minutes, whatever cron could do. The server wakes up when the next beat of any factory starts, or after a minute at most.
+- **On each beat, it calls the webhook of every stub whose routine runs on it**: those whose `every:` divides the beat's number. So `every: 4` at a pace of 30m runs every 2h, on the hour, from midnight UTC. The webhook is what the stub's runtime made for its `webhook` trigger (an API trigger on a Claude routine, a webhook trigger on a Cursor automation), and the call is a `POST` with the webhook's token as a bearer token and a JSON body, `{"text": …}`, that says which beat started the run. Claude routines also get their API's `anthropic-version` and `anthropic-beta` headers. The run then starts like any other: its stub calls `run_begin`, which checks it isn't stale.
+- **It reads everything live**: the pace from the factory file, `every:` from the blueprint at the factory's ref, and the stubs and their webhooks from the factory's state file in the home repo. Changing the pace or `every:` takes effect at the next refresh, with no apply. A stub the factory no longer runs on its runtime and repo isn't called, and neither is one without a webhook yet (`fabrica webhook` records it; see [Pace](home-repos.md#pace)).
+- **Each stub fires at most once per beat.** Before calling a webhook, the server records the call in the `pace_fires` table of its [database](run-history.md#pace_fires), and a beat already there is never called again, even after a restart. A server that was down when a beat started calls it as soon as it's back, as long as the beat hasn't ended; a beat that passed entirely while it was down is skipped.
+- **A failed call isn't retried**, except when the runtime answers `429` or `503`, which mean it started nothing: webhooks have no idempotency key, so a retry could start a second run. Failures are logged and recorded with their reason. A token sealed with an earlier server secret can't be opened, and its calls are recorded as failed.
+
+Runtimes limit how often a webhook can fire (a Claude routine, 30 times an hour, and an account, 100 API fires an hour), so keep the period of a pace routine (its pace times `every:`) well above that.
+
 ### The admin API
 
 The remote server also has a small read-only JSON API for people, to read run history. It's on the **operator plane**, the part of Fabrica that people use, and agents never reach it: no MCP tool returns run history, and no factory token opens this.
@@ -172,7 +186,7 @@ curl -H "Authorization: Bearer $FABRICA_ADMIN_TOKEN" \
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "runs": [
     {
       "run_id": "run_06gmjeps8jf8zfjjrfmydev50g",

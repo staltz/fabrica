@@ -3,7 +3,8 @@
 //
 // It also keeps routine memories: the notes a routine with `memory: true`
 // leaves for its own next runs, on runtimes without a memory feature of
-// their own.
+// their own. And on the remote server, it keeps the factories' heartbeat:
+// every webhook call that fires a routine with a pace trigger.
 //
 // History can't be filled in after the fact, so Fabrica records from day
 // one. The schema below is a public interface (Fabrica.app and people's own
@@ -39,14 +40,14 @@ import (
 )
 
 // SchemaVersion is the version of the schema this Fabrica writes.
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // Schema is the whole run-history schema, at SchemaVersion. It's public:
 // see manual/run-history.md.
-const Schema = schemaV1 + schemaV2 + schemaV3
+const Schema = schemaV1 + schemaV2 + schemaV3 + schemaV4
 
 // migrations[i] takes a database from schema version i to i+1.
-var migrations = []string{schemaV1, schemaV2, schemaV3}
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4}
 
 // schemaV1 is the first schema: runs, their checkpoints and skill loads.
 const schemaV1 = `
@@ -176,6 +177,26 @@ SELECT
      WHERE c.run_id = r.run_id
        AND (l.value LIKE '%/pull/%' OR l.value LIKE '%/merge_requests/%')) AS pr_links
 FROM runs r;
+`
+
+// schemaV4 adds the heartbeat of factories with a pace.
+const schemaV4 = `
+-- Every call the remote server made to the webhook of a routine with a pace
+-- trigger: one per stub and beat, at most, so a server that restarts never
+-- fires a stub twice in one beat.
+CREATE TABLE pace_fires (
+  factory   TEXT NOT NULL,
+  runtime   TEXT NOT NULL,
+  stub      TEXT NOT NULL,               -- the stub's identity, like 4ckr#tidy@github.com/acme/app
+  beat_at   TEXT NOT NULL,               -- RFC 3339, UTC: when the beat started
+  routine   TEXT NOT NULL,
+  repo      TEXT NOT NULL,
+  fired_at  TEXT NOT NULL,               -- RFC 3339, UTC: when the server called the webhook
+  status    TEXT NOT NULL CHECK (status IN ('firing', 'fired', 'failed')),
+  error     TEXT,                        -- why it failed, when it did
+  PRIMARY KEY (factory, runtime, stub, beat_at)
+);
+CREATE INDEX pace_fires_by_time ON pace_fires(fired_at);
 `
 
 // DB is a run-history database.

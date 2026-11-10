@@ -43,7 +43,7 @@ params:
 | `routines` | for cloud, unless it only deploys agents | Which of the blueprint's routines to deploy. Each is a name, or `{ routine, runtimes }` to run it on only some of the factory's runtimes. `"*"` stands for all of them, see [below](#all-routines). |
 | `targets` | yes | The product repos the factory runs on. Each is a repo name, or `{ repo, params }`. |
 | `params` | no | Param values for every repo. |
-| `pace` | for routines with a `pace` trigger | The factory's unit of time: a whole number of minutes, hours or days, like `30m`, `4h` or `2d`. Routines with a [pace trigger](blueprints.md#pace) run every so many paces. See [Pace](#pace). |
+| `pace` | for routines with a `pace` trigger | The factory's unit of time: a whole number of minutes, hours or days, like `30m`, `4h` or `2d`. Routines with a [pace trigger](blueprints.md#pace) run every so many paces, on the Fabrica server's heartbeat. See [Pace](#pace). |
 | `agents` | no | Which of the blueprint's [agents](agents.md) to deploy, on a runtime that deploys agents (`cursor-agents`). `"*"` stands for all of them, and so does leaving it out. No routine runs on `cursor-agents`, so a factory of only agents needs no `routines:`. |
 | `init` | no | `false` never runs the blueprint's [init routine](blueprints.md#init-routines) for this factory. See [Init](#init). |
 
@@ -111,20 +111,20 @@ If two runtimes need different settings, write two factory files.
 `pace:` sets how fast the factory works. A routine with a [pace trigger](blueprints.md#pace), like `trigger: { on: pace, every: 4 }`, runs every 4 paces, so in a factory with `pace: 30m` it runs every 2h, and in one with `pace: 1d`, every 4 days. One blueprint can then run often in a busy repo and seldom in a quiet one, keeping its routines' rhythm relative to each other, and changing `pace:` speeds them all up or slows them all down at once.
 
 ```yaml
-pace: 30m   # 5m, 4h, 2d, …: N minutes (m), hours (h) or days (d)
+pace: 30m   # 5m, 7m, 4h, 2d, …: N minutes (m), hours (h) or days (d)
 ```
 
-Runtimes only know cron, so a pace trigger is installed as a `schedule` trigger, with the cron Fabrica works out from the period (UTC). That means it needs a runtime that has `schedule`, and changing `pace:` (or a routine's `every:`) changes the cron, so `plan` shows the stubs as updates. Cron can only repeat some periods evenly, and any other is an error that names the nearest ones that work:
+The factory's [Fabrica server](mcp-server.md#the-heartbeat) keeps the time, not the runtimes. It beats once every pace, counting from midnight UTC on 1 January 1970, so with `pace: 30m` the beats are on the hour and the half hour, and every 4 paces is every 2h from midnight UTC. On each beat, it calls the webhook of each stub whose routine runs on it. Any pace works, not just the periods cron can repeat, and changing `pace:` (or a routine's `every:`) needs no apply: the server picks it up at its next refresh.
 
-| Period | Cron |
-|---|---|
-| Minutes that divide an hour: `1m`, `2m`, `3m`, `4m`, `5m`, `6m`, `10m`, `12m`, `15m`, `20m`, `30m` | `*/N * * * *`, from minute 0 of each hour |
-| Hours that divide a day: `1h`, `2h`, `3h`, `4h`, `6h`, `8h`, `12h` | `0 */N * * *`, from midnight |
-| `1d` | `0 0 * * *`, at midnight |
-| `7d` | `0 0 * * 1`, at midnight on Mondays |
-| Any other number of days, up to `31d` | `0 0 */N * *`, at midnight, counted from the 1st of each month. Cron starts counting again every month, so the last gap of a month can be shorter: every `2d` runs on the 31st and again on the 1st. |
+Each stub of such a routine fires on a webhook that its runtime makes for it: an **API** trigger on a Claude routine, a **Webhook** trigger on a Cursor automation. No runtime's API hands over a webhook's URL and token, so after a stub is created, you copy them from the runtime and give them to Fabrica, once per stub:
 
-A factory that deploys a routine with a pace trigger, but has no `pace:`, is an error (`factory.pace`).
+```sh
+fabrica webhook acme '4ckr#tidy@github.com/acme/app' --runtime cursor-cloud --url 'https://…'
+```
+
+It asks for the token (or API key), and keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
+
+A factory that deploys a routine with a pace trigger, but has no `pace:`, is an error (`factory.pace`), and so is one that deploys it to a runtime without webhooks, like a local one (`capability.trigger`).
 
 ### Init
 

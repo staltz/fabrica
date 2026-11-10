@@ -275,7 +275,7 @@ Triggers are plain names. Which ones work depends on the runtime, and `fabrica s
 |---|---|
 | `github.pull_request.opened`, `.synchronize`, `.reopened`, …, `github.issues.opened` | Cloud runtimes (see [providers](providers.md) for each one's list) |
 | `schedule` (with `cron:`) | Cloud runtimes and Claude Code (desktop app scheduled tasks) |
-| `pace` (with `every:`) | Wherever `schedule` works. See [Pace](#pace). |
+| `pace` (with `every:`) | Cloud runtimes with webhooks: Claude routines and Cursor automations. See [Pace](#pace). |
 | `session.start` | Claude Code, Codex CLI and Copilot CLI |
 | `prompt.submit` | Claude Code and Codex CLI |
 | `session.stop` | Claude Code, Codex CLI, Copilot CLI and Cursor IDE |
@@ -293,7 +293,7 @@ triggers:
   - { on: schedule, cron: "0 9 * * 1" }
 ```
 
-Each event can appear once (so one schedule per routine: write a routine for each schedule, and a routine can't have both `schedule` and `pace`), and `init` can't share a routine with other triggers. Every runtime the routine runs on needs every one of its triggers.
+Each event can appear once (so one schedule per routine: write a routine for each schedule), and `init` can't share a routine with other triggers. Every runtime the routine runs on needs every one of its triggers.
 
 How a runtime gets them depends on what it can do:
 
@@ -310,7 +310,9 @@ A `schedule` trigger fixes when a routine runs. A `pace` trigger leaves it to th
 trigger: { on: pace, every: 4 }   # every 4 paces: every 2h in a factory with pace: 30m
 ```
 
-`every:` is a whole number from 1 to 1000, and defaults to 1. The routine still runs on a schedule: for each factory, Fabrica works out the period (the factory's pace times `every:`) and installs it as a `schedule` trigger with the cron for it. So a pace trigger works on the runtimes that have `schedule`, and when a routine is [split into a stub per trigger](#several-triggers), its stub is named after `schedule`. Not every period can be written as a cron, and [Pace](home-repos.md#pace) lists the ones that can.
+`every:` is a whole number from 1 to 1000, and defaults to 1. Runtimes don't keep that time: the [Fabrica server](mcp-server.md#the-heartbeat) does. Each stub of the routine gets a `webhook` trigger in its runtime (an **API** trigger on a Claude routine, a **Webhook** trigger on a Cursor automation), and the server keeps the factory's heartbeat: it beats once every pace, and calls the webhook on every `every:`-th beat. So a pace trigger runs on the runtimes that have webhooks, and when a routine is [split into a stub per trigger](#several-triggers), its stub is named after `webhook`. Neither the pace nor `every:` is baked into the stub, so changing them takes effect at the server's next refresh, with no apply. Local runtimes have no server to call them, so routines with a pace trigger only run in cloud factories.
+
+`webhook` itself isn't a trigger a blueprint can use: nothing but the heartbeat calls it.
 
 ### Side effects
 

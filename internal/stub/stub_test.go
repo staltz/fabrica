@@ -505,47 +505,45 @@ func TestSeveralTriggersLocally(t *testing.T) {
 
 func TestPaceTrigger(t *testing.T) {
 	const paced = "---\ntrigger: { on: pace, every: 4 }\nconnectors: [github]\n---\nTidy.\n"
-	const scheduled = "---\ntrigger: { on: schedule, cron: \"0 */2 * * *\" }\nconnectors: [github]\n---\nTidy.\n"
 	const several = "---\ntriggers:\n  - { on: github.pull_request.opened }\n  - { on: pace, every: 4 }\nconnectors: [github]\n---\nTidy.\n"
-	f := load(t, map[string]string{"routines/tidy.md": paced, "routines/cron.md": scheduled, "routines/several.md": several})
+	f := load(t, map[string]string{"routines/tidy.md": paced, "routines/several.md": several})
 	at := func(runtime string, p pace.Pace) stub.Target {
 		tg := target(t, runtime)
 		tg.Pace = p
 		return tg
 	}
 
-	// At a pace of 30m, every 4 paces is a schedule every 2h, the same
-	// stub as a routine with that cron.
+	// A pace trigger is installed as a webhook, which the Fabrica server
+	// calls on the factory's heartbeat.
 	e := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 30))
 	if !e.OK() || len(e.Stubs) != 1 {
 		t.Fatalf("%d stubs: %s", len(e.Stubs), e.Diags)
 	}
-	if sh := e.Stubs[0].Shape; sh.Trigger != "schedule" || sh.Cron != "0 */2 * * *" {
+	if sh := e.Stubs[0].Shape; sh.Trigger != "webhook" || sh.Cron != "" || !sh.HasTrigger("webhook") {
 		t.Errorf("shape = %+v", sh)
 	}
 	if e.Triggers[0].Name != "pace (every 2h)" || e.Triggers[0].Support != provider.Native {
 		t.Errorf("trigger use = %+v", e.Triggers[0])
 	}
-	cron := stub.Evaluate(f, f.Routines["cron"], at("claude-code-cloud", 30))
-	if e.Stubs[0].Shape.Fingerprint() != cron.Stubs[0].Shape.Fingerprint() {
-		t.Error("a pace trigger should install the same stub as its schedule")
+
+	// Neither the pace nor every: is baked in, so changing them never needs
+	// an apply: the server reads them live.
+	for _, p := range []pace.Pace{25, 60, 7} {
+		other := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", p))
+		if !other.OK() || other.Stubs[0].Shape.Fingerprint() != e.Stubs[0].Shape.Fingerprint() {
+			t.Errorf("at a pace of %s: %+v %s", p, other.Stubs[0].Shape, other.Diags)
+		}
 	}
 
-	// A new pace changes the schedule, so the stub needs a re-apply.
-	slower := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 60))
-	if !slower.OK() || slower.Stubs[0].Shape.Cron != "0 */4 * * *" || slower.Stubs[0].Shape.Fingerprint() == e.Stubs[0].Shape.Fingerprint() {
-		t.Errorf("at 1h: %+v %s", slower.Stubs[0].Shape, slower.Diags)
+	// Cursor takes several triggers per automation, webhook among them.
+	cursor := stub.Evaluate(f, f.Routines["several"], at("cursor-cloud", 30))
+	if !cursor.OK() || len(cursor.Stubs) != 1 || !cursor.Stubs[0].Shape.HasTrigger("webhook") || !cursor.Stubs[0].Shape.HasTrigger("github.pull_request.opened") {
+		t.Errorf("cursor stubs: %+v %s", cursor.Stubs, cursor.Diags)
 	}
 
-	// Locally, it's a scheduled task, not a hook.
-	local := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-local", 30))
-	if !local.OK() || local.Stubs[0].InSession {
-		t.Errorf("locally, a pace trigger is a scheduled task: %+v %s", local.Stubs[0], local.Diags)
-	}
-
-	// Split into a stub per trigger, it's named like a schedule.
+	// Split into a stub per trigger, it's named after the webhook.
 	split := stub.Evaluate(f, f.Routines["several"], at("claude-code-cloud", 30))
-	if !split.OK() || len(split.Stubs) != 2 || split.Stubs[1].Name("several") != "several:schedule" {
+	if !split.OK() || len(split.Stubs) != 2 || split.Stubs[1].Name("several") != "several:webhook" {
 		t.Errorf("stubs: %+v %s", split.Stubs, split.Diags)
 	}
 
@@ -558,15 +556,12 @@ func TestPaceTrigger(t *testing.T) {
 		t.Errorf("a missing pace isn't the runtime's fault:\n%s", none.Diags)
 	}
 
-	// Nor can one whose period cron can't repeat.
-	odd := stub.Evaluate(f, f.Routines["tidy"], at("claude-code-cloud", 25))
-	if odd.OK() || !strings.Contains(odd.Diags.String(), "every 100m") {
-		t.Errorf("want an error about 100m, got:\n%s", odd.Diags)
-	}
-
-	// A runtime without schedules can't run it either.
-	noSchedule := stub.Evaluate(f, f.Routines["tidy"], at("cursor-local", 30))
-	if noSchedule.OK() || !strings.Contains(noSchedule.Diags.String(), "doesn't support trigger pace") {
-		t.Errorf("want an unsupported-trigger error, got:\n%s", noSchedule.Diags)
+	// Runtimes without webhooks can't run it: local ones have no server to
+	// call them, whatever schedules they have.
+	for _, rt := range []string{"claude-code-local", "cursor-local", "codex"} {
+		e := stub.Evaluate(f, f.Routines["tidy"], at(rt, 30))
+		if e.OK() || !strings.Contains(e.Diags.String(), "doesn't support trigger pace") || !strings.Contains(e.Diags.String(), "needs a cloud runtime with webhooks") {
+			t.Errorf("%s: want an unsupported-trigger error, got:\n%s", rt, e.Diags)
+		}
 	}
 }

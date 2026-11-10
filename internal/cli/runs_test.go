@@ -498,7 +498,7 @@ func TestRunsExportLimit(t *testing.T) {
 		Runs          []map[string]any
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "runs.json"))
-	if err := json.Unmarshal(data, &bundle); err != nil || len(bundle.Runs) != 2 || bundle.SchemaVersion != 3 || bundle.Filters["limit"] != 2.0 {
+	if err := json.Unmarshal(data, &bundle); err != nil || len(bundle.Runs) != 2 || bundle.SchemaVersion != 4 || bundle.Filters["limit"] != 2.0 {
 		t.Errorf("runs.json = %+v, %v", bundle, err)
 	}
 }
@@ -712,10 +712,10 @@ func TestRunsJSONIsTheAdminAPIs(t *testing.T) {
 	// A page with a next: the same `next` as the API's.
 	out, _ := w.run(t, 0, "runs", "--json", "--since", since, "--limit", "2")
 	var page runs.Page
-	if err := json.Unmarshal([]byte(out), &page); err != nil || page.Next != page.Runs[1].RunID || page.SchemaVersion != 3 {
+	if err := json.Unmarshal([]byte(out), &page); err != nil || page.Next != page.Runs[1].RunID || page.SchemaVersion != 4 {
 		t.Errorf("a page: %+v, %v", page, err)
 	}
-	if out, _ := w.run(t, 0, "runs", "--json", "--factory", "nobody"); out != "{\n  \"schema_version\": 3,\n  \"runs\": []\n}\n" {
+	if out, _ := w.run(t, 0, "runs", "--json", "--factory", "nobody"); out != "{\n  \"schema_version\": 4,\n  \"runs\": []\n}\n" {
 		t.Errorf("an empty page = %q", out)
 	}
 

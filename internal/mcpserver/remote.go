@@ -49,6 +49,9 @@ type RemoteOptions struct {
 	Runs         *runs.DB
 	Logger       *slog.Logger
 	Now          func() time.Time
+	// Webhooks calls the webhooks of routines with a pace trigger, on each
+	// factory's heartbeat. Nil means a client with a one-minute timeout.
+	Webhooks *http.Client
 }
 
 // Remote is the remote Fabrica server.
@@ -80,6 +83,9 @@ type remoteState struct {
 type remoteFactory struct {
 	factory   *home.Factory
 	blueprint *blueprint.Blueprint
+	// resources are the stubs the factory's state file says are installed.
+	// The heartbeat calls the webhooks of the ones that fire on one.
+	resources []home.Resource
 	// refusal is set when the factory can't be served, like when its
 	// blueprint has errors. Sessions still connect, so agents can say why.
 	refusal string
@@ -179,6 +185,11 @@ func (s *Remote) read(ctx context.Context) (*remoteState, error) {
 			continue
 		}
 		rd := &remoteFactory{factory: d}
+		if state, err := home.ReadState(tree, name); err != nil {
+			s.opts.Logger.Warn("can't read a factory's state, so its heartbeat fires nothing", "factory", name, "error", err)
+		} else {
+			rd.resources = state.Resources
+		}
 		resolved, err := s.opts.Git.Remote(repourl.GitURL(d.Blueprint.Git), gitx.Full).Resolve(ctx, d.Blueprint.Ref)
 		switch {
 		case err != nil:

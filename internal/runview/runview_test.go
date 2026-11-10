@@ -494,7 +494,7 @@ func TestBundle(t *testing.T) {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
-	if !slices.Equal(keys, []string{"filters", "runs", "schema_version"}) || string(parsed["schema_version"]) != "3" {
+	if !slices.Equal(keys, []string{"filters", "runs", "schema_version"}) || string(parsed["schema_version"]) != "4" {
 		t.Errorf("runs.json has %v, schema_version %s", keys, parsed["schema_version"])
 	}
 	var filters map[string]any

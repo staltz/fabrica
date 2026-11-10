@@ -1,18 +1,20 @@
-// Package pace reads a factory's pace, like 30m, 4h or 2d, and turns a
-// multiple of it into the cron schedule a runtime installs.
+// Package pace reads a factory's pace, like 30m, 4h or 2d, and counts the
+// factory's beats.
 //
 // A routine with a pace trigger, like `trigger: { on: pace, every: 4 }`,
 // runs every 4 paces of the factory that deploys it: every 2h in a
-// factory with `pace: 30m`. Runtimes only know cron, so Fabrica writes the
-// period as a cron expression, and only periods that cron can repeat
-// evenly are allowed (see Cron).
+// factory with `pace: 30m`. Runtimes don't run it on a schedule of their
+// own. Each stub gets a webhook instead, and the remote Fabrica server
+// keeps the factory's heartbeat: it beats once every pace, and on every
+// 4th beat it calls the routine's webhook. So any pace works, not just the
+// periods cron can repeat.
 package pace
 
 import (
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
+	"time"
 )
 
 // Pace is a factory's pace, in whole minutes. Zero means the factory has
@@ -22,7 +24,6 @@ type Pace int
 const (
 	hour = 60
 	day  = 24 * hour
-	week = 7 * day
 )
 
 var paceRe = regexp.MustCompile(`^([1-9][0-9]*)([mhd])$`)
@@ -69,79 +70,34 @@ func Minutes(n int) string {
 // Times is the pace times a routine's every:, in minutes.
 func (p Pace) Times(every int) int { return int(p) * every }
 
-// Cron writes a period, in minutes, as a cron expression (UTC). Cron
-// counts within the hour, the day and the month, so it can only repeat
-// some periods evenly:
-//
-//   - a number of minutes that divides an hour (1m, 2m, …, 30m), from
-//     minute 0 of each hour;
-//   - a number of hours that divides a day (1h, 2h, 3h, 4h, 6h, 8h, 12h),
-//     from midnight;
-//   - a day, at midnight, or a week, at midnight on Monday;
-//   - a number of days up to 31, at midnight, counted from the 1st of each
-//     month: cron starts counting again every month, so the last gap of a
-//     month can be shorter (every 2d runs on the 31st and again on the
-//     1st).
-//
-// Any other period is an error that suggests the nearest ones that work.
-func Cron(minutes int) (string, error) {
-	switch {
-	case minutes <= 0:
-		return "", fmt.Errorf("a period must be positive")
-	case minutes == 1:
-		return "* * * * *", nil
-	case minutes < hour && hour%minutes == 0:
-		return fmt.Sprintf("*/%d * * * *", minutes), nil
-	case minutes == hour:
-		return "0 * * * *", nil
-	case minutes < day && minutes%hour == 0 && day%minutes == 0:
-		return fmt.Sprintf("0 */%d * * *", minutes/hour), nil
-	case minutes == day:
-		return "0 0 * * *", nil
-	case minutes == week:
-		return "0 0 * * 1", nil
-	case minutes%day == 0 && minutes/day <= 31:
-		return fmt.Sprintf("0 0 */%d * *", minutes/day), nil
-	}
-	var near []string
-	for _, p := range nearest(minutes) {
-		near = append(near, "every "+Minutes(p))
-	}
-	return "", fmt.Errorf("a cron schedule can't repeat every %s evenly; the nearest it can is %s", Minutes(minutes), strings.Join(near, " or "))
+// Duration is the pace as a time.Duration.
+func (p Pace) Duration() time.Duration { return time.Duration(p) * time.Minute }
+
+// Beat is one beat of a factory's heartbeat: the Nth pace since the Unix
+// epoch (midnight UTC on 1 January 1970). Counting from a fixed instant
+// makes every beat's number and start time the same wherever, and however
+// often, they're worked out, so a server that restarts finds the beat it
+// was on.
+type Beat struct {
+	// N is the beat's number: how many whole paces passed since the epoch
+	// before it started.
+	N int64
+	// At is when it started.
+	At time.Time
 }
 
-// nearest finds the periods closest to minutes that Cron can write: the
-// one below, and the one above if there is one.
-func nearest(minutes int) []int {
-	var lower, upper int
-	for _, p := range periods() {
-		if p < minutes {
-			lower = p
-		} else if upper == 0 {
-			upper = p
-		}
-	}
-	if upper == 0 {
-		return []int{lower}
-	}
-	return []int{lower, upper}
+// BeatAt is the beat a time falls in. The pace must not be zero.
+func (p Pace) BeatAt(t time.Time) Beat {
+	n := t.Unix() / int64(p.Duration()/time.Second)
+	return p.Beat(n)
 }
 
-// periods lists every period Cron can write, shortest first.
-func periods() []int {
-	var out []int
-	for m := 1; m < hour; m++ {
-		if hour%m == 0 {
-			out = append(out, m)
-		}
-	}
-	for h := 1; h < 24; h++ {
-		if 24%h == 0 {
-			out = append(out, h*hour)
-		}
-	}
-	for d := 1; d <= 31; d++ {
-		out = append(out, d*day)
-	}
-	return out
+// Beat is beat number n. The pace must not be zero.
+func (p Pace) Beat(n int64) Beat {
+	return Beat{N: n, At: time.Unix(n*int64(p.Duration()/time.Second), 0).UTC()}
 }
+
+// Fires reports whether a routine that runs every so many paces fires on
+// this beat: on every beat whose number is a multiple of every. So `every:
+// 4` at a pace of 30m fires every 2h, on the hour, from midnight UTC.
+func (b Beat) Fires(every int) bool { return every > 0 && b.N%int64(every) == 0 }

@@ -22,7 +22,7 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
 1. Open your routines on claude.ai (Claude Code on the web → Routines){{if eq .Action "update"}} and find the routine named `{{or .FormerIdentity .Identity}}`{{if .RemoteID}} (ID `{{.RemoteID}}`){{end}}{{else}} and start a new routine{{end}}. You can also do this from the Claude Code CLI: run `/schedule`, and give it the settings below.
 2. Name: `{{.Identity}}`{{if .FormerIdentity}} (it was `{{.FormerIdentity}}`){{end}}
 3. Repository: `{{.Repo}}`
-4. Trigger: {{.Trigger.Description}}
+4. Trigger: {{if eq .Trigger.On "webhook"}}**API**, and nothing else. Under **Select a trigger**, choose **API**. It's how the Fabrica server fires this routine, on the factory's pace.{{else}}{{.Trigger.Description}}{{end}}
 5. Connectors. Make sure the routine has exactly these:
    - **fabrica** (a custom connector): URL `{{.Fabrica.URL}}`{{if .Fabrica.Header}}, request header `Authorization: {{.Fabrica.Header}}`{{end}}
 {{- range .Connectors}}
@@ -47,4 +47,14 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
     ```
 
     If you can't find the ID, run `fabrica confirm {{.ID}}` without `--remote-id`. Fabrica will then track this routine as unverifiable.
+{{- if .WebhookCommand}}
+
+11. Give Fabrica the routine's API trigger, so it can fire it. Open the routine's **API** trigger, copy its **Fire URL**, and click **Generate token** (the token is shown once). Then run this, with the Fire URL in place of `<the webhook URL>`, and paste the token when it asks for it:
+
+    ```
+    {{.WebhookCommand}}
+    ```
+
+    Fabrica keeps the token in the home repo, sealed with the server secret, so only the Fabrica server can read it. Until you do this, the routine never runs.
+{{- end}}
 {{- end}}

@@ -46,7 +46,9 @@ FABRICA_SERVER_SECRET, or saved by ` + "`fabrica auth login <url>`" + ` on this
 machine when you pass --url; read access to the home repo and the
 blueprints; and a persistent folder for its run-history database (--db).
 It re-fetches the home repo regularly, so merges show up shortly after
-they land. People read run history through its admin API and its dashboard
+they land. It also keeps the heartbeat of every factory with a pace:
+once every pace, it calls the webhooks of the routines with a pace
+trigger that run on that beat. People read run history through its admin API and its dashboard
 (at <server>/_dashboard), with the token ` + "`fabrica auth admin-token`" + ` prints.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -81,6 +83,7 @@ they land. People read run history through its admin API and its dashboard
 					return fmt.Errorf("couldn't read the home repo: %w", err)
 				}
 				go srv.RunRefresher(ctx)
+				go srv.RunHeartbeat(ctx)
 				return srv.Serve(ctx, listen)
 			}
 

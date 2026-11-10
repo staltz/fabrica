@@ -222,7 +222,7 @@ func TestNoToolLeaksRunHistory(t *testing.T) {
 // run-history database that give run history back, and ListAll, which reads
 // it page by page. Only operator-plane code (the CLI, the admin API and the
 // dashboard) may call them.
-var readFunctions = []string{"List", "ListAll", "Detail", "Stats", "Checkpoints", "SkillsLoaded"}
+var readFunctions = []string{"List", "ListAll", "Detail", "Stats", "Checkpoints", "SkillsLoaded", "PaceFires"}
 
 // notRunHistory are the few uses of those names that aren't a read of run
 // history. Keep it short and say why, because every entry is a hole in the

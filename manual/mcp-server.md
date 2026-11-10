@@ -15,7 +15,7 @@ Each MCP session is served from **one blueprint commit**, fixed when the session
 
 | Tool | What it does |
 |---|---|
-| `run_begin(intent, routine?, runtime?, repo?, stub?, session?)` | Starts a run and returns a `run_id` and a hint for what to do next. The intent is a summary of the request in at most 20 words. For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes `routine`, `runtime`, `repo` and `stub`. Refuses routine runs whose stub is outdated or no longer deployed. `session` is optional and says where the session's transcript lives: a file path, a session ID or a session URL (at most 512 bytes, on one line). A bad one is an error, and the run isn't recorded, so the agent can try again. |
+| `run_begin(intent, repo, routine?, runtime?, stub?, session?)` | Starts a run and returns a `run_id` and a hint for what to do next. The intent is a summary of the request in at most 20 words. `repo` is the repo the agent works in, from its git remote, like `github.com/acme/app`; if the factory isn't for that repo, `run_begin` refuses (see [Only the factory's own repos](#only-the-factorys-own-repos)). For a routine run, the stub (or, for an [init session](blueprints.md#init-routines), the prompt it was started with) passes `routine`, `runtime`, `repo` and `stub`. Refuses routine runs whose stub is outdated or no longer deployed. `session` is optional and says where the session's transcript lives: a file path, a session ID or a session URL (at most 512 bytes, on one line). A bad one is an error, and the run isn't recorded, so the agent can try again. |
 | `run_report(run_id, summary, status?, links?, friction?)` | Records a checkpoint: a summary (at most 20 words), a status (`progress`, the default, `succeeded` or `failed`), and links to PRs, issues or commits. `friction` is optional: up to 5 notes about what slowed the agent down since its last report, each with a kind (`navigation`, `checks`, `standards`, `tools`, `info` or `other`) and a note of at most 20 words. It answers with an acknowledgement and nothing else. Only accepts a run that was begun for this factory (and, on the local server, this repo), from any session; for any other `run_id`, whether it exists or not, it gives the same error. |
 | `rules_get()` | Every always-on rule in full, plus an index of the other rules (name, description, globs). It always starts with the "product knowledge only" rule. |
 | `rule_load(name)` | One rule. |
@@ -32,6 +32,15 @@ The server rejects an `intent`, `summary` or friction note longer than 20 words 
 After `run_begin`, the server also records every skill, rule and routine the session loads (`skill_load`, `rule_load`, `routine_get`, and each always-on rule `rules_get` hands over) as loads of that run. See [Run history](run-history.md).
 
 **No tool returns run history, on purpose.** Agents write run history; only people read it. `run_begin` gives back a `run_id` and a hint, `run_report` an acknowledgement, and neither says anything about earlier runs or checkpoints, not even the agent's own. The one exception is a routine's [memory](blueprints.md#memory), which `routine_get` shows to the routine that saved it. That's a separate feature, not run history.
+
+### Only the factory's own repos
+
+A factory's blueprint is only for the repos it deploys to. An agent can still end up talking to the wrong factory: a cloud session whose MCP config points at another repo's factory, or a local session whose workspace isn't the repo the agent works in. So every `run_begin` says which repo the agent works in, and the server refuses when that isn't one of the factory's:
+
+- **Locally**, the repo must be the workspace's repo (the one the factory was matched for).
+- **Remotely**, the factory must list the repo in its `targets:`.
+
+The refusal is recorded as a `failed` run (remotely, under the repo the agent said), and it tells the agent not to use anything from that server in that session and to tell the user. In a session with an MCP session (the local server, and remote clients on protocols before 2026-07-28, like Cursor), every other tool then refuses too, for the rest of the session, even after a `run_begin` with another repo. Sessionless clients (Claude cloud) have no session to remember it in, so there the refusal itself has to stop the agent.
 
 ## The local server
 

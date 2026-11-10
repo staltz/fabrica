@@ -120,6 +120,9 @@ type session struct {
 	// refused are routines whose run_begin was refused in this session;
 	// routine_get won't serve them.
 	refused map[string]string
+	// wrongRepo, once a run_begin said the agent works in a repo the
+	// factory isn't for, is why no tool serves blueprint content anymore.
+	wrongRepo string
 }
 
 // NewServer builds an MCP server for one session. instructions are the
@@ -181,7 +184,7 @@ func (s *session) register(srv *mcp.Server) {
 	}, s.memorySave)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_begin",
-		Description: "Start a run and get its run_id. Call it first, in every session. For a routine run, pass routine, runtime, repo and stub exactly as your stub says. If you know where this session's transcript lives, pass it as session.",
+		Description: "Start a run and get its run_id. Call it first, in every session, with the repo you work in (from its git remote, like github.com/acme/app). For a routine run, pass routine, runtime, repo and stub exactly as your stub says. If you know where this session's transcript lives, pass it as session.",
 	}, s.runBegin)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "run_report",

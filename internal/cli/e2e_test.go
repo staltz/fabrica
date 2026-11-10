@@ -397,7 +397,7 @@ func TestLocalMCPOverStdio(t *testing.T) {
 	if instr := cs.InitializeResult().Instructions; !strings.Contains(instr, "repo github.com/acme/app, factory my-default") {
 		t.Errorf("instructions = %s", instr)
 	}
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "run_begin", Arguments: map[string]any{"intent": "fix the login bug"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "run_begin", Arguments: map[string]any{"repo": "github.com/acme/app", "intent": "fix the login bug"}})
 	if err != nil || res.IsError {
 		t.Fatalf("run_begin: %v %+v", err, res)
 	}

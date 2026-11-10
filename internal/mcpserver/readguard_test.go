@@ -150,8 +150,8 @@ func probeSession(t *testing.T, c *client, foreign []string, routine string, beg
 	ids := append([]string{"", "run_missing"}, foreign...)
 	p.everyTool(routine, ids)
 
-	p.call("run_begin", map[string]any{"intent": ""})
-	p.call("run_begin", map[string]any{"intent": "look around", "session": "two\nlines"})
+	p.call("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": ""})
+	p.call("run_begin", map[string]any{"repo": "github.com/acme/app", "intent": "look around", "session": "two\nlines"})
 	p.call("run_begin", map[string]any{"intent": "look around", "routine": "nope", "runtime": "claude-code-cloud", "repo": "github.com/acme/app", "stub": "000000000000"})
 	p.call("run_begin", map[string]any{"intent": "look around", "repo": "not a repo"})
 	out := p.call("run_begin", begin)
@@ -201,7 +201,7 @@ func TestNoToolLeaksRunHistory(t *testing.T) {
 			seedRun(t, lw.db, "my-default", "github.com/acme/app", "3"), // same factory and repo, begun earlier
 		}
 		c, _ := lw.connect(t)
-		begin := map[string]any{"intent": "review my diff", "routine": "review-before-push", "stub": localStub(t, lw.opts, "review-before-push")}
+		begin := map[string]any{"repo": "github.com/acme/app", "intent": "review my diff", "routine": "review-before-push", "stub": localStub(t, lw.opts, "review-before-push")}
 		probeSession(t, c, foreign, "review-before-push", begin)
 	})
 

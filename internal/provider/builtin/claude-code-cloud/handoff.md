@@ -49,7 +49,7 @@ Until you do, the old routine can still fire, but the Fabrica server refuses its
     If you can't find the ID, run `fabrica confirm {{.ID}}` without `--remote-id`. Fabrica will then track this routine as unverifiable.
 {{- if .WebhookCommand}}
 
-11. Give Fabrica the routine's API trigger, so it can fire it. Open the routine's **API** trigger, copy its **Fire URL**, and click **Generate token** (the token is shown once). Then run this, with the Fire URL in place of `<the webhook URL>`, and paste the token when it asks for it:
+11. Give Fabrica the routine's API trigger, so it can fire it. Copy the token from the **API token** dialog that shows it (it starts with `sk-ant-oat01-`, and it's shown once; if you missed it, click **Regenerate** next to **Token**, which makes a new one), and the **Fire URL** from the trigger. Then run this, with the Fire URL in place of `<the webhook URL>`, and paste the token when it asks for it:
 
     ```
     {{.WebhookCommand}}

@@ -122,7 +122,7 @@ Each stub of such a routine fires on a webhook that its runtime makes for it: an
 fabrica webhook acme '4ckr#tidy@github.com/acme/app' --runtime cursor-cloud --url 'https://…'
 ```
 
-It asks for the webhook's credential: a Claude routine's token (from **Generate token**), or the whole header a Cursor automation's **Generate auth header** gives, which Fabrica then sends as it is. It keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
+It asks for the webhook's credential: a Claude routine's token (`sk-ant-oat01-…`, from its **API token** dialog), or the whole header a Cursor automation's **Generate auth header** gives, which Fabrica then sends as it is. It keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
 
 #### Pace in a local factory
 

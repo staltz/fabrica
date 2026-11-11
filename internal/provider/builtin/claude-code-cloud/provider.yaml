@@ -22,7 +22,11 @@ mcp_auth:
 triggers:
   schedule: native
   # The routine's API trigger: Fabrica installs it for a pace trigger, and
-  # the Fabrica server fires it on the factory's heartbeat.
+  # the Fabrica server fires it on the factory's heartbeat, like the
+  # trigger's own example request: POST to its Fire URL
+  # (https://api.anthropic.com/v1/claude_code/routines/trig_…/fire) with
+  # Authorization: Bearer sk-ant-oat01-…, anthropic-version: 2023-06-01,
+  # anthropic-beta: experimental-cc-routine-2026-04-01 and {"text": …}.
   webhook: native
   github.pull_request.opened: native
   github.pull_request.synchronize: native

@@ -183,7 +183,7 @@ Confirm commits and pushes the factory's state, and refuses while an apply holds
 
 ## `fabrica webhook <factory> <stub>`
 
-Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace trigger](blueprints.md#pace), so the Fabrica server can call it on the factory's [heartbeat](mcp-server.md#the-heartbeat). `<stub>` is the stub's identity, like `'4ckr#tidy@github.com/acme/app'`. No runtime's API hands a webhook's URL and credential over, so you copy them from the runtime: a Claude routine's **API** trigger shows a **Fire URL** and makes a token when you click **Generate token**, and a Cursor automation's **Webhook triggered** trigger shows a URL (with a copy button) and makes an auth header when you click **Generate auth header**. A Claude routine's handoff, Cursor's setup file and `plan` print the exact command for each stub that needs it.
+Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace trigger](blueprints.md#pace), so the Fabrica server can call it on the factory's [heartbeat](mcp-server.md#the-heartbeat). `<stub>` is the stub's identity, like `'4ckr#tidy@github.com/acme/app'`. No runtime's API hands a webhook's URL and credential over, so you copy them from the runtime: a Claude routine's **API** trigger shows a **Fire URL**, and its token (`sk-ant-oat01-…`) once, in an **API token** dialog (**Regenerate** makes a new one), and a Cursor automation's **Webhook triggered** trigger shows a URL (with a copy button) and makes an auth header when you click **Generate auth header**. A Claude routine's handoff, Cursor's setup file and `plan` print the exact command for each stub that needs it.
 
 | Flag | What it does |
 |---|---|

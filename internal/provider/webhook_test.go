@@ -58,6 +58,13 @@ func TestFireWebhook(t *testing.T) {
 		t.Errorf("Cursor: %v, %v", err, got)
 	}
 
+	// A whole auth header goes as it is.
+	call.Header, call.Token = "X-Webhook-Auth", "Token crsr_abc"
+	if err := FireWebhook(ctx, nil, call); err != nil || got.Get("X-Webhook-Auth") != "Token crsr_abc" || got.Get("Authorization") != "" {
+		t.Errorf("with a header: %v, %v", err, got)
+	}
+	call.Header, call.Token = "", "sk-ant-oat01-secret"
+
 	// A 429 is retried: the runtime started nothing.
 	calls.Store(0)
 	answer.Store(429)

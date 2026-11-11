@@ -82,10 +82,10 @@ func checkWebhooks(dp *Factory) {
 		switch {
 		case cur.Webhook == nil:
 			dp.Diags.Warnf("webhook.missing", want.Key.ID, "routine %s runs on the factory's pace, but Fabrica doesn't have the webhook %s made for it on %s, so the Fabrica server can't run it", want.Routine, want.Runtime, want.Repo).
-				Hintf("copy the webhook's URL and token (or API key) from %s, and run `%s`", want.Runtime, cmd)
+				Hintf("copy the webhook's URL and its token or auth header from %s, and run `%s`", want.Runtime, cmd)
 		case want.TokenHash != "" && cur.Webhook.TokenHash != want.TokenHash:
 			dp.Diags.Warnf("webhook.stale", want.Key.ID, "routine %s runs on the factory's pace, but its webhook's token was sealed with an earlier server secret, so the Fabrica server can't open it", want.Routine).
-				Hintf("run `%s` again, with the webhook's URL and token (or API key) from %s", cmd, want.Runtime)
+				Hintf("run `%s` again, with the webhook's URL and its token or auth header from %s", cmd, want.Runtime)
 		}
 	}
 }

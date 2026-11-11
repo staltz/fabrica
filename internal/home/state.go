@@ -208,10 +208,15 @@ const WebhookTrigger = "webhook"
 type Webhook struct {
 	// URL is where to POST to fire the stub.
 	URL string `yaml:"url"`
-	// Token is what the runtime checks on each call (an API key or bearer
-	// token), sealed with the server secret (see token.Seal), so the home
-	// repo never holds it in the clear.
+	// Token is what the runtime checks on each call, sealed with the server
+	// secret (see token.Seal), so the home repo never holds it in the
+	// clear: a bearer token, or the value of Header.
 	Token string `yaml:"token"`
+	// Header is the request header Token goes in, when the runtime gave a
+	// whole header (Cursor's "Generate auth header"), like Authorization,
+	// and Token is its value as given (like "Bearer …"). Empty means Token
+	// is a bare token, sent as "Authorization: Bearer <token>".
+	Header string `yaml:"header,omitempty"`
 	// TokenHash is the hash of the factory's token when the webhook's token
 	// was sealed. When the server secret is rotated, it no longer matches,
 	// and the token can't be opened anymore: `fabrica webhook` has to record

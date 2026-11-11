@@ -116,13 +116,13 @@ pace: 30m   # 5m, 7m, 4h, 2d, …: N minutes (m), hours (h) or days (d)
 
 The factory's [Fabrica server](mcp-server.md#the-heartbeat) keeps the time, not the runtimes. It beats once every pace, counting from midnight UTC on 1 January 1970, so with `pace: 30m` the beats are on the hour and the half hour, and every 4 paces is every 2h from midnight UTC. On each beat, it calls the webhook of each stub whose routine runs on it. Any pace works, not just the periods cron can repeat, and changing `pace:` (or a routine's `every:`) needs no apply: the server picks it up at its next refresh.
 
-Each stub of such a routine fires on a webhook that its runtime makes for it: an **API** trigger on a Claude routine, a **Webhook** trigger on a Cursor automation. No runtime's API hands over a webhook's URL and token, so after a stub is created, you copy them from the runtime and give them to Fabrica, once per stub:
+Each stub of such a routine fires on a webhook that its runtime makes for it: an **API** trigger on a Claude routine, a **Webhook triggered** trigger on a Cursor automation. No runtime's API hands over a webhook's URL and credential, so after a stub is created, you copy them from the runtime and give them to Fabrica, once per stub:
 
 ```sh
 fabrica webhook acme '4ckr#tidy@github.com/acme/app' --runtime cursor-cloud --url 'https://…'
 ```
 
-It asks for the token (or API key), and keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
+It asks for the webhook's credential: a Claude routine's token (from **Generate token**), or the whole header a Cursor automation's **Generate auth header** gives, which Fabrica then sends as it is. It keeps it in the factory's state file, sealed with the [server secret](auth.md), so only the Fabrica server can read it. The handoff of a Claude routine and Cursor's [setup file](providers.md#cursor-automations-through-cursors-api) end with the exact command for each stub, and until a stub has its webhook, `plan` warns about it (`webhook.missing`). Updates keep the webhook. After you rotate the server secret, run the command again for each stub (`plan` lists them, `webhook.stale`).
 
 #### Pace in a local factory
 

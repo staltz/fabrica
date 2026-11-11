@@ -183,14 +183,14 @@ Confirm commits and pushes the factory's state, and refuses while an apply holds
 
 ## `fabrica webhook <factory> <stub>`
 
-Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace trigger](blueprints.md#pace), so the Fabrica server can call it on the factory's [heartbeat](mcp-server.md#the-heartbeat). `<stub>` is the stub's identity, like `'4ckr#tidy@github.com/acme/app'`. No runtime's API hands a webhook's URL and token over, so you copy them from the runtime: a Claude routine's **API** trigger shows a **Fire URL** and makes a token when you click **Generate token**, and a Cursor automation's **Webhook** trigger shows a URL and an API key. A Claude routine's handoff, Cursor's setup file and `plan` print the exact command for each stub that needs it.
+Gives Fabrica the webhook a runtime made for a stub of a routine with a [pace trigger](blueprints.md#pace), so the Fabrica server can call it on the factory's [heartbeat](mcp-server.md#the-heartbeat). `<stub>` is the stub's identity, like `'4ckr#tidy@github.com/acme/app'`. No runtime's API hands a webhook's URL and credential over, so you copy them from the runtime: a Claude routine's **API** trigger shows a **Fire URL** and makes a token when you click **Generate token**, and a Cursor automation's **Webhook triggered** trigger shows a URL (with a copy button) and makes an auth header when you click **Generate auth header**. A Claude routine's handoff, Cursor's setup file and `plan` print the exact command for each stub that needs it.
 
 | Flag | What it does |
 |---|---|
 | `--runtime <name>` | Required. The runtime the stub is on, like `claude-code-cloud` or `cursor-cloud`. |
 | `--url <url>` | Required. The webhook's URL. |
 
-It asks for the webhook's token (or API key), without showing what you type or paste; without a terminal, it reads it from stdin. The token is sealed with the factory's server secret (from `FABRICA_SERVER_SECRET`, or saved by `fabrica auth login`), so the state file only holds it encrypted, and only the Fabrica server can read it. Like confirm, it commits and pushes the factory's state, and refuses while an apply holds its lock. Updates keep the webhook. After you rotate the server secret, run it again for each stub.
+It asks for the webhook's credential, without showing what you type or paste; without a terminal, it reads it from stdin. Paste a bare token (sent as `Authorization: Bearer <token>`), or a whole header, like `Authorization: Bearer …` (also as curl's `-H "…"`), which Fabrica sends as it is. The token, or the header's value, is sealed with the factory's server secret (from `FABRICA_SERVER_SECRET`, or saved by `fabrica auth login`), so the state file only holds it encrypted, and only the Fabrica server can read it. Like confirm, it commits and pushes the factory's state, and refuses while an apply holds its lock. Updates keep the webhook. After you rotate the server secret, run it again for each stub.
 
 ## `fabrica heartbeat`
 

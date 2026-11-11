@@ -128,7 +128,7 @@ func (s *Remote) due(name string, rd *remoteFactory, now time.Time) []dueFire {
 		}
 		f := dueFire{
 			fire: runs.Fire{Factory: name, Runtime: res.Runtime, Stub: res.ID, Routine: res.Routine, Repo: res.Repo, BeatAt: beat.At, FiredAt: now},
-			call: provider.WebhookCall{Runtime: res.Runtime, URL: res.Webhook.URL, Text: beatText(d, r, beat)},
+			call: provider.WebhookCall{Runtime: res.Runtime, URL: res.Webhook.URL, Header: res.Webhook.Header, Text: beatText(d, r, beat)},
 		}
 		tok, err := token.Open(s.opts.Secret, name, res.ID, res.Webhook.Token)
 		if err != nil {

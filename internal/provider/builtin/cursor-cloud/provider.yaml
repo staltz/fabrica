@@ -31,8 +31,8 @@ triggers:
   schedule: native
   # The automation's webhook trigger: Fabrica installs it for a pace
   # trigger, and the Fabrica server calls it on the factory's heartbeat.
-  # The API makes the trigger, but doesn't return its URL or API key, so
-  # you copy those from Cursor (the setup file says how).
+  # The API makes the trigger, but doesn't return its URL or auth header,
+  # so you copy those from Cursor (the setup file says how).
   webhook: native
   github.pull_request.opened: native
   github.pull_request.synchronize: native

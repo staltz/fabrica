@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,8 +21,10 @@ type Webhook struct {
 	// Identity is the stub's identity, like 4ckr#tidy@github.com/acme/app.
 	Identity string
 	URL      string
-	// Token is what the runtime checks on each call, in the clear. It's
-	// sealed before it's written.
+	// Token is what the runtime checks on each call, in the clear: a bare
+	// token, or a whole header like "Authorization: Bearer …" (what
+	// Cursor's "Generate auth header" gives). It's sealed before it's
+	// written.
 	Token string
 	// Secret is the factory's server secret, which seals the token.
 	Secret string
@@ -40,18 +43,18 @@ func SetWebhook(ctx context.Context, homeDir string, w Webhook, now time.Time) (
 	if err := checkWebhookURL(w.URL); err != nil {
 		return nil, err
 	}
-	w.Token = strings.TrimSpace(w.Token)
-	if w.Token == "" {
-		return nil, errors.New("the webhook's token is empty; paste the token (or API key) the runtime shows for the webhook")
+	header, value := SplitAuthHeader(w.Token)
+	if value == "" {
+		return nil, errors.New("the webhook's token is empty; paste the token, or the auth header, the runtime shows for the webhook")
 	}
 	if w.Secret == "" {
 		return nil, fmt.Errorf("Fabrica needs the server secret of factory %s to seal the webhook's token; set %s, or save it with `fabrica auth login <the factory's server>`", w.Factory, token.EnvVar)
 	}
-	sealed, err := token.Seal(w.Secret, w.Factory, w.Identity, w.Token)
+	sealed, err := token.Seal(w.Secret, w.Factory, w.Identity, value)
 	if err != nil {
 		return nil, err
 	}
-	hook := &home.Webhook{URL: w.URL, Token: sealed, TokenHash: token.Hash(token.For(w.Secret, w.Factory)), SetAt: now.UTC().Truncate(time.Second)}
+	hook := &home.Webhook{URL: w.URL, Token: sealed, Header: header, TokenHash: token.Hash(token.For(w.Secret, w.Factory)), SetAt: now.UTC().Truncate(time.Second)}
 
 	r, err := OpenRepo(ctx, homeDir)
 	if err != nil {
@@ -81,6 +84,29 @@ func SetWebhook(ctx context.Context, homeDir string, w Webhook, now time.Time) (
 		return nil, err
 	}
 	return &recorded, nil
+}
+
+// authHeaderRe is a whole header line: a header name, a colon, a space and
+// a value. The space keeps a bare token with a colon in it from passing as
+// one.
+var authHeaderRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9-]*):\s+(\S.*)$`)
+
+// SplitAuthHeader reads what a person pasted for a webhook's credential:
+// a whole header, like "Authorization: Bearer …" or "X-Api-Key: …"
+// (also as curl's -H "…"), or a bare token. It returns the header's name
+// and value, or no name and the token.
+func SplitAuthHeader(pasted string) (header, value string) {
+	s := strings.TrimSpace(pasted)
+	if rest, ok := strings.CutPrefix(s, "-H "); ok {
+		s = strings.TrimSpace(rest)
+	}
+	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	if m := authHeaderRe.FindStringSubmatch(s); m != nil {
+		return m[1], strings.TrimSpace(m[2])
+	}
+	return "", s
 }
 
 // pendingFor finds a pending handoff for a resource.

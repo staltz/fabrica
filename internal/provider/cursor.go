@@ -226,8 +226,8 @@ func (c *cursorAPI) Setup(factory string, resources []Resource) string {
 
 // writeCursorWebhooks says how to give Fabrica the webhooks of the
 // automations that fire on one (the routines with a pace trigger). Cursor's
-// API makes the webhook trigger, but never returns its URL or API key, and
-// the Fabrica server needs both to call it on the factory's heartbeat.
+// API makes the webhook trigger, but never returns its URL or auth header,
+// and the Fabrica server needs both to call it on the factory's heartbeat.
 func writeCursorWebhooks(b *strings.Builder, factory string, resources []Resource) {
 	var hooked []Resource
 	for _, res := range resources {
@@ -243,7 +243,7 @@ func writeCursorWebhooks(b *strings.Builder, factory string, resources []Resourc
 	}
 	sort.Slice(hooked, func(i, j int) bool { return hooked[i].Identity < hooked[j].Identity })
 	b.WriteString("\n## Webhooks\n\n")
-	b.WriteString("These automations run on the factory's pace: the Fabrica server calls their webhook on its heartbeat. Cursor made each webhook when Fabrica saved the automation, but its API doesn't say what the webhook's URL and API key are, so Fabrica needs you to copy them. For each automation below that `fabrica plan` says Fabrica has no webhook for yet, open it in Cursor (cursor.com → Cloud Agents → Automations), copy the URL and API key of its **Webhook** trigger, and run the command, with the URL in place of `<the webhook URL>`. It asks for the API key, and keeps it in the home repo sealed with the server secret.\n\n")
+	b.WriteString("These automations run on the factory's pace: the Fabrica server calls their webhook on its heartbeat. Cursor made each webhook when Fabrica saved the automation, but its API doesn't say what the webhook's URL and auth header are, so Fabrica needs you to copy them. For each automation below that `fabrica plan` says Fabrica has no webhook for yet, open it in Cursor (cursor.com → Cloud Agents → Automations), copy the URL of its **Webhook triggered** trigger, click **Generate auth header**, and run the command, with the URL in place of `<the webhook URL>`. It asks for the auth header (paste all of it), and keeps its value in the home repo sealed with the server secret.\n\n")
 	for _, res := range hooked {
 		fmt.Fprintf(b, "- **%s**:\n\n  ```\n  %s\n  ```\n\n", res.Identity, WebhookCommand(factory, "cursor-cloud", res.Identity))
 	}
@@ -335,8 +335,8 @@ type cursorTrigger struct {
 	Cron *cursorCron `json:"cron,omitempty"`
 	Git  *cursorGit  `json:"git,omitempty"`
 	// Webhook fires the automation when its generic webhook endpoint is
-	// called. It has no settings: Cursor makes the endpoint's URL and API
-	// key when the automation is saved.
+	// called. It has no settings: Cursor makes the endpoint's URL when the
+	// automation is saved, and an auth header when you ask for one.
 	Webhook *struct{} `json:"webhook,omitempty"`
 }
 

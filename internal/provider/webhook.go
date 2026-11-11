@@ -19,9 +19,14 @@ type WebhookCall struct {
 	// Runtime is the stub's runtime, which says how to call its webhook.
 	Runtime string
 	URL     string
-	// Token is what the runtime checks on each call: a bearer token or API
-	// key. It's a secret, so it never goes into an error or a log.
+	// Token is what the runtime checks on each call: a bearer token, or
+	// the value of Header. It's a secret, so it never goes into an error or
+	// a log.
 	Token string
+	// Header is the request header Token goes in as it is, like
+	// Authorization for "Bearer …". Empty sends "Authorization: Bearer
+	// <Token>".
+	Header string
 	// Text is what the run is told about why it started.
 	Text string
 }
@@ -46,8 +51,8 @@ const (
 	webhookMaxWait     = 30 * time.Second
 )
 
-// FireWebhook calls a stub's webhook: a POST with the token as a bearer
-// token and a JSON body, {"text": …}, which Claude routines pass to the
+// FireWebhook calls a stub's webhook: a POST with its credential (the auth
+// header the runtime gave, or a bearer token) and a JSON body, {"text": …}, which Claude routines pass to the
 // session they start, and other runtimes accept as the webhook's payload.
 // A 2xx answer means the runtime started the run.
 func FireWebhook(ctx context.Context, client *http.Client, call WebhookCall) error {
@@ -63,7 +68,11 @@ func FireWebhook(ctx context.Context, client *http.Client, call WebhookCall) err
 		if err != nil {
 			return fmt.Errorf("the webhook URL doesn't work: %w", err)
 		}
-		req.Header.Set("Authorization", "Bearer "+call.Token)
+		if call.Header != "" {
+			req.Header.Set(call.Header, call.Token)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+call.Token)
+		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "fabrica")
 		for k, v := range webhookHeaders[call.Runtime] {

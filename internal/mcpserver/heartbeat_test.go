@@ -85,11 +85,15 @@ func TestHeartbeat(t *testing.T) {
 		"routines/sweep.md": "---\ntrigger: { on: pace }\n---\nSweep.\n",
 	})
 	hook := func(identity, path, tok, secret string) *home.Webhook {
+		header := ""
+		if strings.HasPrefix(tok, "Bearer ") {
+			header = "Authorization" // a whole auth header, like Cursor's
+		}
 		sealed, err := token.Seal(secret, "paced", identity, tok)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return &home.Webhook{URL: hooks.ts.URL + path, Token: sealed}
+		return &home.Webhook{URL: hooks.ts.URL + path, Token: sealed, Header: header}
 	}
 	stub := func(routine, runtime, repo string, wh *home.Webhook) home.Resource {
 		return home.Resource{ID: "x#" + routine + "@" + repo, Runtime: runtime, Routine: routine, Repo: repo, RemoteID: "r", Mode: "api",
@@ -98,7 +102,7 @@ func TestHeartbeat(t *testing.T) {
 	const app = "github.com/acme/app"
 	state := &home.State{Resources: []home.Resource{
 		stub("tidy", "claude-code-cloud", app, hook("x#tidy@"+app, "/claude/tidy", "tok-claude", testkit.Secret)),
-		stub("sweep", "cursor-cloud", app, hook("x#sweep@"+app, "/cursor/sweep", "tok-cursor", testkit.Secret)),
+		stub("sweep", "cursor-cloud", app, hook("x#sweep@"+app, "/cursor/sweep", "Bearer tok-cursor", testkit.Secret)),
 		// Sealed with another server secret: recorded as failed, never called.
 		stub("sweep", "claude-code-cloud", app, hook("x#sweep@"+app, "/claude/sweep", "tok-old", strings.Repeat("o", 32))),
 		// No webhook yet: nothing to call.

@@ -97,6 +97,16 @@ func TestPaceRoutineWebhook(t *testing.T) {
 		t.Errorf("with the webhook, plan is quiet about it:\n%s", fp.Diags)
 	}
 
+	// A whole auth header is kept as a header name and its sealed value.
+	if err := set(apply.Webhook{Factory: "pr-review", Runtime: "claude-code-cloud", Identity: id, URL: "https://api2.cursor.sh/automations/x/webhook", Token: "Authorization: Bearer crsr_x", Secret: testkit.Secret}); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.resource(home.Key{Runtime: "claude-code-cloud", ID: id}); r.Webhook.Header != "Authorization" || strings.Contains(r.Webhook.Token, "crsr_x") {
+		t.Errorf("state records %+v", r.Webhook)
+	} else if got, _ := token.Open(testkit.Secret, "pr-review", id, r.Webhook.Token); got != "Bearer crsr_x" {
+		t.Errorf("the sealed value opens to %q", got)
+	}
+
 	// Changing the pace or every: needs no apply: the stub doesn't bake
 	// them in.
 	h.w.UpdateBlueprint(map[string]string{"routines/tidy.md": strings.Replace(tidy, "every: 4", "every: 7", 1)})
@@ -139,4 +149,22 @@ func (h *harness) resource(key home.Key) home.Resource {
 		h.t.Fatalf("state has no %v", key)
 	}
 	return s.Resources[i]
+}
+
+func TestSplitAuthHeader(t *testing.T) {
+	for pasted, want := range map[string][2]string{
+		"sk-ant-oat01-abc":                    {"", "sk-ant-oat01-abc"},
+		"  sk-ant-oat01-abc \n":               {"", "sk-ant-oat01-abc"},
+		"Authorization: Bearer crsr_abc":      {"Authorization", "Bearer crsr_abc"},
+		"X-Webhook-Secret:   s3cr3t  ":        {"X-Webhook-Secret", "s3cr3t"},
+		`-H "Authorization: Bearer crsr_abc"`: {"Authorization", "Bearer crsr_abc"},
+		"'Authorization: Bearer crsr_abc'":    {"Authorization", "Bearer crsr_abc"},
+		"user:pass-looking-token":             {"", "user:pass-looking-token"},
+		"":                                    {"", ""},
+	} {
+		h, v := apply.SplitAuthHeader(pasted)
+		if h != want[0] || v != want[1] {
+			t.Errorf("SplitAuthHeader(%q) = %q, %q; want %q, %q", pasted, h, v, want[0], want[1])
+		}
+	}
 }

@@ -29,8 +29,10 @@ copy them from the runtime and give them to Fabrica with this command.
 <stub> is the stub's identity, like '4ckr#tidy@github.com/acme/app'.
 Handoffs, Cursor's setup file and ` + "`fabrica plan`" + ` print the exact command
 for each stub that needs it. Pass the webhook's URL with --url, and paste
-its token (or API key) when asked; without a terminal, it's read from
-stdin.
+its credential when asked: the token (a Claude routine's), or the whole
+auth header (what a Cursor automation's "Generate auth header" gives, like
+"Authorization: Bearer …"), which Fabrica then sends as it is. Without a
+terminal, it's read from stdin.
 
 The token is sealed with the factory's server secret (from
 FABRICA_SERVER_SECRET, or saved by ` + "`fabrica auth login`" + `) and kept in the
@@ -64,7 +66,7 @@ secret, run this again for each one (` + "`fabrica plan`" + ` lists them).`,
 				return err
 			}
 			w := apply.Webhook{Factory: factory, Runtime: runtime, Identity: identity, URL: hookURL, Secret: secret}
-			if w.Token, err = newPrompter(cmd.InOrStdin(), cmd.ErrOrStderr()).secret("The webhook's token (or API key): "); err != nil {
+			if w.Token, err = newPrompter(cmd.InOrStdin(), cmd.ErrOrStderr()).secret("The webhook's token, or its whole auth header: "); err != nil {
 				return fmt.Errorf("couldn't read the webhook's token: %w", err)
 			}
 			res, err := apply.SetWebhook(ctx, dir, w, time.Now())

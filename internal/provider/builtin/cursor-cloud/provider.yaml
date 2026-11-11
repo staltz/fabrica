@@ -29,6 +29,13 @@ mcp_auth:
 multiple_triggers: true
 triggers:
   schedule: native
+  # The automation's webhook trigger: Fabrica installs it for a pace
+  # trigger, and the Fabrica server calls it on the factory's heartbeat.
+  # The API makes the trigger, but doesn't return its URL or auth header,
+  # so you copy those from Cursor (the setup file says how). The URL looks
+  # like https://api2.cursor.sh/automations/webhook/<uuid>, and "Generate
+  # auth header" gives `Authorization: Bearer crsr_<hex>`.
+  webhook: native
   github.pull_request.opened: native
   github.pull_request.synchronize: native
   github.pull_request.labeled: native

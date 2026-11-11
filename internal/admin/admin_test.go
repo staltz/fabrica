@@ -265,7 +265,7 @@ func TestListFieldNames(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &page); err != nil {
 		t.Fatal(err)
 	}
-	if string(page["schema_version"]) != "3" {
+	if string(page["schema_version"]) != "4" {
 		t.Errorf("schema_version = %s", page["schema_version"])
 	}
 	if _, ok := page["next"]; ok {
@@ -305,7 +305,7 @@ func TestListFieldNames(t *testing.T) {
 	}
 	// Nothing found is an empty array, not null.
 	_, body = w.get(t, "/_admin/runs?factory=nobody")
-	if body != `{"schema_version":3,"runs":[]}`+"\n" {
+	if body != `{"schema_version":4,"runs":[]}`+"\n" {
 		t.Errorf("an empty page = %s", body)
 	}
 }

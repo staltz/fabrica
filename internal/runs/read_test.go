@@ -345,7 +345,7 @@ func TestJSONShape(t *testing.T) {
 		PRLinks: []string{"https://github.com/acme/app/pull/412"},
 	}
 	page, _ := json.Marshal(NewPage([]Summary{sum}, "run_06gm"))
-	if want := `{"schema_version":3,"runs":[{"run_id":"run_06gmjeps8jf8zfjjrfmydev50g","started_at":"2026-10-17T09:41:02Z","last_at":"2026-10-17T09:58:40Z",` +
+	if want := `{"schema_version":4,"runs":[{"run_id":"run_06gmjeps8jf8zfjjrfmydev50g","started_at":"2026-10-17T09:41:02Z","last_at":"2026-10-17T09:58:40Z",` +
 		`"outcome":"succeeded","intent":"Review PR 412 for the billing retry change","routine":"pr-review","runtime":"claude-code-cloud",` +
 		`"repo":"github.com/acme/app","factory":"acme","blueprint_sha":"ee8f142","served_by":"remote","session":"https://claude.ai/code/session_1",` +
 		`"last_summary":"Posted review with two blocking comments","checkpoint_count":3,"friction_count":1,"pr_links":["https://github.com/acme/app/pull/412"]}],` +
@@ -356,7 +356,7 @@ func TestJSONShape(t *testing.T) {
 	// An interactive run with nothing else known leaves the optional fields
 	// out, and the last page has no next.
 	bare, _ := json.Marshal(NewPage(nil, ""))
-	if string(bare) != `{"schema_version":3,"runs":[]}` {
+	if string(bare) != `{"schema_version":4,"runs":[]}` {
 		t.Errorf("an empty page = %s", bare)
 	}
 	min, _ := json.Marshal(Summary{RunID: "run_x", StartedAt: t0, LastAt: t0, Outcome: OutcomeStale, Intent: "x", ServedBy: ServedLocal, PRLinks: []string{}})

@@ -56,7 +56,38 @@ func (e *Env) PlanCloud(ctx context.Context, h *home.Home, name string) *Factory
 	providers := e.providersForCleanup(ctx, dp)
 	current := e.refresh(ctx, dp, providers)
 	e.diff(dp, current, providers)
+	checkWebhooks(dp)
 	return dp
+}
+
+// checkWebhooks warns about installed stubs that fire on a webhook (a pace
+// trigger) the Fabrica server can't call: Fabrica was never given it, or
+// its token was sealed with an earlier server secret. Stubs that aren't
+// installed yet get the same step in their handoff, or in their runtime's
+// setup file.
+func checkWebhooks(dp *Factory) {
+	if dp.State == nil {
+		return
+	}
+	for _, want := range dp.Desired {
+		if want.Stub == nil || !want.Stub.Shape.HasTrigger(blueprint.WebhookTrigger) {
+			continue
+		}
+		i, ok := dp.State.FindResource(want.Key)
+		if !ok {
+			continue
+		}
+		cur := dp.State.Resources[i]
+		cmd := provider.WebhookCommand(dp.Name, want.Runtime, want.Key.ID)
+		switch {
+		case cur.Webhook == nil:
+			dp.Diags.Warnf("webhook.missing", want.Key.ID, "routine %s runs on the factory's pace, but Fabrica doesn't have the webhook %s made for it on %s, so the Fabrica server can't run it", want.Routine, want.Runtime, want.Repo).
+				Hintf("copy the webhook's URL and its token or auth header from %s, and run `%s`", want.Runtime, cmd)
+		case want.TokenHash != "" && cur.Webhook.TokenHash != want.TokenHash:
+			dp.Diags.Warnf("webhook.stale", want.Key.ID, "routine %s runs on the factory's pace, but its webhook's token was sealed with an earlier server secret, so the Fabrica server can't open it", want.Routine).
+				Hintf("run `%s` again, with the webhook's URL and its token or auth header from %s", cmd, want.Runtime)
+		}
+	}
 }
 
 // planDesired works out every stub the factory should have, and every

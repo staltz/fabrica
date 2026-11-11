@@ -180,8 +180,8 @@ func parseRoutine(data []byte, name, file string) *Routine {
 			return fail("trigger.every only makes sense with `on: pace`")
 		case t.Every != nil && (*t.Every < 1 || *t.Every > maxEvery):
 			return fail("trigger.every is %d; it's how many of the factory's paces go between runs, a whole number from 1 to %d", *t.Every, maxEvery)
-		case t.On == PaceTrigger && seenTriggers[ScheduleTrigger], t.On == ScheduleTrigger && seenTriggers[PaceTrigger]:
-			return fail("triggers: lists both schedule and pace; a pace trigger is a schedule too, and a routine runs on one schedule (to run on two, write a routine for each)")
+		case t.On == WebhookTrigger:
+			return fail("trigger.on webhook is how runtimes install a pace trigger, for the Fabrica server to call; to run a routine every so often, use `trigger: { on: pace, every: 4 }`")
 		case t.On == InitTrigger && len(triggers) > 1:
 			return fail("init can't share a routine with other triggers: an init routine runs once, when the factory is created; move the other triggers to a routine of their own")
 		case seenTriggers[t.On]:

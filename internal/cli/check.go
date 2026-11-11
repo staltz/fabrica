@@ -124,7 +124,7 @@ func checkHome(ctx context.Context, out io.Writer, t *tools, dir string) error {
 		return err
 	}
 	secret, _ := token.SecretFromEnv()
-	env := &plan.Env{Loader: t.loader, Git: t.git, Secret: secret, ServerSecret: savedServerSecret, Binary: fabricaBinary(), UserHome: userHome(), SkipLocal: false}
+	env := &plan.Env{Loader: t.loader, Git: t.git, Secret: secret, ServerSecret: savedServerSecret, Binary: fabricaBinary(), UserHome: userHome(), CacheDir: t.cacheDir, SkipLocal: false}
 	p := plan.Build(ctx, env, h)
 	kind := "team home repo"
 	if h.Personal {

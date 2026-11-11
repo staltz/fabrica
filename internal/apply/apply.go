@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
@@ -565,18 +566,7 @@ func modelFor(shape stub.Shape) *provider.ResourceModel {
 }
 
 // connectorsFor is a shape's connectors, for a provider.
-func connectorsFor(shape stub.Shape) []provider.ResourceConnector {
-	var out []provider.ResourceConnector
-	for _, c := range shape.Connectors {
-		rc := provider.ResourceConnector{Name: c.Name, Kind: c.Kind}
-		if c.Server != nil {
-			rc.URL, rc.Transport, rc.Auth, rc.Secret = c.Server.URL, c.Server.Transport, c.Server.Auth, c.Server.Secret
-			rc.Command, rc.Args, rc.Env = c.Server.Command, c.Server.Args, c.Server.Env
-		}
-		out = append(out, rc)
-	}
-	return out
-}
+func connectorsFor(shape stub.Shape) []provider.ResourceConnector { return shape.ResourceConnectors() }
 
 // fabricaURL is the URL a runtime should use for the Fabrica server: with
 // the token in the path when the runtime can't send headers.
@@ -667,6 +657,9 @@ func writeHandoff(opts Options, dp *plan.Factory, state *home.State, c *plan.Cha
 			data.Fabrica.Header = "Bearer " + tok
 		}
 		data.Prompt, data.Fingerprint = r.Prompt, r.Fingerprint
+		if shape.HasTrigger(blueprint.WebhookTrigger) && (c.Current == nil || c.Current.Webhook == nil) {
+			data.WebhookCommand = provider.WebhookCommand(dp.Name, c.Key.Runtime, c.Key.ID)
+		}
 	}
 	text, err := c.Provider.RenderHandoff(data)
 	if err != nil {
@@ -758,6 +751,11 @@ func HandoffID(factory string, key home.Key, action, version string) string {
 
 func upsertResource(state *home.State, r home.Resource) {
 	if i, ok := state.FindResource(r.Key()); ok {
+		// An update keeps the stub's webhook: the runtime keeps its URL and
+		// token for as long as the stub fires on one.
+		if old := state.Resources[i]; r.Webhook == nil && r.HasWebhookTrigger() {
+			r.Webhook = old.Webhook
+		}
 		state.Resources[i] = r
 		return
 	}
@@ -810,6 +808,24 @@ func applyLocal(out io.Writer, lp *plan.LocalPlan) error {
 			}
 			fmt.Fprintln(out, "  Scheduled tasks only run while the app is open and the computer is awake.")
 		}
+	}
+	return applyHeartbeat(out, lp.Heartbeat)
+}
+
+// applyHeartbeat installs, updates or removes the heartbeat job.
+func applyHeartbeat(out io.Writer, hb *plan.LocalHeartbeat) error {
+	if hb == nil || len(hb.Changes) == 0 {
+		return nil
+	}
+	if err := hb.Scheduler.Apply(hb.Job); err != nil {
+		return fmt.Errorf("heartbeat: %w", err)
+	}
+	fmt.Fprintf(out, "%s %s\n", style.For(out).Bold("Local heartbeat:"), hb.Scheduler.Describe())
+	for _, c := range hb.Changes {
+		fmt.Fprintf(out, "  %s %s\n", style.For(out).Green("✓"), c)
+	}
+	if hb.Job != nil {
+		fmt.Fprintln(out, "  It runs while you're logged in. Each routine with a pace trigger runs in a session of its own (`claude -p`), in a fresh clone of its repo; `fabrica heartbeat` says where their output goes.")
 	}
 	return nil
 }

@@ -27,8 +27,10 @@ The code in the last column is what `fabrica plan --json` reports, so scripts ca
 | A factory mixing cloud and local runtimes | ❌ error | — | — | `factory.invalid` |
 | A routine's `runtimes` names one the factory doesn't list, or a cloud runtime has no routines | ❌ error | — | — | `factory.invalid`, `factory.idle-runtime` (when `"*"` adds none there) |
 | A param that no routine declares, or a required param that isn't set | ❌ error | — | — | `factory.unknown-param`, `factory.missing-param` |
-| A routine with a `pace` trigger in a factory without `pace:`, or at a period cron can't repeat evenly (like 4 paces of `25m`) | ❌ error | — | — | `factory.pace` |
-| A factory's `pace:` changed, so its pace triggers' cron did too (stub outdated) | 🔧 update in `plan` | ❌ `run_begin` refuses | ❌ `run_begin` refuses | — |
+| A routine with a `pace` trigger in a factory without `pace:` | ❌ error | — | — | `factory.pace` |
+| A routine with a `pace` or `schedule` trigger in a local factory with `targets: ["*"]` | ❌ error | — | — | `factory.schedule-wildcard` |
+| A local factory runs routines on its pace, on a system where Fabrica can't install the heartbeat job | ⚠️ warning: keep `fabrica heartbeat --watch` running | — | — | `local.heartbeat` |
+| A stub of a routine with a `pace` trigger whose webhook Fabrica doesn't have, or whose token was sealed with an earlier server secret | ⚠️ warning, with the `fabrica webhook` command to run | — | the heartbeat skips it (no webhook), or records the call as failed (stale token) | `webhook.missing`, `webhook.stale` |
 | A ref that's both a branch and a tag | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `blueprint.resolve` |
 | A trigger, connector or side effect a runtime doesn't support (including `github.pr_autofix` anywhere it isn't native, and a native side effect on a local hook or an init routine) | ❌ error | — | — | `capability.trigger`, `capability.connector`, `capability.side-effect` |
 | More than one init routine in a blueprint, or one that prefers a runtime that doesn't exist | ❌ error | ❌ refuses to serve | ❌ refuses to serve | `init.ambiguous`, `init.unknown-runtime` |

@@ -185,8 +185,8 @@ func TestStrictErrors(t *testing.T) {
 		{"pace with cron", "routine.invalid", "trigger.cron only makes sense with `on: schedule`", map[string]string{
 			"routines/x.md": "---\ntrigger: { on: pace, cron: \"0 9 * * 1\" }\n---\nHi\n",
 		}},
-		{"pace and schedule", "routine.invalid", "lists both schedule and pace", map[string]string{
-			"routines/x.md": "---\ntriggers: [{ on: schedule, cron: \"0 9 * * 1\" }, { on: pace, every: 4 }]\n---\nHi\n",
+		{"a webhook trigger", "routine.invalid", "use `trigger: { on: pace, every: 4 }`", map[string]string{
+			"routines/x.md": "---\ntrigger: { on: webhook }\n---\nHi\n",
 		}},
 		{"skill name mismatch", "skill.invalid", "needs them to match", map[string]string{
 			"skills/a/SKILL.md": skill("b", ""),
@@ -770,14 +770,15 @@ func TestPaceTrigger(t *testing.T) {
 		"fabrica.yaml":      "",
 		"routines/tidy.md":  "---\ntriggers:\n  - { on: github.push }\n  - { on: pace, every: 4 }\n---\nTidy.\n",
 		"routines/check.md": "---\ntrigger: { on: pace }\n---\nCheck.\n",
+		"routines/both.md":  "---\ntriggers:\n  - { on: schedule, cron: \"0 9 * * 1\" }\n  - { on: pace, every: 2 }\n---\nBoth.\n",
 	}))
 	r := f.Routines["tidy"]
 	want := []blueprint.Trigger{{On: "github.push"}, {On: "pace", Every: 4}}
 	if !reflect.DeepEqual(r.Triggers, want) {
 		t.Errorf("Triggers = %+v, want %+v", r.Triggers, want)
 	}
-	if !r.HasPace() || !r.HasTrigger("pace") || !r.HasTrigger("schedule") {
-		t.Errorf("a pace trigger is a schedule too: %+v", r.Triggers)
+	if !r.HasPace() || r.Every() != 4 || !r.HasTrigger("pace") || !r.HasTrigger("webhook") || r.HasTrigger("schedule") {
+		t.Errorf("a pace trigger is installed as a webhook, not a schedule: %+v", r.Triggers)
 	}
 	if got := blueprint.DescribeTriggers(r.Triggers); got != "github.push, pace (every 4 paces)" {
 		t.Errorf("DescribeTriggers = %q", got)
@@ -785,22 +786,15 @@ func TestPaceTrigger(t *testing.T) {
 	if got := f.Routines["check"].Triggers; !reflect.DeepEqual(got, []blueprint.Trigger{{On: "pace", Every: 1}}) {
 		t.Errorf("every: defaults to 1, got %+v", got)
 	}
+	if f.Routines["both"] == nil || f.Routines["both"].Every() != 2 {
+		t.Errorf("a routine can run on a schedule and a pace: %+v", f.Routines["both"])
+	}
 
-	at, err := r.Triggers[1].AtPace(30)
-	if err != nil || at != (blueprint.Trigger{On: "schedule", Cron: "0 */2 * * *", Every: 4}) {
-		t.Errorf("AtPace(30m) = %+v, %v", at, err)
+	if got := r.Triggers[1].Installed(); got != (blueprint.Trigger{On: "webhook"}) {
+		t.Errorf("Installed() = %+v; a pace trigger is a webhook, without the pace or every:", got)
 	}
-	if got := at.String(); got != "schedule (0 */2 * * *, every 4 paces)" {
-		t.Errorf("String = %q", got)
-	}
-	if at, err := r.Triggers[0].AtPace(30); err != nil || at != r.Triggers[0] {
-		t.Errorf("other triggers stay as they are: %+v, %v", at, err)
-	}
-	if _, err := r.Triggers[1].AtPace(0); err == nil {
-		t.Error("a pace trigger needs a pace")
-	}
-	if _, err := r.Triggers[1].AtPace(25); err == nil || !strings.Contains(err.Error(), "every 4 paces is every 100m") {
-		t.Errorf("4 paces of 25m is 100m, which cron can't repeat: %v", err)
+	if got := r.Triggers[0].Installed(); got != r.Triggers[0] {
+		t.Errorf("other triggers stay as they are: %+v", got)
 	}
 }
 

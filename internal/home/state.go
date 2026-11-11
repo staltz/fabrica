@@ -139,6 +139,19 @@ type AgentShape struct {
 	UnsetSecrets []string `yaml:"unset_secrets,omitempty"`
 }
 
+// HasTrigger reports whether one of the shape's triggers is on.
+func (s Shape) HasTrigger(on string) bool {
+	if s.Trigger == on {
+		return true
+	}
+	for _, t := range s.Triggers {
+		if t.On == on {
+			return true
+		}
+	}
+	return false
+}
+
 // ShapeTrigger is one of the triggers of a stub that has several.
 type ShapeTrigger struct {
 	On   string `yaml:"on"`
@@ -170,6 +183,11 @@ type Resource struct {
 	TokenHash string    `yaml:"token_hash,omitempty"`
 	Shape     Shape     `yaml:"shape"`
 	AppliedAt time.Time `yaml:"applied_at"`
+	// Webhook is the webhook the runtime made for the stub's webhook
+	// trigger (how a pace trigger is installed), which the Fabrica server
+	// calls on the factory's heartbeat. `fabrica webhook` records it, since
+	// no runtime's API hands it over. Nil until then.
+	Webhook *Webhook `yaml:"webhook,omitempty"`
 	// RenamedFrom is the runtime's old name, when an earlier Fabrica release
 	// recorded the resource under it. It isn't saved.
 	RenamedFrom string `yaml:"-"`
@@ -177,6 +195,35 @@ type Resource struct {
 
 // Unverifiable reports whether Fabrica can't check on the resource.
 func (r Resource) Unverifiable() bool { return r.RemoteID == "" }
+
+// HasWebhookTrigger reports whether the stub fires on a webhook, which the
+// Fabrica server calls on the factory's heartbeat.
+func (r Resource) HasWebhookTrigger() bool { return r.Shape.HasTrigger(WebhookTrigger) }
+
+// WebhookTrigger is the trigger a runtime installs for a pace trigger
+// (blueprint.WebhookTrigger).
+const WebhookTrigger = "webhook"
+
+// Webhook is what Fabrica needs to call a stub's webhook.
+type Webhook struct {
+	// URL is where to POST to fire the stub.
+	URL string `yaml:"url"`
+	// Token is what the runtime checks on each call, sealed with the server
+	// secret (see token.Seal), so the home repo never holds it in the
+	// clear: a bearer token, or the value of Header.
+	Token string `yaml:"token"`
+	// Header is the request header Token goes in, when the runtime gave a
+	// whole header (Cursor's "Generate auth header"), like Authorization,
+	// and Token is its value as given (like "Bearer …"). Empty means Token
+	// is a bare token, sent as "Authorization: Bearer <token>".
+	Header string `yaml:"header,omitempty"`
+	// TokenHash is the hash of the factory's token when the webhook's token
+	// was sealed. When the server secret is rotated, it no longer matches,
+	// and the token can't be opened anymore: `fabrica webhook` has to record
+	// it again.
+	TokenHash string    `yaml:"token_hash,omitempty"`
+	SetAt     time.Time `yaml:"set_at"`
+}
 
 // Pending is a handoff that was issued but not confirmed yet, or (when
 // Uncertain is set) an API create whose result was never learned.

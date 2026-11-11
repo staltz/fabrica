@@ -15,14 +15,15 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `paths` | Where Fabrica keeps things: the personal home repo, the cache and local run history. |
 | `fabline` | The Fabrica line, and the list of every sentence ever accepted. |
 | `gitx` | A thin wrapper around the `git` binary: a cache of bare clones, unpacked commit trees, ref resolution, and the commit and push operations the apply lock is built on. |
-| `provider` | Capability matrices, the built-in providers (embedded YAML, handoff and launch templates), folder providers, the `api` protocol client, the client for Cursor's Automations API, the `agent-sdk` driver that deploys blueprint agents, the launchers that start init sessions (Cursor's Cloud Agents API, `claude -p`), and handoff rendering. |
+| `provider` | Capability matrices, the built-in providers (embedded YAML, handoff and launch templates), folder providers, the `api` protocol client, the client for Cursor's Automations API, the `agent-sdk` driver that deploys blueprint agents, the launchers that start init sessions (Cursor's Cloud Agents API, `claude -p`), handoff rendering, and calling a stub's webhook. |
 | `blueprint` | The blueprint format: manifest, lock, every item kind (Agent SDK projects in `agents/` included), import resolution (blueprints and plain repos), filters, collisions, overrides, expects, lint warnings, and `lock`/`upgrade`. |
 | `stub` | A routine checked against one runtime: its shape, fingerprint, identity and stub prompt. |
 | `product` | Inspects product repos (on disk or a remote's default branch): the Fabrica line, repo skills, clashes and expects. |
 | `home` | Home repos: factories, local matching, state files, and creating your personal home repo when it's missing. |
-| `token` | Factory tokens: `HMAC(secret, factory name)`, the admin token (the same, for the name `_admin`), and making new server secrets. |
+| `pace` | Factory paces, and the beats of a factory's heartbeat, counted from the Unix epoch. |
+| `token` | Factory tokens: `HMAC(secret, factory name)`, the admin token (the same, for the name `_admin`), making new server secrets, and sealing the webhook tokens that state files keep (AES-GCM, with a key derived from the server secret). |
 | `credentials` | Finding credentials (the environment first, then where `fabrica auth login` saved them) and saving them: the macOS Keychain through `security`, the Secret Service through `secret-tool`, or a file only you can read. |
-| `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries. |
+| `localtools` | Editors for Claude Code, Cursor and Codex config files, which only touch Fabrica's own entries, and the heartbeat job (a launchd agent or a systemd user timer). |
 | `plan` | Compares what's wanted with what's installed, and sorts it into changes and errors. |
 | `auth` | Works out the credentials and git access a home repo needs for `fabrica auth`, and checks each with its service: a server by the tokens it accepts, a runtime by its provider's verifier, git with `ls-remote`. |
 | `scaffold` | Writes new blueprints for `fabrica new`: the starter blueprint (from `examples`) or an empty one, never overwriting a file. |
@@ -31,7 +32,8 @@ Everything lives under `internal/`, so nothing outside this module depends on it
 | `runview` | Shows run history to people: the table of `fabrica runs`, one run's timeline, and the retro bundle. It formats what `runs` reads, and cleans agent-written text on the way out. |
 | `admin` | The admin API: a read-only JSON view of run history, behind the admin token. |
 | `dashboard` | The run-history dashboard: server-rendered pages with inline SVG charts, behind the admin token (remote) or a one-time code (local). |
-| `mcpserver` | The MCP server: the nine tools, the local (stdio) and remote (HTTP) modes, stale-stub checks and skill unpacking. The remote server also routes `/_admin` and `/_dashboard` to `admin` and `dashboard`, and only routes to them. |
+| `mcpserver` | The MCP server: the nine tools, the local (stdio) and remote (HTTP) modes, stale-stub checks, skill unpacking, and the remote server's heartbeat, which calls the webhooks of routines with a pace trigger. The remote server also routes `/_admin` and `/_dashboard` to `admin` and `dashboard`, and only routes to them. |
+| `heartbeat` | What `fabrica heartbeat` does: the local heartbeat, which starts the sessions of local routines with a pace trigger. |
 | `hook` | What `fabrica hook` does when a local tool fires a hook: running a local routine, or the session pointer hook that tells a session where its transcript is. |
 | `selfupdate` | What `fabrica -u` does: installs the latest GitHub release over the running binary, checked against the release's checksums. |
 | `cli` | The cobra commands. Thin: they parse flags, call the packages above and print. |

@@ -88,9 +88,13 @@ func (c *claudeLauncher) Launch(ctx context.Context, s Session) (Launched, error
 		return Launched{}, err
 	}
 
+	title := s.Title
+	if title == "" {
+		title = "Fabrica init " + s.Routine + " of factory " + s.Factory
+	}
 	args := []string{"-p", s.Prompt,
 		"--session-id", id,
-		"--name", "Fabrica init " + s.Routine + " of factory " + s.Factory,
+		"--name", title,
 		"--mcp-config", configPath, "--strict-mcp-config",
 		"--permission-mode", "auto",
 	}
@@ -127,6 +131,9 @@ func claudeMCPConfigFor(s Session) ([]byte, error) {
 	fabrica := map[string]any{"type": "http", "url": s.Fabrica.URL}
 	if s.Fabrica.Placement == TokenInHeader {
 		fabrica["headers"] = map[string]string{"Authorization": "Bearer " + s.Fabrica.Token}
+	}
+	if len(s.FabricaCommand) > 0 {
+		fabrica = map[string]any{"type": "stdio", "command": s.FabricaCommand[0], "args": s.FabricaCommand[1:]}
 	}
 	servers["fabrica"] = fabrica
 	for _, conn := range s.Connectors {

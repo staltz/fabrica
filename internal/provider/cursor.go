@@ -220,7 +220,34 @@ func (c *cursorAPI) Setup(factory string, resources []Resource) string {
 		fmt.Fprintf(&b, "- **%s**: %s\n", name, servers[name])
 	}
 	fmt.Fprintf(&b, "\nYou set these up once. Come back when this file changes: Fabrica rewrites it whenever an apply creates or updates the factory's Cursor automations, like after the server secret is rotated (which changes the token) or the factory's `server:` changes.\n")
+	writeCursorWebhooks(&b, factory, resources)
 	return b.String()
+}
+
+// writeCursorWebhooks says how to give Fabrica the webhooks of the
+// automations that fire on one (the routines with a pace trigger). Cursor's
+// API makes the webhook trigger, but never returns its URL or auth header,
+// and the Fabrica server needs both to call it on the factory's heartbeat.
+func writeCursorWebhooks(b *strings.Builder, factory string, resources []Resource) {
+	var hooked []Resource
+	for _, res := range resources {
+		for _, tr := range res.Triggers {
+			if tr.On == "webhook" {
+				hooked = append(hooked, res)
+				break
+			}
+		}
+	}
+	if len(hooked) == 0 {
+		return
+	}
+	sort.Slice(hooked, func(i, j int) bool { return hooked[i].Identity < hooked[j].Identity })
+	b.WriteString("\n## Webhooks\n\n")
+	b.WriteString("These automations run on the factory's pace: the Fabrica server calls their webhook on its heartbeat. Cursor made each webhook when Fabrica saved the automation, but its API doesn't say what the webhook's URL and auth header are, so Fabrica needs you to copy them. For each automation below that `fabrica plan` says Fabrica has no webhook for yet, open it in Cursor (cursor.com → Cloud Agents → Automations), copy the URL of its **Webhook triggered** trigger, click **Generate auth header**, and run the command, with the URL in place of `<the webhook URL>`. It asks for the auth header (paste all of it), and keeps its value in the home repo sealed with the server secret.\n\n")
+	for _, res := range hooked {
+		fmt.Fprintf(b, "- **%s**:\n\n  ```\n  %s\n  ```\n\n", res.Identity, WebhookCommand(factory, "cursor-cloud", res.Identity))
+	}
+	b.WriteString("Until you do, those automations never run. You do it once per automation: updates keep the webhook.\n")
 }
 
 func describeCursorMCPServer(conn ResourceConnector) string {
@@ -307,6 +334,10 @@ type cursorGitConfig struct {
 type cursorTrigger struct {
 	Cron *cursorCron `json:"cron,omitempty"`
 	Git  *cursorGit  `json:"git,omitempty"`
+	// Webhook fires the automation when its generic webhook endpoint is
+	// called. It has no settings: Cursor makes the endpoint's URL when the
+	// automation is saved, and an auth header when you ask for one.
+	Webhook *struct{} `json:"webhook,omitempty"`
 }
 
 type cursorCron struct {
@@ -514,6 +545,8 @@ func cursorWorkflowFor(res Resource) (*cursorWorkflow, error) {
 				return nil, errors.New("a schedule trigger needs a cron expression")
 			}
 			wf.Triggers = append(wf.Triggers, cursorTrigger{Cron: &cursorCron{Cron: tr.Cron}})
+		case on == "webhook":
+			wf.Triggers = append(wf.Triggers, cursorTrigger{Webhook: &struct{}{}})
 		case cursorPRActions[on] != "":
 			wf.Triggers = append(wf.Triggers, cursorTrigger{Git: &cursorGit{PullRequest: &cursorPullRequest{Repos: []string{repo}, PRAction: cursorPRActions[on]}}})
 		case on == "github.pull_request.labeled":

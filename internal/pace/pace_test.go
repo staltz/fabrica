@@ -1,12 +1,12 @@
 package pace
 
 import (
-	"strings"
 	"testing"
+	"time"
 )
 
 func TestParse(t *testing.T) {
-	good := map[string]Pace{"5m": 5, "30m": 30, "90m": 90, "1h": 60, "4h": 240, "2d": 2 * 1440, "365d": 365 * 1440}
+	good := map[string]Pace{"5m": 5, "7m": 7, "30m": 30, "90m": 90, "1h": 60, "4h": 240, "2d": 2 * 1440, "365d": 365 * 1440}
 	for s, want := range good {
 		got, err := Parse(s)
 		if err != nil || got != want {
@@ -29,38 +29,43 @@ func TestString(t *testing.T) {
 	}
 }
 
-func TestCron(t *testing.T) {
-	cases := map[int]string{
-		1:                 "* * * * *",
-		5:                 "*/5 * * * *",
-		30:                "*/30 * * * *",
-		60:                "0 * * * *",
-		120:               "0 */2 * * *",
-		12 * 60:           "0 */12 * * *",
-		1440:              "0 0 * * *",
-		2 * 1440:          "0 0 */2 * *",
-		7 * 1440:          "0 0 * * 1",
-		31 * 1440:         "0 0 */31 * *",
-		Pace(30).Times(4): "0 */2 * * *",
-	}
-	for minutes, want := range cases {
-		got, err := Cron(minutes)
-		if err != nil || got != want {
-			t.Errorf("Cron(%d) = %q, %v; want %q", minutes, got, err, want)
+func TestBeats(t *testing.T) {
+	at := func(s string) time.Time {
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
 		}
+		return v
 	}
-	bad := map[int]string{
-		7:         "every 6m or every 10m",
-		90:        "every 1h or every 2h",
-		5 * 60:    "every 4h or every 6h",
-		25 * 60:   "every 1d or every 2d",
-		32 * 1440: "every 31d",
-		0:         "positive",
+
+	// Beats start on the epoch's grid, whatever the time zone of the clock.
+	p := Pace(30)
+	b := p.BeatAt(at("2026-11-10T14:47:12+02:00"))
+	if want := at("2026-11-10T12:30:00Z"); !b.At.Equal(want) || b.At.Location() != time.UTC {
+		t.Errorf("BeatAt = %s, want %s", b.At, want)
 	}
-	for minutes, want := range bad {
-		_, err := Cron(minutes)
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("Cron(%d) error = %v, want one mentioning %q", minutes, err, want)
-		}
+	if b != p.Beat(b.N) {
+		t.Errorf("Beat(%d) = %+v, want %+v", b.N, p.Beat(b.N), b)
+	}
+	if next := p.Beat(b.N + 1); !next.At.Equal(b.At.Add(30 * time.Minute)) {
+		t.Errorf("the next beat starts at %s", next.At)
+	}
+
+	// every: 4 at 30m fires every 2h, on the hour from midnight UTC.
+	if !p.BeatAt(at("2026-11-10T12:00:00Z")).Fires(4) || p.BeatAt(at("2026-11-10T12:30:00Z")).Fires(4) || p.BeatAt(at("2026-11-10T13:00:00Z")).Fires(4) {
+		t.Error("every 4 beats of 30m should fire at 12:00 and not at 12:30 or 13:00")
+	}
+	if !p.BeatAt(at("2026-11-10T14:59:59Z")).Fires(1) {
+		t.Error("every beat fires on every 1")
+	}
+
+	// Paces cron can't repeat are fine: 7m beats every 7 minutes.
+	odd := Pace(7)
+	first := odd.BeatAt(at("2026-11-10T12:00:00Z"))
+	if got := odd.Beat(first.N + 1).At.Sub(first.At); got != 7*time.Minute {
+		t.Errorf("7m beats are %s apart", got)
+	}
+	if (Beat{N: 8}).Fires(0) {
+		t.Error("every: 0 never fires")
 	}
 }

@@ -244,6 +244,11 @@ type HandoffData struct {
 	Fingerprint string
 	// ConfirmCommand is the exact `fabrica confirm …` line to run at the end.
 	ConfirmCommand string
+	// WebhookCommand is the `fabrica webhook …` line that gives Fabrica the
+	// webhook the runtime made for the stub, after the confirm, when the
+	// stub fires on a webhook (a pace trigger) and Fabrica doesn't have it
+	// yet. Empty otherwise.
+	WebhookCommand string
 	// Agent is the agent to deploy, on a runtime that deploys agents (whose
 	// handoffs use it instead of everything about routines above).
 	Agent HandoffAgent
@@ -355,6 +360,14 @@ func parseHandoff(name, text string, m *Matrix) (*template.Template, error) {
 		return nil, errors.New("the capability matrix says multiple_triggers: true, so a stub can have several triggers, but handoff.md never lists .Triggers; list them with {{range .Triggers}}")
 	}
 	return template.New(name).Funcs(handoffFuncs).Option("missingkey=error").Parse(text)
+}
+
+// WebhookCommand is the command that gives Fabrica the webhook a runtime
+// made for a stub, so the Fabrica server can call it on the factory's
+// heartbeat. It asks for the webhook's token (or API key) itself, so the
+// token stays out of shell history.
+func WebhookCommand(factory, runtime, identity string) string {
+	return fmt.Sprintf("fabrica webhook %s '%s' --runtime %s --url '<the webhook URL>'", factory, identity, runtime)
 }
 
 // RenderHandoff fills in the provider's handoff template.

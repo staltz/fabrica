@@ -15,7 +15,10 @@ skill_transport: directory
 # An init routine's session can run here, on the machine that runs `fabrica
 # apply`: Fabrica clones the repo and starts `claude -p` in it, in the
 # background, connected to the factory's Fabrica server. It needs Claude
-# Code's command line, and never runs in CI.
+# Code's command line, and never runs in CI. The same launcher runs the
+# routines with a pace trigger: `fabrica heartbeat`, which a job that
+# `fabrica apply` installs runs every minute, starts `claude -p` for each
+# run, served by your local `fabrica mcp`. So pace needs no triggers: entry.
 launch_modes: [api]
 # How a launched session reaches the factory's Fabrica server: --mcp-config
 # takes request headers.

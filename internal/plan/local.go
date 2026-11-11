@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sort"
 
+	"github.com/staltz/fabrica/internal/blueprint"
 	"github.com/staltz/fabrica/internal/diag"
 	"github.com/staltz/fabrica/internal/home"
 	"github.com/staltz/fabrica/internal/localtools"
@@ -16,7 +18,11 @@ import (
 // LocalPlan is what apply would change in the local tools on this machine.
 type LocalPlan struct {
 	Runtimes []*LocalRuntime
-	Diags    diag.List
+	// Heartbeat is the job that runs `fabrica heartbeat`, for routines with
+	// a pace trigger. Nil when there's none and none is wanted, or the
+	// system has no scheduler Fabrica can use.
+	Heartbeat *LocalHeartbeat
+	Diags     diag.List
 }
 
 // HasChanges reports whether any local tool needs changing.
@@ -26,7 +32,84 @@ func (l *LocalPlan) HasChanges() bool {
 			return true
 		}
 	}
-	return false
+	return l.Heartbeat != nil && len(l.Heartbeat.Changes) > 0
+}
+
+// LocalHeartbeat is the heartbeat job: installed in the system's per-user
+// scheduler, it runs `fabrica heartbeat` every minute, which starts the
+// local routines whose pace says they're due.
+type LocalHeartbeat struct {
+	Scheduler *localtools.Scheduler
+	// Job is what to install, or nil to have none.
+	Job              *localtools.HeartbeatJob
+	Current, Desired map[string][]byte
+	// Changes describe what apply would do, in one line, or nothing.
+	Changes []string
+}
+
+// planHeartbeat works out the heartbeat job: one is wanted when a local
+// factory runs a routine on its pace. A factory with errors keeps what's
+// installed, like it keeps its hooks, and so does kept (a destroy that
+// leaves other local factories with a pace).
+func (e *Env) planHeartbeat(lp *LocalPlan, locals []*Factory, personalHome string, kept bool) {
+	want, broken := false, false
+	for _, dp := range locals {
+		if dp.Diags.HasErrors() || dp.Blueprint == nil {
+			broken = broken || dp.Spec.Pace > 0
+			continue
+		}
+		for _, rt := range dp.Runtimes {
+			for _, ev := range rt.Evaluations {
+				for _, st := range ev.Stubs {
+					want = want || ev.OK() && st.Shape.HasTrigger(blueprint.PaceTrigger)
+				}
+			}
+		}
+	}
+	goos := e.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	sched, err := localtools.SchedulerFor(goos, e.UserHome, e.CacheDir)
+	if err != nil {
+		if want {
+			lp.Diags.Warnf("local.heartbeat", "heartbeat", "a local factory runs routines on its pace, but %v", err).
+				Hintf("keep `fabrica heartbeat --watch` running instead: it starts those routines when they're due")
+		}
+		return
+	}
+	if e.RunScheduler != nil {
+		sched.Run = e.RunScheduler
+	}
+	current, err := sched.Read()
+	if err != nil {
+		lp.Diags.Errorf("local.heartbeat", "heartbeat", "couldn't read the heartbeat job: %v", err)
+		return
+	}
+	hb := &LocalHeartbeat{Scheduler: sched, Current: current}
+	switch {
+	case want:
+		hb.Job = &localtools.HeartbeatJob{Binary: e.Binary, Home: personalHome, Env: localtools.HeartbeatEnv(e.Binary)}
+		hb.Desired = sched.Render(hb.Job)
+	case broken || kept:
+		hb.Desired = current // keep it until the factory is fixed, or while others still need it
+	default:
+		hb.Desired = map[string][]byte{}
+	}
+	what := sched.Describe() + ", that runs `fabrica heartbeat` every minute"
+	switch {
+	case localtools.SameFiles(current, hb.Desired):
+		if len(current) == 0 {
+			return
+		}
+	case len(current) == 0:
+		hb.Changes = []string{"+ install the heartbeat: " + what}
+	case len(hb.Desired) == 0:
+		hb.Changes = []string{"- remove the heartbeat: no local factory runs routines on its pace anymore"}
+	default:
+		hb.Changes = []string{"~ update the heartbeat: " + what}
+	}
+	lp.Heartbeat = hb
 }
 
 // LocalRuntime is one local tool.
@@ -69,8 +152,8 @@ func (e *Env) planLocalFactory(ctx context.Context, d *home.Factory) *Factory {
 	}
 	if d.IsWildcard() {
 		for _, r := range routines {
-			if r.HasTrigger("schedule") {
-				dp.Diags.Errorf("factory.schedule-wildcard", d.File, "routine %s runs on a schedule, so it needs a repo to run in, but this factory has targets: [\"*\"]", r.Ref.Name).
+			if r.HasTrigger(blueprint.ScheduleTrigger) || r.HasPace() {
+				dp.Diags.Errorf("factory.schedule-wildcard", d.File, "routine %s runs on a schedule or a pace, so it needs a repo to run in, but this factory has targets: [\"*\"]", r.Ref.Name).
 					Hintf("list the targets it should run in, or move the routine to a factory that does")
 			}
 		}
@@ -123,7 +206,8 @@ func (e *Env) planLocalTools(locals []*Factory, personalHome string) *LocalPlan 
 			lp.Runtimes = append(lp.Runtimes, lr)
 		}
 	}
-	if len(lp.Runtimes) == 0 && len(lp.Diags) == 0 {
+	e.planHeartbeat(lp, locals, personalHome, false)
+	if len(lp.Runtimes) == 0 && len(lp.Diags) == 0 && lp.Heartbeat == nil {
 		return nil
 	}
 	return lp
@@ -145,6 +229,13 @@ func (e *Env) planLocalDestroy(h *home.Home, destroyed map[string]bool) (*LocalP
 		}
 	}
 	var notes []string
+	// The heartbeat job stays while another local factory has a pace.
+	paced := false
+	for _, name := range h.Names() {
+		if d := h.Factories[name]; d.Scope == provider.Local && !destroyed[name] && d.Pace > 0 {
+			paced = true
+		}
+	}
 	for _, name := range sortedNames(destroyed) {
 		for _, rt := range h.Factories[name].Runtimes {
 			if kept[rt] {
@@ -184,7 +275,8 @@ func (e *Env) planLocalDestroy(h *home.Home, destroyed map[string]bool) (*LocalP
 			lp.Runtimes = append(lp.Runtimes, lr)
 		}
 	}
-	if len(lp.Runtimes) == 0 && len(lp.Diags) == 0 {
+	e.planHeartbeat(lp, nil, h.Dir, paced)
+	if len(lp.Runtimes) == 0 && len(lp.Diags) == 0 && lp.Heartbeat == nil {
 		return nil, notes
 	}
 	return lp, notes
@@ -230,9 +322,13 @@ func (e *Env) desiredLocal(rt string, factories []*Factory, current localtools.C
 				continue
 			}
 			// Local runtimes take one trigger per stub: a hook for each
-			// event, and a scheduled task for a schedule.
+			// event, and a scheduled task for a schedule. A pace needs
+			// nothing in the tool: the heartbeat job starts its sessions.
 			for _, st := range ev.Stubs {
 				tr, fp := st.Triggers[0], st.Shape.Fingerprint()
+				if tr.On == blueprint.PaceTrigger {
+					continue
+				}
 				if tr.On == "schedule" {
 					for _, repo := range dp.Spec.SpecificTargets() {
 						cfg.Tasks = append(cfg.Tasks, localtools.Task{

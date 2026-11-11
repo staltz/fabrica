@@ -47,6 +47,14 @@ type Env struct {
 	Binary string
 	// UserHome is your home folder, where local tools keep their config.
 	UserHome string
+	// CacheDir is Fabrica's cache, where the heartbeat job logs.
+	CacheDir string
+	// GOOS is the operating system whose scheduler runs the heartbeat job.
+	// Empty means this one.
+	GOOS string
+	// RunScheduler, when set, stands in for the scheduler's commands
+	// (launchctl, systemctl). Tests set it.
+	RunScheduler func(name string, args ...string) error
 	// SkipLocal skips local factories (CI has nothing local to set up).
 	SkipLocal bool
 	// Refresh looks resources up through runtime APIs (read-only) instead

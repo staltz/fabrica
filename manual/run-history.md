@@ -89,7 +89,7 @@ Every chart has its numbers in a table underneath ("Show the numbers as a table"
 ```
 fabrica-runs-20261017-1004/
   README.md        what this is, the filters used, totals, and how to read it
-  runs.json        {"schema_version": 3, "filters": {…}, "runs": [<run in full>, …]}
+  runs.json        {"schema_version": 4, "filters": {…}, "runs": [<run in full>, …]}
   runs/
     run_06gmjeps8jf8zfjjrfmydev50g.md   one run, the same as `fabrica runs show`
     …
@@ -121,7 +121,7 @@ The same runs as JSON, for programs:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "filters": {"routine": "pr-review", "since": "2026-10-03T07:04:00Z", "limit": 200},
   "runs": [ … ]
 }
@@ -152,8 +152,9 @@ A retro skill (or you) can start with `README.md`: the failed and stale runs com
 
 ## The schema
 
-The database's `PRAGMA user_version` is the schema version. Fabrica v2 writes version `3`. That number is separate from Fabrica's own version, and only changes when the schema does.
+The database's `PRAGMA user_version` is the schema version. Fabrica v2 writes version `4`. That number is separate from Fabrica's own version, and only changes when the schema does.
 
+- **Version 4** added `pace_fires`.
 - **Version 3** added `runs.session`, `loads` (so rules and routines are recorded, not just skills), `friction` and the new `run_overview` columns.
 - **Version 2** added `memories`.
 
@@ -246,6 +247,20 @@ One row per factory, routine and repo: the notes a routine with `memory: true` k
 | `updated_by` | The run that saved it. |
 
 Only the latest version is kept. Saving an empty memory deletes the row.
+
+### `pace_fires`
+
+One row per run of a routine with a [pace trigger](blueprints.md#pace) that a heartbeat started: in the remote server's database, each call it made to a stub's webhook, on its factory's [heartbeat](mcp-server.md#the-heartbeat); in your `runs.db`, each session [`fabrica heartbeat`](cli.md#fabrica-heartbeat) started for a local factory.
+
+| Column | What it is |
+|---|---|
+| `factory`, `runtime`, `stub`, `beat_at` | Which stub (by its identity, like `4ckr#tidy@github.com/acme/app`), on which beat (RFC 3339, UTC, when the beat started). Together they're the primary key, which is what keeps a stub from firing twice in one beat. |
+| `routine`, `repo` | The stub's routine and repo. |
+| `fired_at` | RFC 3339, UTC: when the server called the webhook, or the heartbeat started the session. Later than `beat_at` when the server was down, or the computer asleep, as the beat started. |
+| `status` | `fired` (the run started), `failed`, or `firing` (the start was cut short, by a restart say; it isn't tried again). |
+| `error` | Why it failed, when it did. Never the webhook's token or URL. |
+
+The run a call starts is in `runs` like any other, once its stub calls `run_begin`.
 
 ### `run_overview`
 

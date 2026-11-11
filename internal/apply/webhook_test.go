@@ -98,7 +98,7 @@ func TestPaceRoutineWebhook(t *testing.T) {
 	}
 
 	// A whole auth header is kept as a header name and its sealed value.
-	if err := set(apply.Webhook{Factory: "pr-review", Runtime: "claude-code-cloud", Identity: id, URL: "https://api2.cursor.sh/automations/x/webhook", Token: "Authorization: Bearer crsr_x", Secret: testkit.Secret}); err != nil {
+	if err := set(apply.Webhook{Factory: "pr-review", Runtime: "claude-code-cloud", Identity: id, URL: "https://api2.cursor.sh/automations/webhook/00000000-0000-4000-8000-000000000000", Token: "Authorization: Bearer crsr_x", Secret: testkit.Secret}); err != nil {
 		t.Fatal(err)
 	}
 	if r := h.resource(home.Key{Runtime: "claude-code-cloud", ID: id}); r.Webhook.Header != "Authorization" || strings.Contains(r.Webhook.Token, "crsr_x") {
